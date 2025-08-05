@@ -12,14 +12,16 @@ import { useLandRecord, type Nondh } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 
+type SNoTypeUI = "block_no" | "re_survey_no" | "survey_no";
+
 export default function NondhAdd() {
-  const { yearSlabs, nondhs, setNondhs, setCurrentStep } = useLandRecord()
+  const { yearSlabs, nondhs, setNondhs, setCurrentStep, landBasicInfo } = useLandRecord()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [nondhData, setNondhData] = useState<Nondh[]>([
     {
       id: "1",
-      number: 1,
+      number: "",
       sNoType: "s_no",
       affectedSNos: [],
       nondhDoc: "",
@@ -45,20 +47,49 @@ export default function NondhAdd() {
     }
   }, [nondhs])
 
-  const addNondh = () => {
-    const newNondh: Nondh = {
-      id: Date.now().toString(),
-      number: Math.max(...nondhData.map((n) => n.number), 0) + 1,
-      sNoType: "s_no",
-      affectedSNos: [],
-      nondhDoc: "",
+  // Automatically add new nondh when user starts typing in last empty one
+  useEffect(() => {
+    const lastNondh = nondhData[nondhData.length - 1];
+    
+    // Always ensure there's at least one empty box
+    if (nondhData.length === 0) {
+      setNondhData([{
+        id: "1",
+        number: "",
+        sNoType: "s_no",
+        affectedSNos: [],
+        nondhDoc: "",
+      }]);
+      return;
     }
-    setNondhData([...nondhData, newNondh])
-  }
+
+    // Add new box when user starts typing in the last box
+    if (lastNondh.number.trim() !== "") {
+      const newNondh: Nondh = {
+        id: Date.now().toString(), // Use timestamp for unique ID
+        number: "",
+        sNoType: "s_no",
+        affectedSNos: [],
+        nondhDoc: "",
+      };
+      setNondhData(prev => [...prev, newNondh]);
+    }
+  }, [nondhData]);
 
   const removeNondh = (id: string) => {
-    setNondhData(nondhData.filter((nondh) => nondh.id !== id))
-  }
+    if (nondhData.length > 1) {
+      setNondhData(prev => prev.filter(nondh => nondh.id !== id));
+    } else {
+      // If it's the last box, just clear it instead of removing
+      setNondhData([{
+        id: "1",
+        number: "",
+        sNoType: "s_no",
+        affectedSNos: [],
+        nondhDoc: "",
+      }]);
+    }
+  };
 
   const updateNondh = (id: string, updates: Partial<Nondh>) => {
     setNondhData(nondhData.map((nondh) => (nondh.id === id ? { ...nondh, ...updates } : nondh)))
@@ -81,46 +112,147 @@ export default function NondhAdd() {
 
   const handleFileUpload = async (file: File, nondhId: string) => {
     try {
+      setLoading(true)
       const path = `nondh-documents/${Date.now()}_${file.name}`
       const url = await uploadFile(file, "land-documents", path)
       updateNondh(nondhId, { nondhDoc: url })
       toast({ title: "File uploaded successfully" })
     } catch (error) {
-      toast({ title: "Error uploading file", variant: "destructive" })
+      toast({ 
+        title: "Error uploading file", 
+        description: error instanceof Error ? error.message : "Upload failed",
+        variant: "destructive" 
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
+  const validateNondhNumber = (number: string) => {
+    // Regex for numbers separated by / or - (e.g. 10-35 or 30/45)
+    const regex = /^(\d+([-/]\d+)*)$/
+    return regex.test(number)
+  }
+
+  function getAutoPopulatedSNoData(selectedType: SNoTypeUI): string[] {
+  if (!landBasicInfo) return [];
+  
+  switch(selectedType) {
+    case "block_no":
+      return landBasicInfo.blockNo ? [landBasicInfo.blockNo] : [];
+    case "re_survey_no":
+      return landBasicInfo.reSurveyNo ? [landBasicInfo.reSurveyNo] : [];
+    case "survey_no":
+      // Handle case where sNo might be multiple values (comma separated)
+      return landBasicInfo.sNo ? 
+        landBasicInfo.sNo.split(',').map((s: string) => s.trim()) : [];
+    default:
+      return [];
+  }
+}
+
+  const handleAutoFill = (nondhId: string) => {
+  const nondh = nondhData.find(n => n.id === nondhId);
+  if (!nondh) return;
+
+  const sNoType: SNoTypeUI = nondh.sNoType === "s_no" ? "survey_no" : nondh.sNoType;
+  const autoPopulatedValues = getAutoPopulatedSNoData(sNoType);
+  
+  if (autoPopulatedValues.length > 0) {
+    // Filter values that exist in availableSNos and aren't already selected
+    const newValues = autoPopulatedValues.filter(
+      val => availableSNos.includes(val) && 
+             !nondh.affectedSNos.includes(val)
+    );
+    
+    if (newValues.length > 0) {
+      updateNondh(nondhId, { 
+        affectedSNos: [...nondh.affectedSNos, ...newValues]
+      });
+      toast({
+        title: "Auto-filled affected S.Nos",
+        description: `Added: ${newValues.join(", ")}`
+      });
+    } else {
+      toast({
+        title: "No new S.Nos to add",
+        description: "All matching S.Nos are already selected"
+      });
+    }
+  } else {
+    toast({
+      title: "No data available",
+      description: `No ${sNoType.replace("_", " ")} found for this land record`,
+      variant: "destructive"
+    });
+  }
+}
+
   const handleSubmit = async () => {
-    // Validate that all nondhs have at least one affected S.No
-    // const hasEmptyAffectedSNos = nondhData.some((nondh) => nondh.affectedSNos.length === 0)
+    if (!landBasicInfo?.id) {
+      toast({ 
+        title: "Error", 
+        description: "Land record not found", 
+        variant: "destructive" 
+      })
+      return
+    }
 
-    // if (hasEmptyAffectedSNos) {
-    //   toast({ title: "Please select at least one affected S.No for each Nondh", variant: "destructive" })
-    //   return
-    // }
+    setLoading(true)
+    try {
+      // Filter out empty nondhs (where number is empty)
+      const validNondhs = nondhData.filter(nondh => 
+        nondh.number.trim() !== "" && nondh.id !== "new"
+      )
 
-    // setLoading(true)
-    // try {
-    //   // Save nondhs to database
-    //   for (const nondh of nondhData) {
-    //     const { error } = await supabase.from("nondhs").insert({
-    //       number: nondh.number,
-    //       s_no_type: nondh.sNoType,
-    //       affected_s_no: nondh.affectedSNos,
-    //       nondh_doc: nondh.nondhDoc,
-    //     })
+      // Validate nondh numbers format
+      const hasInvalidNumbers = validNondhs.some(nondh => !validateNondhNumber(nondh.number))
+      if (hasInvalidNumbers) {
+        throw new Error("Nondh numbers must be in format like 10-35 or 30/45")
+      }
 
-    //     if (error) throw error
-    //   }
+      // Validate that all nondhs have at least one affected S.No
+      const hasEmptyAffectedSNos = validNondhs.some(nondh => nondh.affectedSNos.length === 0)
+      if (hasEmptyAffectedSNos) {
+        throw new Error("Please select at least one affected S.No for each Nondh")
+      }
 
-    //   setNondhs(nondhData)
-    //   toast({ title: "Nondh data saved successfully" })
-    // } catch (error) {
-    //   toast({ title: "Error saving nondh data", variant: "destructive" })
-    // } finally {
-    //   setLoading(false)
-    // }
-    setCurrentStep(5)
+      // Prepare data for Supabase
+      const nondhsToSave = validNondhs.map(nondh => ({
+        land_record_id: landBasicInfo.id,
+        number: nondh.number,
+        s_no_type: nondh.sNoType,
+        affected_s_nos: nondh.affectedSNos,
+        nondh_doc_url: nondh.nondhDoc,
+      }))
+
+      // Delete existing nondhs for this land record
+      const { error: deleteError } = await supabase
+        .from("nondhs")
+        .delete()
+        .eq("land_record_id", landBasicInfo.id)
+
+      if (deleteError) throw deleteError
+
+      // Insert new nondhs
+      const { error: insertError } = await supabase
+        .from("nondhs")
+        .insert(nondhsToSave)
+
+      if (insertError) throw insertError
+
+      setNondhs(validNondhs)
+      toast({ title: "Nondh data saved successfully" })
+      setCurrentStep(5)
+    } catch (error) {
+      toast({ 
+        title: "Error saving nondh data", 
+        description: error instanceof Error ? error.message : "Save failed",
+        variant: "destructive" 
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -134,7 +266,12 @@ export default function NondhAdd() {
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">Nondh {index + 1}</h3>
               {nondhData.length > 1 && (
-                <Button variant="outline" size="sm" onClick={() => removeNondh(nondh.id)} className="text-red-600">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => removeNondh(nondh.id)} 
+                  className="text-red-600"
+                >
                   <Trash2 className="w-4 h-4" />
                 </Button>
               )}
@@ -143,13 +280,17 @@ export default function NondhAdd() {
             <div className="space-y-4">
               {/* Nondh Number */}
               <div className="space-y-2">
-                <Label>Nondh Number *</Label>
+                <Label>Nondh Number * (e.g. 10-35 or 30/45)</Label>
                 <Input
-                  type="number"
                   value={nondh.number}
-                  onChange={(e) => updateNondh(nondh.id, { number: Number.parseInt(e.target.value) || 1 })}
-                  min="1"
+                  onChange={(e) => updateNondh(nondh.id, { number: e.target.value })}
+                  placeholder="Enter nondh number (e.g. 10-35 or 30/45)"
                 />
+                {nondh.number && !validateNondhNumber(nondh.number) && (
+                  <p className="text-sm text-red-500">
+                    Invalid format. Use numbers separated by / or - (e.g. 10-35 or 30/45)
+                  </p>
+                )}
               </div>
 
               {/* S.No Type */}
@@ -157,9 +298,10 @@ export default function NondhAdd() {
                 <Label>S.No Type *</Label>
                 <RadioGroup
                   value={nondh.sNoType}
-                  onValueChange={(value: "s_no" | "block_no" | "re_survey_no") =>
-                    updateNondh(nondh.id, { sNoType: value })
-                  }
+                  onValueChange={(value: "s_no" | "block_no" | "re_survey_no") => {
+                    updateNondh(nondh.id, { sNoType: value });
+                    handleAutoFill(nondh.id);
+                  }}
                   className="flex gap-6"
                 >
                   <div className="flex items-center space-x-2">
@@ -179,7 +321,17 @@ export default function NondhAdd() {
 
               {/* Affected S.Nos */}
               <div className="space-y-4">
-                <Label>Affected S.Nos * (Select all that apply)</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Affected S.Nos * (Select all that apply)</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleAutoFill(nondh.id)}
+                    disabled={!landBasicInfo}
+                  >
+                    Auto-fill Current Type
+                  </Button>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded p-3">
                   {availableSNos.map((sNo) => (
                     <div key={sNo} className="flex items-center space-x-2">
@@ -210,19 +362,17 @@ export default function NondhAdd() {
                       const file = e.target.files?.[0]
                       if (file) handleFileUpload(file, nondh.id)
                     }}
+                    disabled={loading}
                   />
                   <Upload className="w-5 h-5 text-muted-foreground" />
                 </div>
-                {nondh.nondhDoc && <p className="text-sm text-green-600">Document uploaded successfully</p>}
+                {nondh.nondhDoc && (
+                  <p className="text-sm text-green-600">Document uploaded successfully</p>
+                )}
               </div>
             </div>
           </Card>
         ))}
-
-        <Button onClick={addNondh} variant="outline" className="w-full bg-transparent">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Another Nondh
-        </Button>
 
         <div className="flex justify-between">
           <Button variant="outline" onClick={() => setCurrentStep(3)}>

@@ -40,51 +40,105 @@ export default function NondhDetails() {
   const [nondhDetailData, setNondhDetailData] = useState<NondhDetail[]>([])
 
   useEffect(() => {
-    if (nondhDetails.length > 0) {
-      setNondhDetailData(nondhDetails)
-    } else {
-      // Initialize nondh details based on nondhs and affected S.Nos
-      const initialData: NondhDetail[] = []
+  const loadNondhDetails = async () => {
+    if (!nondhs.length) return;
 
-      // Group by S.No and sort
-      const sNoNondhMap = new Map<string, any[]>()
+    try {
+      // Load nondh details from database
+      const { data: detailsData, error: detailsError } = await supabase
+        .from('nondh_details')
+        .select('*')
+        .in('nondh_id', nondhs.map(n => n.id));
 
-      nondhs.forEach((nondh) => {
-        nondh.affectedSNos.forEach((sNo) => {
-          if (!sNoNondhMap.has(sNo)) {
-            sNoNondhMap.set(sNo, [])
-          }
-          sNoNondhMap.get(sNo)!.push(nondh)
-        })
-      })
+      if (detailsError) throw detailsError;
 
-      // Sort S.Nos and create details
-      Array.from(sNoNondhMap.keys())
-        .sort()
-        .forEach((sNo) => {
-          const nondhsForSNo = sNoNondhMap.get(sNo)!
-          nondhsForSNo
-            .sort((a, b) => a.number - b.number)
-            .forEach((nondh) => {
-              initialData.push({
-                id: `${nondh.id}_${sNo}`,
-                nondhId: nondh.id,
-                sNo,
-                type: "Kabjedaar",
-                subType: "",
-                vigat: "",
-                status: "Valid",
-                showInOutput: false,
-                hasDocuments: false,
-                docUpload: "",
-                ownerRelations: [],
+      // Load owner relations
+      const { data: relationsData, error: relationsError } = await supabase
+        .from('nondh_owner_relations')
+        .select('*')
+        .in('nondh_detail_id', detailsData?.map(d => d.id) || []);
+
+      if (relationsError) throw relationsError;
+
+      if (detailsData?.length) {
+        // Map database data to our state format
+        const loadedDetails = detailsData.map(detail => {
+          const relations = relationsData?.filter(r => r.nondh_detail_id === detail.id) || [];
+          return {
+            id: `${detail.nondh_id}_${detail.s_no}`,
+            nondhId: detail.nondh_id,
+            sNo: detail.s_no,
+            type: detail.type,
+            subType: detail.sub_type || '',
+            vigat: detail.vigat || '',
+            status: detail.status as 'Valid' | 'Invalid' | 'Nullified',
+            showInOutput: detail.show_in_output,
+            hasDocuments: detail.has_documents,
+            docUpload: detail.doc_upload_url || '',
+            ownerRelations: relations.map(r => ({
+              id: r.id.toString(),
+              ownerName: r.owner_name,
+              sNo: r.s_no,
+              area: { value: r.area_value, unit: r.area_unit as 'guntha' | 'sq_m' },
+              tenure: r.tenure,
+              ...(r.hukam_type && { hukamType: r.hukam_type }),
+              ...(typeof r.restraining_order === 'boolean' && { 
+                restrainingOrder: r.restraining_order ? 'yes' : 'no' 
               })
-            })
-        })
+            })),
+            dbId: detail.id
+          };
+        });
 
-      setNondhDetailData(initialData)
+        setNondhDetailData(loadedDetails);
+        setNondhDetails(loadedDetails);
+      } else {
+        // Initialize fresh data if no saved data exists
+        const initialData: NondhDetail[] = [];
+        const sNoNondhMap = new Map<string, any[]>();
+
+        nondhs.forEach(nondh => {
+          nondh.affectedSNos.forEach(sNo => {
+            if (!sNoNondhMap.has(sNo)) sNoNondhMap.set(sNo, []);
+            sNoNondhMap.get(sNo)!.push(nondh);
+          });
+        });
+
+        Array.from(sNoNondhMap.keys())
+          .sort()
+          .forEach(sNo => {
+            sNoNondhMap.get(sNo)!
+              .sort((a, b) => a.number - b.number)
+              .forEach(nondh => {
+                initialData.push({
+                  id: `${nondh.id}_${sNo}`,
+                  nondhId: nondh.id,
+                  sNo,
+                  type: "Kabjedaar",
+                  subType: "",
+                  vigat: "",
+                  status: "Valid",
+                  showInOutput: false,
+                  hasDocuments: false,
+                  docUpload: "",
+                  ownerRelations: [],
+                });
+              });
+          });
+
+        setNondhDetailData(initialData);
+      }
+    } catch (error) {
+      console.error('Load error:', error);
+      toast({
+        title: "Error loading nondh details",
+        variant: "destructive"
+      });
     }
-  }, [nondhs, nondhDetails])
+  };
+
+  loadNondhDetails();
+}, [nondhs]);
 
   const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
     setNondhDetailData((prev) => prev.map((detail) => (detail.id === id ? { ...detail, ...updates } : detail)))
@@ -451,48 +505,109 @@ export default function NondhDetails() {
   }
 
   const handleSubmit = async () => {
-    // setLoading(true)
-    // try {
-    //   // Save nondh details to database
-    //   for (const detail of nondhDetailData) {
-    //     const { error } = await supabase.from("nondh_details").insert({
-    //       nondh_id: detail.nondhId,
-    //       s_no: detail.sNo,
-    //       type: detail.type,
-    //       sub_type: detail.subType,
-    //       vigat: detail.vigat,
-    //       status: detail.status,
-    //       show_in_output: detail.showInOutput,
-    //       has_documents: detail.hasDocuments,
-    //       doc_upload: detail.docUpload,
-    //     })
-
-    //     if (error) throw error
-
-    //     // Save owner relations
-    //     for (const relation of detail.ownerRelations) {
-    //       const { error: relationError } = await supabase.from("nondh_owner_relations").insert({
-    //         nondh_detail_id: detail.id, // This should be the actual DB ID
-    //         owner_name: relation.ownerName,
-    //         s_no: relation.sNo,
-    //         area: relation.area.value,
-    //         area_unit: relation.area.unit,
-    //         tenure: relation.tenure,
-    //       })
-
-    //       if (relationError) throw relationError
-    //     }
-    //   }
-
-    //   setNondhDetails(nondhDetailData)
-    //   toast({ title: "Nondh details saved successfully" })
-    // } catch (error) {
-    //   toast({ title: "Error saving nondh details", variant: "destructive" })
-    // } finally {
-    //   setLoading(false)
-    // }
-    setCurrentStep(6)
+  if (!nondhs.length || !nondhDetailData.length) {
+    toast({
+      title: "Error",
+      description: "No nondh data available to save",
+      variant: "destructive"
+    });
+    return;
   }
+
+  setLoading(true);
+  try {
+    // Prepare data for batch insert
+    const nondhDetailsToInsert = nondhDetailData.map(detail => ({
+      nondh_id: detail.nondhId,
+      s_no: detail.sNo,
+      type: detail.type,
+      sub_type: detail.subType,
+      vigat: detail.vigat,
+      status: detail.status,
+      show_in_output: detail.showInOutput,
+      has_documents: detail.hasDocuments,
+      doc_upload_url: detail.docUpload
+    }));
+
+    // Get existing nondh details to delete
+    const { data: existingDetails, error: fetchError } = await supabase
+      .from('nondh_details')
+      .select('id')
+      .in('nondh_id', nondhs.map(n => n.id));
+
+    if (fetchError) throw fetchError;
+
+    // Delete existing nondh details and relations
+    if (existingDetails?.length) {
+      // Delete owner relations first
+      await supabase
+        .from('nondh_owner_relations')
+        .delete()
+        .in('nondh_detail_id', existingDetails.map(d => d.id));
+
+      // Then delete nondh details
+      await supabase
+        .from('nondh_details')
+        .delete()
+        .in('id', existingDetails.map(d => d.id));
+    }
+
+    // Insert new nondh details and get their IDs
+    const { data: insertedDetails, error: insertError } = await supabase
+      .from('nondh_details')
+      .insert(nondhDetailsToInsert)
+      .select();
+
+    if (insertError) throw insertError;
+
+    // Prepare owner relations data
+    const ownerRelationsToInsert = nondhDetailData.flatMap(detail => {
+      const detailRecord = insertedDetails.find(d => d.nondh_id === detail.nondhId && d.s_no === detail.sNo);
+      if (!detailRecord) return [];
+
+      return detail.ownerRelations.map(relation => ({
+        nondh_detail_id: detailRecord.id,
+        owner_name: relation.ownerName,
+        s_no: relation.sNo,
+        area_value: relation.area.value,
+        area_unit: relation.area.unit,
+        tenure: relation.tenure,
+        ...(relation.hukamType && { hukam_type: relation.hukamType }),
+        ...(relation.restrainingOrder && { restraining_order: relation.restrainingOrder === 'yes' })
+      }));
+    });
+
+    // Insert owner relations if any
+    if (ownerRelationsToInsert.length > 0) {
+      const { error: relationsError } = await supabase
+        .from('nondh_owner_relations')
+        .insert(ownerRelationsToInsert);
+
+      if (relationsError) throw relationsError;
+    }
+
+    // Update local state
+    const updatedDetails = nondhDetailData.map(detail => {
+      const insertedDetail = insertedDetails.find(d => 
+        d.nondh_id === detail.nondhId && d.s_no === detail.sNo
+      );
+      return insertedDetail ? { ...detail, dbId: insertedDetail.id } : detail;
+    });
+
+    setNondhDetails(updatedDetails);
+    toast({ title: "Nondh details saved successfully" });
+    setCurrentStep(6);
+  } catch (error) {
+    console.error('Save error:', error);
+    toast({
+      title: "Error saving nondh details",
+      description: error instanceof Error ? error.message : "Database error",
+      variant: "destructive"
+    });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const groupedDetails = nondhDetailData.reduce(
     (acc, detail) => {

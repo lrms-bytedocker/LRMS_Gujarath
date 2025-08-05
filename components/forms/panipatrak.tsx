@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -11,14 +10,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Plus, ArrowRight, ArrowLeft } from "lucide-react";
+import { Trash2, Plus, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import {
   useLandRecord,
   Farmer,
   YearSlab,
   Panipatrak,
 } from "@/contexts/land-record-context";
-import { useToast } from "@/hooks/use-toast";
+import { LandRecordService } from "@/lib/supabase"; 
+import { toast } from "@/hooks/use-toast";
 
 type AreaUnit = "acre" | "sq_m";
 type FarmerStrict = {
@@ -36,7 +36,7 @@ function getYearPeriods(slab: YearSlab) {
 }
 
 export default function PanipatrakStep() {
-  const { yearSlabs, setPanipatraks, setCurrentStep } = useLandRecord();
+  const { yearSlabs, setPanipatraks, setCurrentStep, landBasicInfo } = useLandRecord();
   const [loading, setLoading] = useState(false);
 
   const [slabPanels, setSlabPanels] = useState<{
@@ -53,27 +53,56 @@ export default function PanipatrakStep() {
     };
   }>({});
 
-  useEffect(() => {
-    if (!yearSlabs || yearSlabs.length === 0) return;
+ useEffect(() => {
+  if (!yearSlabs || yearSlabs.length === 0) return;
+
+  const initializePanels = async () => {
     const newPanels: typeof slabPanels = {};
+    
+    // Initialize with empty data first
     for (const slab of yearSlabs) {
-      const periods = getYearPeriods(slab).map((pr) => ({
-        ...pr,
-        farmers: [{
-          id: "1",
-          name: "",
-          area: { value: 0, unit: "acre" as AreaUnit }
-        }],
-        sameAsAbove: false,
-      }));
       newPanels[slab.id] = {
-        periods,
+        periods: getYearPeriods(slab).map(pr => ({
+          ...pr,
+          farmers: [{ id: "1", name: "", area: { value: 0, unit: "acre" } }],
+          sameAsAbove: false,
+        })),
         sameForAll: false,
         slab,
       };
     }
+
+    // Then load saved data if available
+    if (landBasicInfo?.id) {
+      const { data, error } = await LandRecordService.getPanipatraks(landBasicInfo.id);
+      if (!error && data) {
+        // Merge saved data with initialized panels
+        const bySlabId: Record<string, Panipatrak[]> = {};
+        data.forEach(p => {
+          if (!bySlabId[p.slabId]) bySlabId[p.slabId] = [];
+          bySlabId[p.slabId].push(p);
+        });
+
+        Object.keys(newPanels).forEach(slabId => {
+          if (bySlabId[slabId]) {
+            newPanels[slabId].periods = newPanels[slabId].periods.map(period => {
+              const savedData = bySlabId[slabId].find(p => p.year === period.from);
+              return savedData ? {
+                ...period,
+                farmers: savedData.farmers,
+                sameAsAbove: false
+              } : period;
+            });
+          }
+        });
+      }
+    }
+
     setSlabPanels(newPanels);
-  }, [yearSlabs]);
+  };
+
+  initializePanels();
+}, [yearSlabs, landBasicInfo?.id]);
 
   // Add/remove/edit farmer
   const addFarmer = (slabId: string, periodIdx: number) => {
@@ -145,11 +174,36 @@ export default function PanipatrakStep() {
     });
   };
 
-  const handleSubmit = () => {
-    const result: Panipatrak[] = [];
+  const handleSubmit = async () => {
+  if (!landBasicInfo?.id) {
+    toast({
+      title: "Error",
+      description: "Land record not found",
+      variant: "destructive"
+    });
+    return;
+  }
+
+  setLoading(true);
+  
+  try {
+    const panipatraks: Panipatrak[] = [];
+    
+    // Validate at least one farmer has a name
+    const hasEmptyFarmers = Object.values(slabPanels).some(({ periods }) => 
+      periods.some(p => 
+        p.farmers.some(f => !f.name.trim())
+      )
+    );
+
+    if (hasEmptyFarmers) {
+      throw new Error("All farmers must have a name");
+    }
+
+    // Prepare data
     Object.values(slabPanels).forEach(({ periods, slab }) => {
       periods.forEach(p => {
-        result.push({
+        panipatraks.push({
           slabId: slab.id,
           sNo: slab.sNo,
           year: p.from,
@@ -157,9 +211,28 @@ export default function PanipatrakStep() {
         });
       });
     });
-    setPanipatraks(result);
+
+    const { error } = await LandRecordService.savePanipatraks(
+      landBasicInfo.id,
+      panipatraks
+    );
+
+    if (error) throw error;
+
+    setPanipatraks(panipatraks);
     setCurrentStep(4);
-  };
+    toast({ title: "Panipatraks saved successfully" });
+
+  } catch (error: unknown) {
+    toast({
+      title: "Save failed",
+      description: error instanceof Error ? error.message : "An unknown error occurred",
+      variant: "destructive"
+    });
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (!yearSlabs.length) return <div className="p-10">Please add year slabs in Step 2!</div>;
 
@@ -173,7 +246,7 @@ export default function PanipatrakStep() {
           <Card key={slab.id} className="mb-6 border-2 border-gray-200">
             <CardHeader>
               <h2 className="font-bold mb-2">
-                Year Slab: {slab.startYear} - {slab.endYear} | S.No: {slab.sNo}
+                Year Slab: {slab.startYear} - {slab.endYear} | Survey No: {slab.sNo}
               </h2>
               <div className="flex items-center space-x-4">
                 <Checkbox
@@ -286,8 +359,17 @@ export default function PanipatrakStep() {
             <ArrowLeft className="w-4 h-4 mr-2" /> Previous
           </Button>
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "Saving..." : "Next Step"} <ArrowRight className="w-4 h-4 ml-2" />
-          </Button>
+  {loading ? (
+    <>
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      Saving...
+    </>
+  ) : (
+    <>
+      Next Step <ArrowRight className="w-4 h-4 ml-2" />
+    </>
+  )}
+</Button>
         </div>
       </CardContent>
     </Card>
