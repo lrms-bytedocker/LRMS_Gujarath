@@ -100,6 +100,8 @@ CREATE TABLE nondh_details (
     type VARCHAR(255) NOT NULL,
     sub_type VARCHAR(255),
     vigat TEXT,
+    radd_reason TEXT,
+    old_owner VARCHAR(255),
     status VARCHAR(20) DEFAULT 'Valid' CHECK (status IN ('Valid', 'Invalid', 'Nullified')),
     show_in_output BOOLEAN DEFAULT true,
     has_documents BOOLEAN DEFAULT false,
@@ -117,6 +119,7 @@ CREATE TABLE nondh_owner_relations (
     area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('guntha', 'sq_m')),
     tenure VARCHAR(50) NOT NULL,
     hukam_type VARCHAR(50),
+    hukam_date DATE,
     restraining_order BOOLEAN,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

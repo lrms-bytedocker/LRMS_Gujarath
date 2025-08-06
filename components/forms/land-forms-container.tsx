@@ -73,21 +73,31 @@ export function LandFormsContainer() {
     },
   ];
 
-  const handleNext = () => {
-    const currentIndex = steps.findIndex((step) => step.id === activeStep);
-    if (currentIndex < steps.length - 1) {
-      setActiveStep(steps[currentIndex + 1].id);
-      setCurrentStep(steps[currentIndex + 1].id);
+ const handleStepChange = async (newStep: number) => {
+  if (activeStep === 3 && hasUnsavedChanges) {
+    // Show confirmation dialog
+    const shouldProceed = confirm("You have unsaved changes. Save before proceeding?");
+    if (shouldProceed) {
+      await handleSaveProgress();
     }
-  };
+  }
+  setActiveStep(newStep);
+  setCurrentStep(newStep);
+};
 
-  const handlePrevious = () => {
-    const currentIndex = steps.findIndex((step) => step.id === activeStep);
-    if (currentIndex > 0) {
-      setActiveStep(steps[currentIndex - 1].id);
-      setCurrentStep(steps[currentIndex - 1].id);
-    }
-  };
+  const handleNext = async () => {
+  const currentIndex = steps.findIndex((step) => step.id === activeStep);
+  if (currentIndex < steps.length - 1) {
+    await handleStepChange(steps[currentIndex + 1].id);
+  }
+};
+
+const handlePrevious = async () => {
+  const currentIndex = steps.findIndex((step) => step.id === activeStep);
+  if (currentIndex > 0) {
+    await handleStepChange(steps[currentIndex - 1].id);
+  }
+};
 
   // Simple save function
   const handleSaveProgress = async () => {
@@ -233,14 +243,14 @@ export function LandFormsContainer() {
         </Button>
 
         <div className="flex gap-2">
-          <Button
+          {/* <Button
             variant="outline"
             onClick={handleSaveProgress}
             disabled={isSaving}
             className="gap-2"
           >
             {isSaving ? "Saving..." : "Save Progress"}
-          </Button>
+          </Button> */}
 
           {isLastStep ? (
             <Button

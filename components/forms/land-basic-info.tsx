@@ -347,8 +347,7 @@ export default function LandBasicInfoComponent() {
         {/* Submit Button */}
         <div className="flex justify-end">
           <Button onClick={handleSubmit} disabled={loading} className="flex items-center gap-2">
-            {loading ? "Saving..." : "Next Step"}
-            <ArrowRight className="w-4 h-4" />
+            {loading ? "Saving..." : "Save and Continue"}        
           </Button>
         </div>
       </CardContent>

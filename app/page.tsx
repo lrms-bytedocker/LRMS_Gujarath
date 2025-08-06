@@ -136,7 +136,7 @@ export default function Dashboard() {
   const avgAreaPerLand = totalArea / state.lands.length || 0
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">Comprehensive overview of your land record management system</p>
@@ -206,94 +206,103 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+      {/* Charts Section */}
+      <div className="grid gap-6 lg:grid-cols-5">
         {/* Year-over-year Slab Counts */}
-        <Card className="col-span-4">
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Yearly Slab Distribution</CardTitle>
             <CardDescription>Number of slabs and total area per year</CardDescription>
           </CardHeader>
-          <CardContent className="pl-2">
+          <CardContent>
             <ChartContainer
               config={{
                 count: {
                   label: "Slab Count",
-                  color: "hsl(var(--chart-1))",
+                  color: "#3b82f6",
                 },
                 area: {
                   label: "Total Area",
-                  color: "hsl(var(--chart-2))",
+                  color: "#10b981",
                 },
               }}
-              className="h-[300px]"
+              className="h-[350px] w-full"
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={yearlySlabData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="year" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar yAxisId="left" dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="right" dataKey="area" fill="var(--color-area)" radius={[4, 4, 0, 0]} opacity={0.7} />
-                </BarChart>
-              </ResponsiveContainer>
+              <BarChart data={yearlySlabData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="year" 
+                  tick={{ fontSize: 12 }}
+                  height={60}
+                />
+                <YAxis 
+                  yAxisId="left" 
+                  tick={{ fontSize: 12 }}
+                  width={40}
+                />
+                <YAxis 
+                  yAxisId="right" 
+                  orientation="right" 
+                  tick={{ fontSize: 12 }}
+                  width={40}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar yAxisId="left" dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="right" dataKey="area" fill="var(--color-area)" radius={[4, 4, 0, 0]} opacity={0.7} />
+              </BarChart>
             </ChartContainer>
           </CardContent>
         </Card>
 
         {/* Monthly New Land Entries */}
-        <Card className="col-span-3">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Monthly Land Entries</CardTitle>
-            <CardDescription>New land records and area added</CardDescription>
+            <CardDescription>New land records trend</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
               config={{
                 entries: {
                   label: "Land Entries",
-                  color: "hsl(var(--chart-2))",
+                  color: "#8b5cf6",
                 },
                 area: {
                   label: "Area Added",
-                  color: "hsl(var(--chart-3))",
+                  color: "#06b6d4",
                 },
               }}
-              className="h-[300px]"
+              className="h-[350px] w-full"
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthlyLandData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="entries"
-                    stackId="1"
-                    stroke="var(--color-entries)"
-                    fill="var(--color-entries)"
-                    fillOpacity={0.6}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="area"
-                    stackId="2"
-                    stroke="var(--color-area)"
-                    fill="var(--color-area)"
-                    fillOpacity={0.4}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart data={monthlyLandData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="month" 
+                  tick={{ fontSize: 12 }}
+                  height={60}
+                />
+                <YAxis 
+                  tick={{ fontSize: 12 }}
+                  width={40}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Area
+                  type="monotone"
+                  dataKey="entries"
+                  stroke="var(--color-entries)"
+                  fill="var(--color-entries)"
+                  fillOpacity={0.6}
+                />
+              </AreaChart>
             </ChartContainer>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+      {/* Second Row of Charts */}
+      <div className="grid gap-6 lg:grid-cols-5">
         {/* District-wise Distribution */}
-        <Card className="col-span-4">
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>District-wise Distribution</CardTitle>
             <CardDescription>Land records and farmers by district</CardDescription>
@@ -303,31 +312,42 @@ export default function Dashboard() {
               config={{
                 lands: {
                   label: "Land Records",
-                  color: "hsl(var(--chart-1))",
+                  color: "#f59e0b",
                 },
                 farmers: {
                   label: "Farmers",
-                  color: "hsl(var(--chart-2))",
+                  color: "#06b6d4",
                 },
               }}
-              className="h-[300px]"
+              className="h-[350px] w-full"
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={districtData} layout="horizontal">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis dataKey="district" type="category" width={80} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="lands" fill="var(--color-lands)" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="farmers" fill="var(--color-farmers)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <BarChart 
+                data={districtData} 
+                layout="horizontal"
+                margin={{ top: 20, right: 30, left: 80, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  type="number" 
+                  tick={{ fontSize: 12 }}
+                  height={60}
+                />
+                <YAxis 
+                  dataKey="district" 
+                  type="category" 
+                  width={80}
+                  tick={{ fontSize: 12 }}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="lands" fill="var(--color-lands)" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="farmers" fill="var(--color-farmers)" radius={[0, 4, 4, 0]} />
+              </BarChart>
             </ChartContainer>
           </CardContent>
         </Card>
 
         {/* Notice Status Distribution */}
-        <Card className="col-span-3">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Land Notice Status</CardTitle>
             <CardDescription>Distribution of notice statuses</CardDescription>
@@ -339,51 +359,66 @@ export default function Dashboard() {
                 pending: { label: "Pending", color: "#f59e0b" },
                 invalid: { label: "Invalid", color: "#ef4444" },
               }}
-              className="h-[300px]"
+              className="h-[350px] w-full"
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={statusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {statusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                </PieChart>
-              </ResponsiveContainer>
+              <PieChart>
+                <Pie
+                  data={statusData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={120}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {statusData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <ChartTooltip content={<ChartTooltipContent />} />
+              </PieChart>
             </ChartContainer>
+            {/* Legend */}
+            <div className="flex justify-center space-x-4 mt-4">
+              {statusData.map((item) => (
+                <div key={item.name} className="flex items-center">
+                  <div 
+                    className="w-3 h-3 rounded-full mr-2" 
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span className="text-sm">{item.name}</span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+      {/* Third Row */}
+      <div className="grid gap-6 lg:grid-cols-5">
         {/* Notice Type Distribution */}
-        <Card className="col-span-4">
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle>Notice Type Distribution</CardTitle>
             <CardDescription>Breakdown of land notices by type</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-6">
               {noticeTypeData.map((item) => (
                 <div key={item.type} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full bg-blue-500" />
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
                     <span className="text-sm font-medium">{item.type}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 bg-gray-200 rounded-full h-2">
-                      <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${item.percentage}%` }} />
+                  <div className="flex items-center gap-4 flex-1 justify-end">
+                    <div className="w-32 bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
+                        style={{ width: `${item.percentage}%` }} 
+                      />
                     </div>
-                    <span className="text-sm text-muted-foreground w-8">{item.count}</span>
+                    <span className="text-sm text-muted-foreground w-8 text-right">{item.count}</span>
+                    <span className="text-sm font-medium w-10 text-right">{item.percentage}%</span>
                   </div>
                 </div>
               ))}
@@ -392,56 +427,56 @@ export default function Dashboard() {
         </Card>
 
         {/* Recent Activity & Notifications */}
-        <Card className="col-span-3">
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Latest system activities and alerts</CardDescription>
+            <CardDescription>Latest system activities</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-start space-x-4">
-                <AlertCircle className="h-5 w-5 text-amber-500 mt-0.5" />
+            <div className="space-y-4 max-h-[300px] overflow-y-auto">
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-4 w-4 text-amber-500 mt-1 flex-shrink-0" />
                 <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">3 land notices require document verification</p>
-                  <p className="text-xs text-muted-foreground">Survey numbers: 123/A, 456/B, 789/C</p>
+                  <p className="text-sm font-medium">3 notices need verification</p>
+                  <p className="text-xs text-muted-foreground">Survey: 123/A, 456/B, 789/C</p>
                 </div>
-                <Badge variant="secondary">Pending</Badge>
+                <Badge variant="secondary" className="text-xs">Pending</Badge>
               </div>
 
-              <div className="flex items-start space-x-4">
-                <AlertCircle className="h-5 w-5 text-blue-500 mt-0.5" />
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-4 w-4 text-blue-500 mt-1 flex-shrink-0" />
                 <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">New slab created for survey 234/D</p>
-                  <p className="text-xs text-muted-foreground">Year range: 2024-2029</p>
+                  <p className="text-sm font-medium">New slab created</p>
+                  <p className="text-xs text-muted-foreground">Survey 234/D (2024-2029)</p>
                 </div>
-                <Badge variant="outline">Info</Badge>
+                <Badge variant="outline" className="text-xs">Info</Badge>
               </div>
 
-              <div className="flex items-start space-x-4">
-                <AlertCircle className="h-5 w-5 text-green-500 mt-0.5" />
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-4 w-4 text-green-500 mt-1 flex-shrink-0" />
                 <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">Passbook entries updated successfully</p>
+                  <p className="text-sm font-medium">Passbook updated</p>
                   <p className="text-xs text-muted-foreground">15 farmer records processed</p>
                 </div>
-                <Badge variant="outline">Success</Badge>
+                <Badge variant="outline" className="text-xs">Success</Badge>
               </div>
 
-              <div className="flex items-start space-x-4">
-                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5" />
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-4 w-4 text-red-500 mt-1 flex-shrink-0" />
                 <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">Area validation failed for survey 567/E</p>
-                  <p className="text-xs text-muted-foreground">Total assigned area exceeds available land</p>
+                  <p className="text-sm font-medium">Area validation failed</p>
+                  <p className="text-xs text-muted-foreground">Survey 567/E area mismatch</p>
                 </div>
-                <Badge variant="destructive">Error</Badge>
+                <Badge variant="destructive" className="text-xs">Error</Badge>
               </div>
 
-              <div className="flex items-start space-x-4">
-                <AlertCircle className="h-5 w-5 text-purple-500 mt-0.5" />
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-4 w-4 text-purple-500 mt-1 flex-shrink-0" />
                 <div className="flex-1 space-y-1">
-                  <p className="text-sm font-medium">Monthly report generated</p>
-                  <p className="text-xs text-muted-foreground">Land records summary for November 2024</p>
+                  <p className="text-sm font-medium">Monthly report ready</p>
+                  <p className="text-xs text-muted-foreground">November 2024 summary</p>
                 </div>
-                <Badge variant="outline">Report</Badge>
+                <Badge variant="outline" className="text-xs">Report</Badge>
               </div>
             </div>
           </CardContent>
@@ -455,30 +490,30 @@ export default function Dashboard() {
           <CardDescription>Frequently used actions and shortcuts</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
               <MapPin className="h-8 w-8 text-blue-600 mb-2" />
-              <span className="text-sm font-medium">Add Land</span>
+              <span className="text-sm font-medium text-center">Add Land</span>
             </div>
-            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
               <Calendar className="h-8 w-8 text-green-600 mb-2" />
-              <span className="text-sm font-medium">Create Slab</span>
+              <span className="text-sm font-medium text-center">Create Slab</span>
             </div>
-            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
               <Users className="h-8 w-8 text-purple-600 mb-2" />
-              <span className="text-sm font-medium">Add Farmer</span>
+              <span className="text-sm font-medium text-center">Add Farmer</span>
             </div>
-            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
               <FileText className="h-8 w-8 text-amber-600 mb-2" />
-              <span className="text-sm font-medium">Land Notice</span>
+              <span className="text-sm font-medium text-center">Land Notice</span>
             </div>
-            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
               <Building2 className="h-8 w-8 text-indigo-600 mb-2" />
-              <span className="text-sm font-medium">View Reports</span>
+              <span className="text-sm font-medium text-center">View Reports</span>
             </div>
-            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+            <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
               <Layers className="h-8 w-8 text-teal-600 mb-2" />
-              <span className="text-sm font-medium">Export Data</span>
+              <span className="text-sm font-medium text-center">Export Data</span>
             </div>
           </div>
         </CardContent>

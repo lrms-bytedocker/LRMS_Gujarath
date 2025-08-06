@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Trash2, Plus, ArrowRight, ArrowLeft, Upload } from "lucide-react"
+import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Loader2 } from "lucide-react"
 import { useLandRecord, type Nondh } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
@@ -374,14 +374,18 @@ export default function NondhAdd() {
           </Card>
         ))}
 
-        <div className="flex justify-between">
-          <Button variant="outline" onClick={() => setCurrentStep(3)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Previous
-          </Button>
+        <div className="flex justify-center pt-6">
           <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? "Saving..." : "Next Step"}
-            <ArrowRight className="w-4 h-4 ml-2" />
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                Save and Continue
+              </>
+            )}
           </Button>
         </div>
       </CardContent>

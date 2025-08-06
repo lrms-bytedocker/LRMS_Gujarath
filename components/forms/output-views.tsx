@@ -277,11 +277,7 @@ export default function OutputViews() {
           </TabsContent>
         </Tabs>
 
-        <div className="flex justify-between mt-6">
-          <Button variant="outline" onClick={() => setCurrentStep(5)}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Previous
-          </Button>
+        <div className="flex justify-center mt-6">
           <Button onClick={() => toast({ title: "Land record process completed successfully!" })}>
             Complete Process
           </Button>

@@ -72,11 +72,27 @@ export interface NondhDetail {
   type: string
   subType?: string
   vigat?: string
-  status: "Valid" | "Invalid" | "Nullified"
+  status: "Pramanik" | "Radd" | "na_manjoor" // Updated status values
+  raddReason?: string // New field for Radd status
+  oldOwner?: string // New field for Varsai type
   showInOutput: boolean
   hasDocuments: boolean
   docUpload?: string
-  ownerRelations: any[]
+  ownerRelations: Array<{
+    id: string
+    ownerName: string
+    sNo: string
+    area: {
+      value: number
+      unit: 'guntha' | 'sq_m'
+    }
+    tenure: string
+    hukamType?: string // For Hukam type
+    hukamDate?: string // Moved from main interface to ownerRelations
+    restrainingOrder?: 'yes' | 'no' // For Hukam type
+    isValid: boolean // New field for validity tracking
+  }>
+  dbId?: string // For existing records
 }
 
 interface LandRecordContextType {
