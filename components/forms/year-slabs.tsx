@@ -182,6 +182,9 @@ export default function YearSlabs() {
 const PAIKY_PER_PAGE = 5;
   const [slabs, setSlabs] = useState<YearSlabUI[]>([]);
    const [uploadedFileName, setUploadedFileName] = useState<string>("");
+   const [currentEkatrikaranPage, setCurrentEkatrikaranPage] = useState<Record<string, number>>({});
+const EKATRIKARAN_PER_PAGE = 5;
+const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ekatrikaran'>>({});
   const handleEntryFileUpload = async (
   file: File,
   slabId: string,
@@ -242,7 +245,7 @@ const PAIKY_PER_PAGE = 5;
   if (yearSlabs?.length) {
     setSlabs(yearSlabs.map(toYearSlabUI));
   } else {
-    const autoSNoData = getAutoPopulatedSNoData(landBasicInfo);
+    const autoSNoData = getAutoPopulatedSNoData(landBasicInfo, "survey_no");
     const defaultArea = landBasicInfo?.area 
       ? toAreaUI(landBasicInfo.area) 
       : { areaType: "acre_guntha", acre: 0, guntha: 0 };
@@ -789,7 +792,7 @@ const toggleCollapse = (id: string) => {
             </div>
             
             {/* S.No and Area and Document - hide if any sub-slab active */}
-            {!slab.paiky && !slab.ekatrikaran && (
+            {(!slab.paiky && !slab.ekatrikaran) && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="space-y-2">
                   <Label>S.No Type</Label>
@@ -883,230 +886,519 @@ const toggleCollapse = (id: string) => {
             )}
             
             {/* Paiky Section */}
-            <div className="space-y-4 border-t pt-4 relative"> {/* Added relative positioning */}
-  <div className="flex items-center space-x-2">
-    <Checkbox
-      checked={slab.paiky}
-      onCheckedChange={(checked) => {
-        updateSlab(slab.id, {
-          paiky: !!checked,
-          paikyCount: checked ? slab.paikyCount : 0,
-          paikyEntries: checked ? slab.paikyEntries : []
-        });
-        setCurrentPaikyPage(prev => ({ ...prev, [slab.id]: 0 }));
-      }}
-    />
-    <Label>Paiky</Label>
-  </div>
-
-  {slab.paiky && (
-    <div className="space-y-4 pl-6">
-      <div className="space-y-2">
-        <Label>Number of Paiky Entries</Label>
-        <Input
-          type="number"
-          value={slab.paikyCount}
-          onChange={(e) => {
-            const count = Math.max(0, parseInt(e.target.value) || 0);
-            updatePaikyCount(slab.id, count);
-            setCurrentPaikyPage(prev => ({ ...prev, [slab.id]: 0 }));
-          }}
-          min="0"
-        />
-      </div>
-
-      {/* Horizontal Pagination at Top */}
-      {slab.paikyCount > PAIKY_PER_PAGE && (
-        <div className="flex justify-between items-center mb-4">
-          <div className="text-sm text-muted-foreground">
-            Page {(currentPaikyPage[slab.id] || 0) + 1} of {Math.ceil(slab.paikyCount / PAIKY_PER_PAGE)}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={(currentPaikyPage[slab.id] || 0) === 0}
-              onClick={() => setCurrentPaikyPage(prev => ({
-                ...prev,
-                [slab.id]: (prev[slab.id] || 0) - 1
-              }))}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={(currentPaikyPage[slab.id] || 0) >= Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) - 1}
-              onClick={() => setCurrentPaikyPage(prev => ({
-                ...prev,
-                [slab.id]: (prev[slab.id] || 0) + 1
-              }))}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Floating Vertical Pagination */}
-      {slab.paikyCount > PAIKY_PER_PAGE && (
-        <div className="absolute right-1 top-1/2 transform -translate-y-1/2 flex flex-col items-center gap-1 z-10 bg-background/90 backdrop-blur-sm p-1 rounded-lg border">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            disabled={(currentPaikyPage[slab.id] || 0) === 0}
-            onClick={() => setCurrentPaikyPage(prev => ({
-              ...prev,
-              [slab.id]: (prev[slab.id] || 0) - 1
-            }))}
-          >
-            <ChevronUp className="h-4 w-4" />
-          </Button>
-          
-          {Array.from({ length: Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) }).map((_, index) => (
-            <Button
-              key={index}
-              variant={(currentPaikyPage[slab.id] || 0) === index ? "default" : "ghost"}
-              size="sm"
-              className={`h-8 w-8 p-0 rounded-full ${
-                (currentPaikyPage[slab.id] || 0) === index 
-                  ? "bg-primary text-primary-foreground" 
-                  : "hover:bg-accent"
-              }`}
-              onClick={() => setCurrentPaikyPage(prev => ({
-                ...prev,
-                [slab.id]: index
-              }))}
-            >
-              {index + 1}
-            </Button>
-          ))}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            disabled={(currentPaikyPage[slab.id] || 0) >= Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) - 1}
-            onClick={() => setCurrentPaikyPage(prev => ({
-              ...prev,
-              [slab.id]: (prev[slab.id] || 0) + 1
-            }))}
-          >
-            <ChevronDown className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* Paginated Entries */}
-      {slab.paikyEntries
-        .slice(
-          (currentPaikyPage[slab.id] || 0) * PAIKY_PER_PAGE,
-          ((currentPaikyPage[slab.id] || 0) + 1) * PAIKY_PER_PAGE
-        )
-        .map((entry, entryIndex) => {
-          const globalIndex = (currentPaikyPage[slab.id] || 0) * PAIKY_PER_PAGE + entryIndex;
-          return (
-            <Card key={globalIndex} className="p-3 mt-2">
-              <h4 className="text-sm font-medium mb-3">Paiky Entry {globalIndex + 1}</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <Label>S.No Type</Label>
-                  <Select
-                    value={entry.sNoTypeUI}
-                    onValueChange={(val) =>
-                      updateSlabEntry(slab.id, "paiky", globalIndex, {
-                        sNoTypeUI: val as SNoTypeUI,
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SNO_TYPES.map((item) => (
-                        <SelectItem key={item.key} value={item.key}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Number</Label>
-                  <Input
-                    value={entry.sNo}
-                    onChange={(e) =>
-                      updateSlabEntry(slab.id, "paiky", globalIndex, {
-                        sNo: e.target.value,
-                      })
-                    }
-                    placeholder="Enter number"
-                  />
-                </div>
-                <div>
-                  <Label>Area Type</Label>
-                  <Select
-                    value={entry.areaUI.areaType}
-                    onValueChange={(val) =>
-                      updateSlabEntry(slab.id, "paiky", globalIndex, {
-                        areaUI: { ...entry.areaUI, areaType: val as AreaTypeUI },
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AREA_TYPES.map((a) => (
-                        <SelectItem key={a.key} value={a.key}>
-                          {a.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="md:col-span-2">
-                  <Label>Area</Label>
-                  {areaFields(entry.areaUI, (area) =>
-                    updateSlabEntry(slab.id, "paiky", globalIndex, {
-                      areaUI: area,
-                    })
-        )}
-                </div>
-                <div className="space-y-2">
-  <Label>7/12 Document</Label>
-  <Input
-    type="file"
-    accept=".pdf,.jpg,.jpeg,.png"
-    onChange={(e) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        handleEntryFileUpload(
-          file, 
-          slab.id,
-          'create',
-          globalIndex,
-          'paiky' // or 'ekatrikaran' depending on context
-        );
-      }
-    }}
-    disabled={loading}
-  />
-  {loading && (
-    <p className="text-sm text-muted-foreground">
-      Uploading to land-documents...
-    </p>
-  )}
-</div>
+            <div className="border-t pt-6 mb-4">
+  <div className="flex justify-center items-center gap-8">
+              {/* Paiky Checkbox */}
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  checked={slab.paiky}
+                  onCheckedChange={(checked) => {
+  updateSlab(slab.id, {
+    paiky: !!checked,
+    paikyCount: checked ? slab.paikyCount : 0,
+    paikyEntries: checked ? slab.paikyEntries : []
+  });
+  setCurrentPaikyPage(prev => ({ ...prev, [slab.id]: 0 }));
+  // Set active tab when paiky is enabled
+  if (checked) {
+    setActiveTab(prev => ({ ...prev, [slab.id]: 'paiky' }));
+  } else if (slab.ekatrikaran) {
+    setActiveTab(prev => ({ ...prev, [slab.id]: 'ekatrikaran' }));
+  }
+}}
+                />
+                <Label>Paiky</Label>
               </div>
-            </Card>
-          );
-        })
-      }
-    </div>
-  )}
-</div>
+
+              {/* Ekatrikaran Checkbox */}
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  checked={slab.ekatrikaran}
+                  onCheckedChange={(checked) => {
+  updateSlab(slab.id, {
+    ekatrikaran: !!checked,
+    ekatrikaranCount: checked ? slab.ekatrikaranCount : 0,
+    ekatrikaranEntries: checked ? slab.ekatrikaranEntries : []
+  });
+  setCurrentEkatrikaranPage(prev => ({ ...prev, [slab.id]: 0 }));
+  // Set active tab when ekatrikaran is enabled
+  if (checked) {
+    setActiveTab(prev => ({ ...prev, [slab.id]: 'ekatrikaran' }));
+  } else if (slab.paiky) {
+    setActiveTab(prev => ({ ...prev, [slab.id]: 'paiky' }));
+  }
+}}
+                />
+                <Label>Ekatrikaran</Label>
+              </div>
+            </div>
+            </div>
+
+            {/* Tab Navigation - Show when both are enabled */}
+            {slab.paiky && slab.ekatrikaran && (
+  <div className="flex space-x-2 border-b">
+    <Button
+      variant={activeTab[slab.id] === 'paiky' || !activeTab[slab.id] ? 'default' : 'ghost'}
+      size="sm"
+      onClick={() => setActiveTab(prev => ({ ...prev, [slab.id]: 'paiky' }))}
+    >
+      Paiky ({slab.paikyCount})
+    </Button>
+    <Button
+      variant={activeTab[slab.id] === 'ekatrikaran' ? 'default' : 'ghost'}
+      size="sm"
+      onClick={() => setActiveTab(prev => ({ ...prev, [slab.id]: 'ekatrikaran' }))}
+    >
+      Ekatrikaran ({slab.ekatrikaranCount})
+    </Button>
+  </div>
+)}
+
+            {/* Paiky Section Content */}
+            {slab.paiky && (activeTab[slab.id] === 'paiky' || (!slab.ekatrikaran && slab.paiky)) && (
+              <div className="space-y-4 pt-4 relative">
+                <div className="space-y-4 pl-6 pr-16"> {/* Added right padding for floating controls */}
+                  <div className="space-y-2">
+                    <Label>Number of Paiky Entries</Label>
+                    <Input
+  type="number"
+  value={slab.paikyCount}
+  onChange={(e) => {
+    const value = e.target.value;
+    if (value === '' || (!isNaN(parseInt(value)) && parseInt(value) >= 0)) {
+      const count = value === '' ? 0 : parseInt(value);
+      updatePaikyCount(slab.id, count);
+      setCurrentPaikyPage(prev => ({ ...prev, [slab.id]: 0 }));
+    }
+  }}
+  min="0"
+  placeholder="0"
+/>
+                  </div>
+
+                  {/* Horizontal Pagination at Top */}
+                  {slab.paikyCount > PAIKY_PER_PAGE && (
+                    <div className="flex justify-between items-center mb-4">
+                      <div className="text-sm text-muted-foreground">
+                        Page {(currentPaikyPage[slab.id] || 0) + 1} of {Math.ceil(slab.paikyCount / PAIKY_PER_PAGE)}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(currentPaikyPage[slab.id] || 0) === 0}
+                          onClick={() => setCurrentPaikyPage(prev => ({
+                            ...prev,
+                            [slab.id]: (prev[slab.id] || 0) - 1
+                          }))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(currentPaikyPage[slab.id] || 0) >= Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) - 1}
+                          onClick={() => setCurrentPaikyPage(prev => ({
+                            ...prev,
+                            [slab.id]: (prev[slab.id] || 0) + 1
+                          }))}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Floating Vertical Pagination - Fixed positioning within this section */}
+                  {slab.paikyCount > PAIKY_PER_PAGE && (
+                    <div className="fixed right-4 top-1/2 transform -translate-y-1/2 flex flex-col items-center gap-1 z-50 bg-white/95 backdrop-blur-sm p-2 rounded-lg border shadow-lg max-h-96 overflow-y-auto">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 flex-shrink-0"
+                        disabled={(currentPaikyPage[slab.id] || 0) === 0}
+                        onClick={() => setCurrentPaikyPage(prev => ({
+                          ...prev,
+                          [slab.id]: (prev[slab.id] || 0) - 1
+                        }))}
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                      
+                      <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+                        {Array.from({ length: Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) }).map((_, index) => (
+                          <Button
+                            key={index}
+                            variant={(currentPaikyPage[slab.id] || 0) === index ? "default" : "ghost"}
+                            size="sm"
+                            className={`h-8 w-8 p-0 rounded-full flex-shrink-0 ${
+                              (currentPaikyPage[slab.id] || 0) === index 
+                                ? "bg-primary text-primary-foreground" 
+                                : "hover:bg-accent"
+                            }`}
+                            onClick={() => setCurrentPaikyPage(prev => ({
+                              ...prev,
+                              [slab.id]: index
+                            }))}
+                          >
+                            {index + 1}
+                          </Button>
+                        ))}
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 flex-shrink-0"
+                        disabled={(currentPaikyPage[slab.id] || 0) >= Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) - 1}
+                        onClick={() => setCurrentPaikyPage(prev => ({
+                          ...prev,
+                          [slab.id]: (prev[slab.id] || 0) + 1
+                        }))}
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Paginated Entries */}
+                  {slab.paikyEntries
+                    .slice(
+                      (currentPaikyPage[slab.id] || 0) * PAIKY_PER_PAGE,
+                      ((currentPaikyPage[slab.id] || 0) + 1) * PAIKY_PER_PAGE
+                    )
+                    .map((entry, entryIndex) => {
+                      const globalIndex = (currentPaikyPage[slab.id] || 0) * PAIKY_PER_PAGE + entryIndex;
+                      return (
+                        <Card key={globalIndex} className="p-3 mt-2">
+                          <h4 className="text-sm font-medium mb-3">Paiky Entry {globalIndex + 1}</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div>
+                              <Label>S.No Type</Label>
+                              <Select
+                                value={entry.sNoTypeUI}
+                                onValueChange={(val) =>
+                                  updateSlabEntry(slab.id, "paiky", globalIndex, {
+                                    sNoTypeUI: val as SNoTypeUI,
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SNO_TYPES.map((item) => (
+                                    <SelectItem key={item.key} value={item.key}>
+                                      {item.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label>Number</Label>
+                              <Input
+                                value={entry.sNo}
+                                onChange={(e) =>
+                                  updateSlabEntry(slab.id, "paiky", globalIndex, {
+                                    sNo: e.target.value,
+                                  })
+                                }
+                                placeholder="Enter number"
+                              />
+                            </div>
+                            <div>
+                              <Label>Area Type</Label>
+                              <Select
+                                value={entry.areaUI.areaType}
+                                onValueChange={(val) =>
+                                  updateSlabEntry(slab.id, "paiky", globalIndex, {
+                                    areaUI: { ...entry.areaUI, areaType: val as AreaTypeUI },
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {AREA_TYPES.map((a) => (
+                                    <SelectItem key={a.key} value={a.key}>
+                                      {a.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <Label>Area</Label>
+                              {areaFields(entry.areaUI, (area) =>
+                                updateSlabEntry(slab.id, "paiky", globalIndex, {
+                                  areaUI: area,
+                                })
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label>7/12 Document</Label>
+                              <Input
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    handleEntryFileUpload(
+                                      file, 
+                                      slab.id,
+                                      'create',
+                                      globalIndex,
+                                      'paiky'
+                                    );
+                                  }
+                                }}
+                                disabled={loading}
+                              />
+                              {entry.integrated712 && (
+                                <a 
+                                  href={entry.integrated712} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-sm text-blue-600 hover:underline"
+                                >
+                                  View Document
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })
+                  }
+                </div>
+              </div>
+            )}
+
+
+            {/* Ekatrikaran Section Content */}
+            {slab.ekatrikaran && (activeTab[slab.id] === 'ekatrikaran' || (!slab.paiky && slab.ekatrikaran)) && (
+              <div className="space-y-4 pt-4 relative">
+                <div className="space-y-4 pl-6 pr-16"> {/* Added right padding for floating controls */}
+                  <div className="space-y-2">
+                    <Label>Number of Ekatrikaran Entries</Label>
+                    <Input
+  type="number"
+  value={slab.ekatrikaranCount}
+  onChange={(e) => {
+    const value = e.target.value;
+    // Allow empty string or valid numbers
+    if (value === '' || (!isNaN(parseInt(value)) && parseInt(value) >= 0)) {
+      const count = value === '' ? 0 : parseInt(value);
+      updateEkatrikaranCount(slab.id, count);
+      setCurrentEkatrikaranPage(prev => ({ ...prev, [slab.id]: 0 }));
+    }
+  }}
+  min="0"
+  placeholder="0"
+/>
+                  </div>
+
+                  {/* Horizontal Pagination at Top */}
+                  {slab.ekatrikaranCount > EKATRIKARAN_PER_PAGE && (
+                    <div className="flex justify-between items-center mb-4">
+                      <div className="text-sm text-muted-foreground">
+                        Page {(currentEkatrikaranPage[slab.id] || 0) + 1} of {Math.ceil(slab.ekatrikaranCount / EKATRIKARAN_PER_PAGE)}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(currentEkatrikaranPage[slab.id] || 0) === 0}
+                          onClick={() => setCurrentEkatrikaranPage(prev => ({
+                            ...prev,
+                            [slab.id]: (prev[slab.id] || 0) - 1
+                          }))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(currentEkatrikaranPage[slab.id] || 0) >= Math.ceil(slab.ekatrikaranCount / EKATRIKARAN_PER_PAGE) - 1}
+                          onClick={() => setCurrentEkatrikaranPage(prev => ({
+                            ...prev,
+                            [slab.id]: (prev[slab.id] || 0) + 1
+                          }))}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Floating Vertical Pagination - Fixed positioning within this section */}
+                  {slab.ekatrikaranCount > EKATRIKARAN_PER_PAGE && (
+                    <div className="fixed right-4 top-1/2 transform -translate-y-1/2 flex flex-col items-center gap-1 z-50 bg-white/95 backdrop-blur-sm p-2 rounded-lg border shadow-lg max-h-96 overflow-y-auto">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 flex-shrink-0"
+                        disabled={(currentEkatrikaranPage[slab.id] || 0) === 0}
+                        onClick={() => setCurrentEkatrikaranPage(prev => ({
+                          ...prev,
+                          [slab.id]: (prev[slab.id] || 0) - 1
+                        }))}
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                      
+                      <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+                        {Array.from({ length: Math.ceil(slab.ekatrikaranCount / EKATRIKARAN_PER_PAGE) }).map((_, index) => (
+                          <Button
+                            key={index}
+                            variant={(currentEkatrikaranPage[slab.id] || 0) === index ? "default" : "ghost"}
+                            size="sm"
+                            className={`h-8 w-8 p-0 rounded-full flex-shrink-0 ${
+                              (currentEkatrikaranPage[slab.id] || 0) === index 
+                                ? "bg-primary text-primary-foreground" 
+                                : "hover:bg-accent"
+                            }`}
+                            onClick={() => setCurrentEkatrikaranPage(prev => ({
+                              ...prev,
+                              [slab.id]: index
+                            }))}
+                          >
+                            {index + 1}
+                          </Button>
+                        ))}
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 flex-shrink-0"
+                        disabled={(currentEkatrikaranPage[slab.id] || 0) >= Math.ceil(slab.ekatrikaranCount / EKATRIKARAN_PER_PAGE) - 1}
+                        onClick={() => setCurrentEkatrikaranPage(prev => ({
+                          ...prev,
+                          [slab.id]: (prev[slab.id] || 0) + 1
+                        }))}
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Paginated Entries */}
+                  {slab.ekatrikaranEntries
+                    .slice(
+                      (currentEkatrikaranPage[slab.id] || 0) * EKATRIKARAN_PER_PAGE,
+                      ((currentEkatrikaranPage[slab.id] || 0) + 1) * EKATRIKARAN_PER_PAGE
+                    )
+                    .map((entry, entryIndex) => {
+                      const globalIndex = (currentEkatrikaranPage[slab.id] || 0) * EKATRIKARAN_PER_PAGE + entryIndex;
+                      return (
+                        <Card key={globalIndex} className="p-3 mt-2">
+                          <h4 className="text-sm font-medium mb-3">Ekatrikaran Entry {globalIndex + 1}</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div>
+                              <Label>S.No Type</Label>
+                              <Select
+                                value={entry.sNoTypeUI}
+                                onValueChange={(val) =>
+                                  updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                                    sNoTypeUI: val as SNoTypeUI,
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SNO_TYPES.map((item) => (
+                                    <SelectItem key={item.key} value={item.key}>
+                                      {item.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label>Number</Label>
+                              <Input
+                                value={entry.sNo}
+                                onChange={(e) =>
+                                  updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                                    sNo: e.target.value,
+                                  })
+                                }
+                                placeholder="Enter number"
+                              />
+                            </div>
+                            <div>
+                              <Label>Area Type</Label>
+                              <Select
+                                value={entry.areaUI.areaType}
+                                onValueChange={(val) =>
+                                  updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                                    areaUI: { ...entry.areaUI, areaType: val as AreaTypeUI },
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {AREA_TYPES.map((a) => (
+                                    <SelectItem key={a.key} value={a.key}>
+                                      {a.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <Label>Area</Label>
+                              {areaFields(entry.areaUI, (area) =>
+                                updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                                  areaUI: area,
+                                })
+                              )}
+                            </div>
+                            <div className="space-y-2">
+                              <Label>7/12 Document</Label>
+                              <Input
+                                type="file"
+                                accept=".pdf,.jpg,.jpeg,.png"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    handleEntryFileUpload(
+                                      file, 
+                                      slab.id,
+                                      'create',
+                                      globalIndex,
+                                      'ekatrikaran'
+                                    );
+                                  }
+                                }}
+                                disabled={loading}
+                              />
+                              {entry.integrated712 && (
+                                <a 
+                                  href={entry.integrated712} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-sm text-blue-600 hover:underline"
+                                >
+                                  View Document
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })
+                  }
+                </div>
+              </div>
+            )}
             </>
     )}
           </Card>

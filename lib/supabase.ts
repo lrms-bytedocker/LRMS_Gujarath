@@ -220,8 +220,8 @@ export class LandRecordService {
       .from('year_slabs')
       .insert(yearSlabs.map(slab => ({
         land_record_id: landRecordId,
-        start_year: slab.start_year, // Ensure this matches
-        end_year: slab.end_year,    // Ensure this matches
+        start_year: slab.start_year,
+        end_year: slab.end_year,   
         s_no: slab.s_no,
         s_no_type: slab.s_no_type,
         area_value: slab.area_value,
