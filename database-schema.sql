@@ -30,23 +30,26 @@ CREATE TABLE year_slabs (
     
     start_year INTEGER NOT NULL,
     end_year INTEGER NOT NULL,
-    s_no VARCHAR(255) NOT NULL,
+    s_no VARCHAR(255),
+    s_no_type VARCHAR(20),  -- Added to track type (survey_no/block_no/re_survey_no)
+    area_value NUMERIC,
+    area_unit VARCHAR(10) ,  -- 'acre', 'guntha', or 'sq_m'
     integrated_712 VARCHAR(255),
     paiky BOOLEAN DEFAULT false,
-    paiky_count INTEGER DEFAULT 0,
-    ekatrikaran BOOLEAN DEFAULT false,
-    ekatrikaran_count INTEGER DEFAULT 0
+    ekatrikaran BOOLEAN DEFAULT false
 );
 
 -- Create slab entries table
 CREATE TABLE slab_entries (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     year_slab_id UUID REFERENCES year_slabs(id) ON DELETE CASCADE,
-    entry_type VARCHAR(20) NOT NULL CHECK (entry_type IN ('paiky', 'ekatrikaran')),
+    entry_type VARCHAR(20) NOT NULL,  -- 'paiky' or 'ekatrikaran'
     s_no VARCHAR(255) NOT NULL,
-    area_value DECIMAL(10,4) NOT NULL,
-    area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('acre', 'guntha', 'sq_m')),
-    integrated_712 VARCHAR(255)
+    s_no_type VARCHAR(20) NOT NULL,
+    area_value NUMERIC NOT NULL,
+    area_unit VARCHAR(10) NOT NULL,
+    integrated_712 VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- Create farmers table
@@ -72,7 +75,10 @@ CREATE TABLE panipatraks (
 CREATE TABLE panipatrak_farmers (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     panipatrak_id UUID REFERENCES panipatraks(id) ON DELETE CASCADE,
-    farmer_id UUID REFERENCES farmers(id) ON DELETE CASCADE
+    name VARCHAR(255) NOT NULL,
+    area_value NUMERIC NOT NULL,
+    area_unit VARCHAR(10) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- Create nondhs table
@@ -102,12 +108,26 @@ CREATE TABLE nondh_details (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+CREATE TABLE nondh_owner_relations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    nondh_detail_id UUID REFERENCES nondh_details(id) ON DELETE CASCADE,
+    owner_name VARCHAR(255) NOT NULL,
+    s_no VARCHAR(255) NOT NULL,
+    area_value NUMERIC NOT NULL,
+    area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('guntha', 'sq_m')),
+    tenure VARCHAR(50) NOT NULL,
+    hukam_type VARCHAR(50),
+    restraining_order BOOLEAN,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- Create indexes for better performance
 CREATE INDEX idx_land_records_district ON land_records(district);
 CREATE INDEX idx_land_records_status ON land_records(status);
 CREATE INDEX idx_year_slabs_land_record ON year_slabs(land_record_id);
 CREATE INDEX idx_panipatraks_land_record ON panipatraks(land_record_id);
 CREATE INDEX idx_nondhs_land_record ON nondhs(land_record_id);
+CREATE INDEX idx_nondh_owner_relations_detail_id ON nondh_owner_relations(nondh_detail_id);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE land_records ENABLE ROW LEVEL SECURITY;

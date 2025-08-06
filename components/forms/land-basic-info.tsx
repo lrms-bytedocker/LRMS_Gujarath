@@ -12,9 +12,7 @@ import { Upload, ArrowRight } from "lucide-react"
 import { useLandRecord } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
-
-// Import your promulgation data and utils
-// import { promulgationData, getDistricts, getTalukas, getVillages, isPromulgation } from "@/lib/promulgationData"
+import { LandRecordService } from "@/lib/supabase";
 import { promulgationData, getDistricts, getTalukas, getVillages, isPromulgation } from "@/lib/mock-data";
 
 export default function LandBasicInfoComponent() {
@@ -37,7 +35,11 @@ export default function LandBasicInfoComponent() {
     blockNo: "",
     reSurveyNo: "",
     integrated712: "",
+    integrated712FileName: "", // Store original filename separately
   })
+
+  // State for file upload
+  const [uploadedFileName, setUploadedFileName] = useState<string>("")
 
   // Prefill from previous info (if any)
   useEffect(() => {
@@ -47,13 +49,26 @@ export default function LandBasicInfoComponent() {
       setVillage(landBasicInfo.village || "")
       setPromStatus(isPromulgation(landBasicInfo.district, landBasicInfo.taluka, landBasicInfo.village))
       setFormData({
-        area: landBasicInfo.area,
-        sNoType: landBasicInfo.sNoType,
-        sNo: landBasicInfo.sNo,
+        area: landBasicInfo.area || { value: 0, unit: "sq_m" },
+        sNoType: landBasicInfo.sNoType || "s_no",
+        sNo: landBasicInfo.sNo || "",
         blockNo: landBasicInfo.blockNo || "",
         reSurveyNo: landBasicInfo.reSurveyNo || "",
-        integrated712: landBasicInfo.integrated712 || ""
+        integrated712: landBasicInfo.integrated712 || "",
+        integrated712FileName: landBasicInfo.integrated712FileName || ""
       })
+      
+      // Set uploaded file name - prioritize stored filename over URL parsing
+      if (landBasicInfo.integrated712FileName) {
+        setUploadedFileName(landBasicInfo.integrated712FileName)
+      } else if (landBasicInfo.integrated712) {
+        // Fallback: Extract filename from URL
+        const urlParts = landBasicInfo.integrated712.split('/')
+        const fileName = urlParts[urlParts.length - 1]
+        // Remove timestamp prefix if present (format: timestamp_filename)
+        const cleanFileName = fileName.includes('_') ? fileName.split('_').slice(1).join('_') : fileName
+        setUploadedFileName(cleanFileName || "Document uploaded")
+      }
     }
   }, [landBasicInfo])
 
@@ -74,55 +89,117 @@ export default function LandBasicInfoComponent() {
     setPromStatus(isPromulgation(district, taluka, value))
   }
 
-  // File upload
+  // File upload with better error handling and filename sanitization
   const handleFileUpload = async (file: File) => {
+    if (!file) return
+    
     try {
-      const path = `documents/${Date.now()}_${file.name}`
+      setLoading(true)
+      
+      // Sanitize filename for storage but keep original for display
+      const sanitizedFileName = file.name
+        .replace(/[^a-zA-Z0-9._-]/g, '_') // Replace invalid chars with underscore
+        .replace(/_{2,}/g, '_') // Replace multiple underscores with single
+        .replace(/^_|_$/g, '') // Remove leading/trailing underscores
+      
+      const path = `${Date.now()}_${sanitizedFileName}`
       const url = await uploadFile(file, "land-documents", path)
-      setFormData((prev) => ({ ...prev, integrated712: url }))
+      
+      if (!url) {
+        throw new Error("Failed to upload file")
+      }
+      
+      setFormData((prev) => ({ 
+        ...prev, 
+        integrated712: url,
+        integrated712FileName: file.name // Store original filename for display
+      }))
+      setUploadedFileName(file.name) // Display original filename
       toast({ title: "File uploaded successfully" })
+      
     } catch (error) {
-      toast({ title: "Error uploading file", variant: "destructive" })
+      console.error('File upload error:', error)
+      toast({ 
+        title: "Error uploading file", 
+        description: "Please try again or contact support",
+        variant: "destructive" 
+      })
+    } finally {
+      setLoading(false)
     }
+  }
+
+  // Remove uploaded file
+  const handleRemoveFile = () => {
+    setFormData((prev) => ({ 
+      ...prev, 
+      integrated712: "",
+      integrated712FileName: ""
+    }))
+    setUploadedFileName("")
   }
 
   // Submission
   const handleSubmit = async () => {
     // Validate all required fields
-    if (!district || !taluka || !village || !formData.sNo) {
+    if (!district || !taluka || !village || !formData.blockNo) {
       toast({ title: "Please fill all required fields", variant: "destructive" })
       return
     }
-    if (promStatus && (!formData.blockNo || !formData.reSurveyNo)) {
-      toast({ title: "Block No and Re Survey No are required for Promulgation", variant: "destructive" })
+    if (promStatus && !formData.reSurveyNo) {
+      toast({ title: "Re Survey No is required for Promulgation", variant: "destructive" })
       return
     }
+    
     setLoading(true)
     try {
-      // Example: save to DB (uncomment and adapt as needed)
-      /*
-      const { error } = await supabase.from("lands").insert({
+      // Prepare data for saving
+      const landRecordData: any = {
         district,
         taluka,
         village,
-        area: formData.area.value,
+        area_value: formData.area.value,
         area_unit: formData.area.unit,
         s_no_type: formData.sNoType,
         s_no: formData.sNo,
-        isPromulgation: promStatus,
-        blockNo: formData.blockNo,
-        reSurveyNo: formData.reSurveyNo,
-        integrated712: formData.integrated712
-      })
+        is_promulgation: promStatus || false,
+        block_no: formData.blockNo,
+        re_survey_no: formData.reSurveyNo || null,
+        integrated_712: formData.integrated712 || null,
+        integrated_712_filename: formData.integrated712FileName || null, // Store filename in DB
+        current_step: 1,
+        status: 'draft'
+      }
+
+      // Only include ID if we're updating an existing record
+      if (landBasicInfo?.id) {
+        landRecordData.id = landBasicInfo.id
+      }
+
+      const { data: result, error } = await LandRecordService.saveLandRecord(landRecordData)
+      
       if (error) throw error
-      */
-      // setLandBasicInfo({
-      //   district, taluka, village, area: formData.area, sNoType: formData.sNoType, sNo: formData.sNo,
-      //   isPromulgation: promStatus, blockNo: formData.blockNo, reSurveyNo: formData.reSurveyNo, integrated712: formData.integrated712
-      // })
+
+      // Update context with saved data
+      setLandBasicInfo({
+        id: result.id,
+        district, 
+        taluka, 
+        village, 
+        area: formData.area, 
+        sNoType: formData.sNoType, 
+        sNo: formData.sNo,
+        isPromulgation: promStatus, 
+        blockNo: formData.blockNo, 
+        reSurveyNo: formData.reSurveyNo, 
+        integrated712: formData.integrated712,
+        integrated712FileName: formData.integrated712FileName // Store in context
+      })
+      
       toast({ title: "Land basic info saved successfully" })
       setCurrentStep(2)
     } catch (error) {
+      console.error('Error saving land record:', error)
       toast({ title: "Error saving data", variant: "destructive" })
     } finally {
       setLoading(false)
@@ -190,94 +267,20 @@ export default function LandBasicInfoComponent() {
           </div>
         )}
 
-        {/* Area Input */}
-        {/* <div className="space-y-4">
-          <Label>Area Input *</Label>
-          <div className="flex gap-4 items-end">
-            <div className="flex-1">
-              <Label htmlFor="area-value">Area Value</Label>
-              <Input
-                id="area-value"
-                type="number"
-                value={formData.area.value}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    area: { ...prev.area, value: Number.parseFloat(e.target.value) || 0 }
-                  }))
-                }
-                placeholder="Enter area"
-              />
-            </div>
-            <div className="flex-1">
-              <Label htmlFor="area-unit">Unit</Label>
-              <Select
-                value={formData.area.unit}
-                onValueChange={(value: "acre" | "guntha" | "sq_m") =>
-                  setFormData((prev) => ({ ...prev, area: { ...prev.area, unit: value } }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="acre">Acre</SelectItem>
-                  <SelectItem value="guntha">Guntha</SelectItem>
-                  <SelectItem value="sq_m">Square Meter</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div> */}
-
-        {/* S.No Type */}
-        {/* <div className="space-y-4">
-          <Label>S.No Type *</Label>
-          <RadioGroup
-            value={formData.sNoType}
-            onValueChange={(value: "s_no" | "block_no" | "re_survey_no") =>
-              setFormData((prev) => ({ ...prev, sNoType: value }))
-            }
-            className="flex gap-6"
-          >
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="s_no" id="s_no" />
-              <Label htmlFor="s_no">S.No</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="block_no" id="block_no" />
-              <Label htmlFor="block_no">Block No</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="re_survey_no" id="re_survey_no" />
-              <Label htmlFor="re_survey_no">Re Survey No</Label>
-            </div>
-          </RadioGroup>
-        </div> */}
-
-        {/* S.No Input */}
-        {/* <div className="space-y-2">
-          <Label htmlFor="sno">S.No *</Label>
+        {/* Block No - Always show */}
+        <div className="space-y-2">
+          <Label htmlFor="block-no">Block No *</Label>
           <Input
-            id="sno"
-            value={formData.sNo}
-            onChange={(e) => setFormData((prev) => ({ ...prev, sNo: e.target.value }))}
-            placeholder="Enter S.No"
+            id="block-no"
+            value={formData.blockNo}
+            onChange={(e) => setFormData((prev) => ({ ...prev, blockNo: e.target.value }))}
+            placeholder="Enter Block No"
           />
-        </div> */}
+        </div>
 
-        {/* Block No & Re Survey No: Only show if isPromulgation Yes */}
-            <div className="space-y-2">
-              <Label htmlFor="block-no">Block No *</Label>
-              <Input
-                id="block-no"
-                value={formData.blockNo}
-                onChange={(e) => setFormData((prev) => ({ ...prev, blockNo: e.target.value }))}
-                placeholder="Enter Block No"
-              />
-            </div>
+        {/* Re Survey No - Only show if promulgation is Yes */}
         {promStatus && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
+          <div className="p-4 border rounded-lg bg-blue-50">
             <div className="space-y-2">
               <Label htmlFor="re-survey-no">Re Survey No *</Label>
               <Input
@@ -290,24 +293,55 @@ export default function LandBasicInfoComponent() {
           </div>
         )}
 
-        {/* Document Upload */}
+        {/* Document Upload with Better UX */}
         <div className="space-y-2">
           <Label htmlFor="integrated-712">Integrated 7/12 Document</Label>
           <div className="flex items-center gap-4">
-            <Input
-              id="integrated-712"
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) handleFileUpload(file)
-              }}
-            />
-            <Upload className="w-5 h-5 text-muted-foreground" />
+            <div className="relative">
+              <input
+                id="integrated-712"
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    handleFileUpload(file)
+                    // Clear the input so same file can be selected again
+                    e.target.value = ''
+                  }
+                }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                disabled={loading}
+              />
+              <Button 
+                type="button" 
+                variant="outline" 
+                disabled={loading}
+                className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Upload className="w-4 h-4" />
+                {loading ? "Uploading..." : "Choose File"}
+              </Button>
+            </div>
+            {uploadedFileName && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                <span className="text-sm text-green-800 max-w-[200px] truncate" title={uploadedFileName}>
+                  {uploadedFileName}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleRemoveFile}
+                  className="text-green-600 hover:text-green-800 text-lg leading-none"
+                  title="Remove file"
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </div>
-          {formData.integrated712 && (
-            <p className="text-sm text-green-600">Document uploaded successfully</p>
-          )}
+          <p className="text-xs text-gray-500">
+            Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+          </p>
         </div>
 
         {/* Submit Button */}
