@@ -836,7 +836,7 @@ const handleSaveAndNext = async () => {
       return;
     }
 
-    // Convert to database format
+    // Convert to database format - Fixed version
     const dbSlabs = slabs.map(slab => ({
       start_year: slab.startYear,
       end_year: slab.endYear,
@@ -852,7 +852,9 @@ const handleSaveAndNext = async () => {
       paiky_count: slab.paikyCount,
       ekatrikaran: slab.ekatrikaran,
       ekatrikaran_count: slab.ekatrikaranCount,
-      paiky_entries: slab.paikyEntries.map(entry => ({
+      
+      // FIXED: Properly structure the entries arrays
+      paiky_entries: slab.paikyEntries?.map(entry => ({
         s_no: entry.sNo,
         s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
         area_value: entry.areaUI.areaType === "sq_m"
@@ -861,8 +863,9 @@ const handleSaveAndNext = async () => {
             convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
         area_unit: "sq_m",
         integrated_712: entry.integrated712
-      })),
-      ekatrikaran_entries: slab.ekatrikaranEntries.map(entry => ({
+      })) || [], // Ensure it's always an array
+      
+      ekatrikaran_entries: slab.ekatrikaranEntries?.map(entry => ({
         s_no: entry.sNo,
         s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
         area_value: entry.areaUI.areaType === "sq_m"
@@ -871,7 +874,7 @@ const handleSaveAndNext = async () => {
             convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
         area_unit: "sq_m",
         integrated_712: entry.integrated712
-      }))
+      })) || [] // Ensure it's always an array
     }));
 
     if (!landBasicInfo?.id) {
@@ -885,7 +888,10 @@ const handleSaveAndNext = async () => {
       dbSlabs
     );
     
-    if (error) throw error;
+    if (error) {
+      console.error('Save error details:', error);
+      throw error;
+    }
 
     // Update context
     const { data: fetchedSlabs } = await LandRecordService.getYearSlabs(landBasicInfo.id);
@@ -898,7 +904,11 @@ const handleSaveAndNext = async () => {
     
   } catch (error) {
     console.error('Save error:', error);
-    toast({ title: "Save failed", variant: "destructive" });
+    toast({ 
+      title: "Save failed", 
+      description: error?.message || "Unknown error occurred",
+      variant: "destructive" 
+    });
   } finally {
     setLoading(false);
   }

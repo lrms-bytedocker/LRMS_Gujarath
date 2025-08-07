@@ -198,24 +198,24 @@ export class LandRecordService {
       .from('year_slabs')
       .select('id')
       .eq('land_record_id', landRecordId);
-
+      
     if (fetchError) throw fetchError;
-
+    
     if (existingSlabs?.length) {
       // First delete entries
       const { error: entryDeleteError } = await supabase
         .from('slab_entries')
         .delete()
         .in('year_slab_id', existingSlabs.map(s => s.id));
-      
+        
       if (entryDeleteError) throw entryDeleteError;
-
+      
       // Then delete slabs
       const { error: slabDeleteError } = await supabase
         .from('year_slabs')
         .delete()
         .eq('land_record_id', landRecordId);
-      
+        
       if (slabDeleteError) throw slabDeleteError;
     }
 
@@ -231,15 +231,15 @@ export class LandRecordService {
         area_value: slab.area_value,
         area_unit: slab.area_unit,
         integrated_712: slab.integrated_712,
-        paiky: slab.paiky,
+        paiky: slab.paiky || false,
         paiky_count: slab.paiky_count || 0,
-        ekatrikaran: slab.ekatrikaran,
+        ekatrikaran: slab.ekatrikaran || false,
         ekatrikaran_count: slab.ekatrikaran_count || 0
       })))
       .select('id');
 
     if (slabError) throw slabError;
-
+    
     if (!insertedSlabs || insertedSlabs.length !== yearSlabs.length) {
       throw new Error("Failed to insert all year slabs");
     }
@@ -250,60 +250,77 @@ export class LandRecordService {
     for (let i = 0; i < yearSlabs.length; i++) {
       const slab = yearSlabs[i];
       const slabId = insertedSlabs[i].id;
-
-      // Add paiky entries
-      if (slab.paiky && slab.paiky_entries?.length) {
-        slab.paiky_entries.forEach(entry => {
-          allEntries.push({
-            year_slab_id: slabId,
-            entry_type: 'paiky',
-            s_no: entry.s_no,
-            s_no_type: entry.s_no_type,
-            area_value: entry.area_value,
-            area_unit: entry.area_unit,
-            integrated_712: entry.integrated_712 || null
-          });
+      
+      console.log(`Processing slab ${i}:`, {
+        paiky: slab.paiky,
+        paiky_entries: slab.paiky_entries?.length || 0,
+        ekatrikaran: slab.ekatrikaran,
+        ekatrikaran_entries: slab.ekatrikaran_entries?.length || 0
+      });
+      
+      // Add paiky entries - FIXED: Check for entries existence, not just flag
+      if (slab.paiky_entries && Array.isArray(slab.paiky_entries) && slab.paiky_entries.length > 0) {
+        slab.paiky_entries.forEach((entry, entryIndex) => {
+          // Only add entries that have some data
+          if (entry.s_no || entry.area_value > 0) {
+            allEntries.push({
+              year_slab_id: slabId,
+              entry_type: 'paiky',
+              s_no: entry.s_no || '',
+              s_no_type: entry.s_no_type || 's_no',
+              area_value: entry.area_value || 0,
+              area_unit: entry.area_unit || 'sq_m',
+              integrated_712: entry.integrated_712 || null
+            });
+          }
         });
       }
-
-      // Add ekatrikaran entries
-      if (slab.ekatrikaran && slab.ekatrikaran_entries?.length) {
-        slab.ekatrikaran_entries.forEach(entry => {
-          allEntries.push({
-            year_slab_id: slabId,
-            entry_type: 'ekatrikaran',
-            s_no: entry.s_no,
-            s_no_type: entry.s_no_type,
-            area_value: entry.area_value,
-            area_unit: entry.area_unit,
-            integrated_712: entry.integrated_712 || null
-          });
+      
+      // Add ekatrikaran entries - FIXED: Check for entries existence, not just flag
+      if (slab.ekatrikaran_entries && Array.isArray(slab.ekatrikaran_entries) && slab.ekatrikaran_entries.length > 0) {
+        slab.ekatrikaran_entries.forEach((entry, entryIndex) => {
+          // Only add entries that have some data
+          if (entry.s_no || entry.area_value > 0) {
+            allEntries.push({
+              year_slab_id: slabId,
+              entry_type: 'ekatrikaran',
+              s_no: entry.s_no || '',
+              s_no_type: entry.s_no_type || 's_no',
+              area_value: entry.area_value || 0,
+              area_unit: entry.area_unit || 'sq_m',
+              integrated_712: entry.integrated_712 || null
+            });
+          }
         });
       }
     }
 
+    console.log(`Total entries to insert: ${allEntries.length}`);
+    
     // Insert all entries in a single batch if there are any
     if (allEntries.length > 0) {
       const { error: entryError } = await supabase
         .from('slab_entries')
         .insert(allEntries);
-      
-      if (entryError) throw entryError;
+        
+      if (entryError) {
+        console.error('Entry insert error:', entryError);
+        throw entryError;
+      }
     }
 
-    return { 
+    return {
       data: {
         slabs: insertedSlabs,
         entriesCount: allEntries.length
-      }, 
-      error: null 
+      },
+      error: null
     };
   } catch (error) {
     console.error('Detailed save error:', error);
     return { data: null, error };
   }
 }
-
   // Save nondhs
   static async saveNondhs(landRecordId: string, nondhs: any[]): Promise<{ data: any, error: any }> {
     try {
