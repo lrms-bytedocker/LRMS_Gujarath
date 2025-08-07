@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronUp, ChevronDown  } from "lucide-react";
 import {
   Card,
@@ -24,6 +24,7 @@ import {
   Plus,
   ArrowRight,
   ArrowLeft,
+  Upload
 } from "lucide-react";
 import {
   useLandRecord,
@@ -35,6 +36,7 @@ import { convertToSquareMeters, convertFromSquareMeters } from "@/lib/supabase";
 import { Loader2 } from "lucide-react"; // For loading spinner
 import { uploadFile } from "@/lib/supabase"; // For file uploads
 import { LandRecordService } from "@/lib/supabase"; // For saving data
+import { useStepFormData } from "@/hooks/use-step-form-data";
 
 // ---------- UI-only Types ----------
 type SNoTypeUI = "survey_no" | "block_no" | "re_survey_no";
@@ -114,28 +116,70 @@ function getAutoPopulatedSNoData(landBasicInfo: any, selectedType: SNoTypeUI): s
   if (!landBasicInfo) return "";
   
   switch(selectedType) {
+    case "survey_no":
+      // Only return sNo for survey_no, no fallback to blockNo
+      return landBasicInfo.sNo || "";
     case "block_no":
+      // Only return blockNo for block_no
       return landBasicInfo.blockNo || "";
     case "re_survey_no":
+      // Only return reSurveyNo for re_survey_no
       return landBasicInfo.reSurveyNo || "";
-    case "survey_no":
-      return landBasicInfo.sNo || "";
     default:
       return "";
   }
 }
 // Convert from UI-area to context-area
-function fromAreaUI(areaUI: AreaUI): { value: number; unit: "acre" | "guntha" | "sq_m" } {
-  if (areaUI.areaType === "sq_m") return { value: areaUI.sq_m || 0, unit: "sq_m" };
-  if ((areaUI.acre ?? 0) > 0) return { value: areaUI.acre!, unit: "acre" };
-  if ((areaUI.guntha ?? 0) > 0) return { value: areaUI.guntha!, unit: "guntha" };
-  return { value: 0, unit: "acre" };
+function fromAreaUI(areaUI: AreaUI): { value: number; unit: "sq_m" | "acre" | "guntha" } {
+  if (areaUI.areaType === "sq_m") {
+    return {
+      value: areaUI.sq_m || 0,
+      unit: "sq_m"
+    };
+  } else {
+    // For acre_guntha, we need to store them separately
+    if (areaUI.acre && areaUI.acre > 0) {
+      return {
+        value: areaUI.acre,
+        unit: "acre"
+      };
+    } else if (areaUI.guntha && areaUI.guntha > 0) {
+      return {
+        value: areaUI.guntha,
+        unit: "guntha"
+      };
+    }
+    return { value: 0, unit: "sq_m" }; // Default fallback
+  }
 }
-function toAreaUI(area: { value: number; unit: "acre" | "guntha" | "sq_m" }): AreaUI {
-  if (area.unit === "sq_m") return { areaType: "sq_m", sq_m: area.value };
-  if (area.unit === "acre") return { areaType: "acre_guntha", acre: area.value, guntha: 0 };
-  if (area.unit === "guntha") return { areaType: "acre_guntha", acre: 0, guntha: area.value };
-  return { areaType: "acre_guntha", acre: 0, guntha: 0 };
+
+function toAreaUI(area?: { value: number; unit: "sq_m" | "acre" | "guntha" }): AreaUI {
+  if (!area) {
+    return { areaType: "acre_guntha", acre: 0, guntha: 0 };
+  }
+
+  if (area.unit === "sq_m") {
+    return {
+      areaType: "sq_m",
+      sq_m: area.value,
+      acre: convertFromSquareMeters(area.value, "acre"),
+      guntha: convertFromSquareMeters(area.value, "guntha") % 40
+    };
+  } else if (area.unit === "acre") {
+    return {
+      areaType: "acre_guntha",
+      acre: area.value,
+      guntha: 0,
+      sq_m: convertToSquareMeters(area.value, "acre")
+    };
+  } else { // guntha
+    return {
+      areaType: "acre_guntha",
+      acre: 0,
+      guntha: area.value,
+      sq_m: convertToSquareMeters(area.value, "guntha")
+    };
+  }
 }
 function fromSlabEntryUI(e: SlabEntryUI): SlabEntry {
   return {
@@ -175,8 +219,22 @@ function toYearSlabUI(s: YearSlab): YearSlabUI {
 
 // ---------- MAIN COMPONENT ----------
 export default function YearSlabs() {
-  const { yearSlabs, setYearSlabs, setCurrentStep, landBasicInfo } = useLandRecord();
+  const { 
+    yearSlabs, 
+    setYearSlabs, 
+    setCurrentStep, 
+    landBasicInfo, 
+    currentStep 
+  } = useLandRecord();
   const { toast } = useToast();
+  
+  // Add this hook
+  const { 
+    getStepData, 
+    updateStepData, 
+    markAsSaved,
+    hasUnsavedChanges
+  } = useStepFormData(2);
   const [loading, setLoading] = useState(false);
   const [currentPaikyPage, setCurrentPaikyPage] = useState<Record<string, number>>({});
 const PAIKY_PER_PAGE = 5;
@@ -185,6 +243,9 @@ const PAIKY_PER_PAGE = 5;
    const [currentEkatrikaranPage, setCurrentEkatrikaranPage] = useState<Record<string, number>>({});
 const EKATRIKARAN_PER_PAGE = 5;
 const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ekatrikaran'>>({});
+const [slabUploadedFileNames, setSlabUploadedFileNames] = useState<Record<string, string>>({});
+const [entryUploadedFileNames, setEntryUploadedFileNames] = useState<Record<string, string>>({});
+
   const handleEntryFileUpload = async (
   file: File,
   slabId: string,
@@ -217,13 +278,23 @@ const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ek
       updateSlabEntry(slabId, entryType, entryIndex, {
         integrated712: url
       });
+      // Track filename for entries
+      const entryKey = `${slabId}_${entryType}_${entryIndex}`;
+      setEntryUploadedFileNames(prev => ({
+        ...prev,
+        [entryKey]: file.name
+      }));
     } else {
       updateSlab(slabId, {
         integrated712: url
       });
+      // Track filename for main slab
+      setSlabUploadedFileNames(prev => ({
+        ...prev,
+        [slabId]: file.name
+      }));
     }
     
-    setUploadedFileName(file.name);
     toast({ 
       title: "File uploaded successfully",
       description: "Document saved to land-documents bucket"
@@ -231,7 +302,6 @@ const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ek
     
   } catch (error) {
     console.error('File upload error:', error);
-    setUploadedFileName("");
     toast({ 
       title: "Upload failed", 
       description: error.message,
@@ -241,167 +311,354 @@ const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ek
     setLoading(false);
   }
 }
-  useEffect(() => {
-  if (yearSlabs?.length) {
-    setSlabs(yearSlabs.map(toYearSlabUI));
-  } else {
-    const autoSNoData = getAutoPopulatedSNoData(landBasicInfo, "survey_no");
-    const defaultArea = landBasicInfo?.area 
-      ? toAreaUI(landBasicInfo.area) 
-      : { areaType: "acre_guntha", acre: 0, guntha: 0 };
-    
-    setSlabs([{
-      id: "1",
-      startYear: new Date().getFullYear(),
-      endYear: new Date().getFullYear(),
-      sNoTypeUI: "survey_no",
-      sNo: autoSNoData?.sNo || "",
-      areaUI: defaultArea,
-      integrated712: landBasicInfo?.integrated712 || "",
-      paiky: false,
-      paikyCount: 0,
-      paikyEntries: [],
-      ekatrikaran: false,
-      ekatrikaranCount: 0,
-      ekatrikaranEntries: [],
-      collapsed: false
-    }]);
-  }
-}, [yearSlabs, landBasicInfo]);
+
+
+ // Replace the useEffect with this more robust version
+useEffect(() => {
+  const loadData = async () => {
+    try {
+      if (landBasicInfo?.id) {
+        const { data: dbSlabs, error } = await LandRecordService.getYearSlabs(landBasicInfo.id);
+        
+        if (!error && dbSlabs) {
+          setSlabs(dbSlabs.map(s => ({
+            ...toYearSlabUI(s),
+            collapsed: false
+          })));
+          return;
+        }
+      }
+
+      // Fallback to empty state - let user enter S.No manually
+      setSlabs([{
+        id: "1",
+        startYear: "",
+        endYear: 2004,
+        sNoTypeUI: "survey_no",
+        sNo: "", // Start with empty field
+        areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
+          areaType: "acre_guntha", 
+          acre: 0, 
+          guntha: 0 
+        },
+        integrated712: "",
+        paiky: false,
+        paikyCount: 0,
+        paikyEntries: [],
+        ekatrikaran: false,
+        ekatrikaranCount: 0,
+        ekatrikaranEntries: [],
+        collapsed: false
+      }]);
+    } catch (error) {
+      console.error('Error loading slabs:', error);
+      // Fallback with error handling
+      setSlabs([{
+        id: "1",
+        startYear: "",
+        endYear: 2004,
+        sNoTypeUI: "survey_no",
+        sNo: "", // Start with empty field
+        areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
+        integrated712: "",
+        paiky: false,
+        paikyCount: 0,
+        paikyEntries: [],
+        ekatrikaran: false,
+        ekatrikaranCount: 0,
+        ekatrikaranEntries: [],
+        collapsed: false
+      }]);
+    }
+  };
+
+  loadData();
+}, [landBasicInfo]);
+
+useEffect(() => {
+    if (slabs.length > 0) {
+      // Only update if there's actual content
+      const hasContent = slabs.some(slab => 
+  (slab.sNo && slab.sNo.trim() !== "") || 
+  slab.startYear !== "" ||
+  slab.paikyEntries.length > 0 ||
+  slab.ekatrikaranEntries.length > 0
+);
+      
+      if (hasContent || slabs.length > 1) {
+        const timeoutId = setTimeout(() => {
+          updateStepData({ yearSlabs: slabs.map(fromYearSlabUI) });
+        }, 300);
+        
+        return () => clearTimeout(timeoutId);
+      }
+    }
+  }, [slabs, updateStepData]);
+
+useEffect(() => {
+  const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    if (hasUnsavedChanges[currentStep]) {
+      e.preventDefault();
+      e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+    }
+  };
+
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  return () => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+  };
+}, [hasUnsavedChanges, currentStep]);
 
   // --- UI rendering helpers ---
-const areaFields = (area: AreaUI, onChange: (a: AreaUI) => void) => {
-  // Calculate converted values
-  const currentSqM = area.areaType === "sq_m" 
-    ? area.sq_m || 0
-    : convertToSquareMeters(area.acre || 0, "acre") + 
-      convertToSquareMeters(area.guntha || 0, "guntha");
 
-  const acreValue = convertFromSquareMeters(currentSqM, "acre");
-  const gunthaValue = convertFromSquareMeters(currentSqM, "guntha");
- 
+const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) => void }) => {
+  // Provide a default area object if undefined
+  const safeArea = area || { areaType: "acre_guntha", acre: 0, guntha: 0 };
+  
+  // Use safeArea instead of area everywhere in the component
+  const displayValues = (() => {
+    if (safeArea.areaType === "sq_m") {
+      return {
+        sq_m: safeArea.sq_m,
+        acre: safeArea.sq_m ? convertFromSquareMeters(safeArea.sq_m, "acre") : undefined,
+        guntha: safeArea.sq_m ? convertFromSquareMeters(safeArea.sq_m, "guntha") % 40 : undefined
+      };
+    } else {
+      return {
+        sq_m: (safeArea.acre || 0) * 4046.86 + (safeArea.guntha || 0) * 101.17,
+        acre: safeArea.acre,
+        guntha: safeArea.guntha
+      };
+    }
+  })();
+
+  // Update all references from area to safeArea in the handlers
+  const handleSqmChange = (value: string) => {
+    if (value === "") {
+      onChange({
+        ...safeArea,
+        areaType: "sq_m",
+        sq_m: undefined,
+        acre: undefined,
+        guntha: undefined
+      });
+      return;
+    }
+
+    const num = parseFloat(value);
+    if (!isNaN(num)) {
+      if (area.areaType === "acre_guntha") {
+        const totalAcres = convertFromSquareMeters(num, "acre");
+        const acres = Math.floor(totalAcres);
+        const remainingGuntha = (totalAcres - acres) * 40;
+        onChange({
+          ...area,
+          acre: acres,
+          guntha: remainingGuntha,
+          sq_m: num
+        });
+      } else {
+        onChange({
+          ...area,
+          areaType: "sq_m",
+          sq_m: num,
+          acre: convertFromSquareMeters(num, "acre"),
+          guntha: convertFromSquareMeters(num, "guntha") % 40
+        });
+      }
+    }
+  };
+
+  const handleAcreChange = (value: string) => {
+    if (value === "") {
+      onChange({
+        ...area,
+        areaType: "acre_guntha",
+        acre: undefined,
+        guntha: area.guntha,
+        sq_m: area.guntha ? convertToSquareMeters(area.guntha, "guntha") : undefined
+      });
+      return;
+    }
+
+    const num = parseFloat(value);
+    if (!isNaN(num)) {
+      if (area.areaType === "sq_m") {
+        const newSqm = convertToSquareMeters(num, "acre") + 
+                      (displayValues.guntha ? convertToSquareMeters(displayValues.guntha, "guntha") : 0);
+        onChange({
+          ...area,
+          sq_m: newSqm,
+          acre: num,
+          guntha: displayValues.guntha
+        });
+      } else {
+        onChange({
+          ...area,
+          areaType: "acre_guntha",
+          acre: num,
+          sq_m: convertToSquareMeters(num, "acre") + 
+               (area.guntha ? convertToSquareMeters(area.guntha, "guntha") : 0)
+        });
+      }
+    }
+  };
+
+  const handleGunthaChange = (value: string) => {
+    if (value === "") {
+      onChange({
+        ...area,
+        areaType: "acre_guntha",
+        guntha: undefined,
+        acre: area.acre,
+        sq_m: area.acre ? convertToSquareMeters(area.acre, "acre") : undefined
+      });
+      return;
+    }
+
+    const num = parseFloat(value);
+    if (!isNaN(num)) {
+      if (num >= 40) {
+        toast({ title: "Guntha must be less than 40" });
+        return;
+      }
+      
+      if (area.areaType === "sq_m") {
+        const newSqm = (displayValues.acre ? convertToSquareMeters(displayValues.acre, "acre") : 0) + 
+                      convertToSquareMeters(num, "guntha");
+        onChange({
+          ...area,
+          sq_m: newSqm,
+          acre: displayValues.acre,
+          guntha: num
+        });
+      } else {
+        onChange({
+          ...area,
+          areaType: "acre_guntha",
+          guntha: num,
+          sq_m: (area.acre ? convertToSquareMeters(area.acre, "acre") : 0) + 
+               convertToSquareMeters(num, "guntha")
+        });
+      }
+    }
+  };
+
+  const formatValue = (value: number | undefined): string => {
+    return value === undefined ? "" : value.toString();
+  };
+
   return (
-    <div className="space-y-2">
-      {/* Area Type Selector - Keep existing single dropdown */}
-      {/* <Select
-        value={area.areaType}
-        onValueChange={(val) => {
-          const newType = val as AreaTypeUI;
-          if (newType === "acre_guntha") {
-            onChange({
-              areaType: newType,
-              acre: parseFloat(acreValue.toFixed(2)),
-              guntha: parseFloat((gunthaValue % 1 * 40).toFixed(2)),
-              sq_m: undefined
-            });
-          } else {
-            onChange({
-              areaType: newType,
-              sq_m: currentSqM,
-              acre: undefined,
-              guntha: undefined
-            });
-          }
-        }}
-      >
-        <SelectTrigger className="w-[180px]">
-          <SelectValue placeholder="Area Type" />
-        </SelectTrigger>
-        <SelectContent>
-          {AREA_TYPES.map((type) => (
-            <SelectItem key={type.key} value={type.key}>
-              {type.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select> */}
+    <div className="space-y-4">
+      {/* Area Type selector commented out */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        {/* Content commented out */}
+      </div>
 
-      {/* Single Input Field - switches based on type */}
-      {area.areaType === "sq_m" ? (
-        <div>
+      {safeArea.areaType === "sq_m" ? (
+        <div className="space-y-2">
           <Label>Square Meters</Label>
           <Input
             type="number"
             min={0}
             step="0.01"
-            value={area.sq_m ?? ""}
-            onChange={(e) => {
-              const rawValue = e.target.value;
-              // Allow empty value or valid number
-              if (rawValue === "" || !isNaN(parseFloat(rawValue))) {
-                onChange({
-                  ...area,
-                  sq_m: rawValue === "" ? undefined : parseFloat(rawValue)
-                });
-              }
-            }}
-            placeholder="Enter area"
+            value={formatValue(displayValues.sq_m)}
+            onChange={(e) => handleSqmChange(e.target.value)}
+            placeholder="Enter sq. meters"
           />
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
-          <div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
             <Label>Acres</Label>
             <Input
               type="number"
               min={0}
               step="0.01"
-              value={area.acre ?? ""}
-              onChange={(e) => {
-                const rawValue = e.target.value;
-                if (rawValue === "" || !isNaN(parseFloat(rawValue))) {
-                  onChange({
-                    ...area,
-                    acre: rawValue === "" ? undefined : parseFloat(rawValue),
-                    guntha: area.guntha || 0
-                  });
-                }
-              }}
-              placeholder="Acre"
+              value={formatValue(displayValues.acre)}
+              onChange={(e) => handleAcreChange(e.target.value)}
+              placeholder="Enter acres"
             />
           </div>
-          <div>
+          <div className="space-y-2">
             <Label>Guntha</Label>
             <Input
               type="number"
               min={0}
-              max={39}
+              max={39.99}
               step="0.01"
-              value={area.guntha ?? ""}
-              onChange={(e) => {
-                const rawValue = e.target.value;
-                if (rawValue === "" || !isNaN(parseFloat(rawValue))) {
-                  onChange({
-                    ...area,
-                    guntha: rawValue === "" ? undefined : parseFloat(rawValue),
-                    acre: area.acre || 0
-                  });
+              value={formatValue(displayValues.guntha)}
+              onChange={(e) => handleGunthaChange(e.target.value)}
+              placeholder="Enter guntha (≤40)"
+              onKeyDown={(e) => {
+                const target = e.target as HTMLInputElement;
+                if (e.key === 'e' || 
+                    (e.key === '.' && target.value.includes('.')) ||
+                    (parseFloat(target.value + e.key) >= 40)) {
+                  e.preventDefault();
                 }
               }}
-              placeholder="Guntha"
             />
           </div>
         </div>
       )}
 
-      {/* Conversion display - shown for all types */}
-      <div className="text-xs text-muted-foreground grid grid-cols-3 gap-2">
-        <div>
-          <span className="font-medium">Sq Meters: </span>
-          {currentSqM.toFixed(2)}
-        </div>
-        <div>
-          <span className="font-medium">Acres: </span>
-          {acreValue.toFixed(4)}
-        </div>
-        <div>
-          <span className="font-medium">Guntha: </span>
-          {gunthaValue.toFixed(2)}
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        {safeArea.areaType === "sq_m" ? (
+          <>
+            <div className="space-y-2">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={formatValue(displayValues.acre)}
+                onChange={(e) => handleAcreChange(e.target.value)}
+                placeholder="Enter or view acres"
+                className="bg-blue-50 border-blue-200"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Guntha</Label>
+              <Input
+                type="number"
+                min={0}
+                max={39.99}
+                step="0.01"
+                value={formatValue(displayValues.guntha)}
+                onChange={(e) => handleGunthaChange(e.target.value)}
+                placeholder="Enter guntha (≤40)"
+                className="bg-blue-50 border-blue-200"
+                onKeyDown={(e) => {
+                  const target = e.target as HTMLInputElement;
+                  if (e.key === 'e' || 
+                      (e.key === '.' && target.value.includes('.')) ||
+                      (parseFloat(target.value + e.key) >= 40)) {
+                    e.preventDefault();
+                  }
+                }}
+              />
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={formatValue(displayValues.sq_m)}
+              onChange={(e) => handleSqmChange(e.target.value)}
+              placeholder="Enter or view sq. meters"
+              className="bg-blue-50 border-blue-200"
+            />
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
 const validateYearOrder = (slabs: YearSlabUI[]) => {
   for (let i = 1; i < slabs.length; i++) {
     // Current slab's end year must be ≤ previous slab's start year
@@ -422,25 +679,26 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
   }
   return { valid: true };
 };
-  const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
+
+const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== id) return slab;
-    
-    // When S.No type changes, fetch corresponding value
-    if (updates.sNoTypeUI && updates.sNoTypeUI !== slab.sNoTypeUI) {
-      return {
-        ...slab,
-        ...updates,
-        sNo: getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI)
-      };
-    }
+
+    // When S.No type changes, clear the sNo field and let user enter manually
+   if (updates.sNoTypeUI && updates.sNoTypeUI !== slab.sNoTypeUI) {
+  const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
+  return {
+    ...slab,
+    ...updates,
+    sNo: autoPopulatedSNo // Auto-populate instead of clearing
+  };
+}
     
     return { ...slab, ...updates };
   }));
 };
 
- const addSlab = () => {
-  const autoSNoData = getAutoPopulatedSNoData(landBasicInfo);
+const addSlab = () => {
   const defaultArea = landBasicInfo?.area 
     ? toAreaUI(landBasicInfo.area) 
     : { areaType: "acre_guntha", acre: 0, guntha: 0 };
@@ -448,61 +706,55 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
   let startYear, endYear;
   
   if (slabs.length === 0) {
-    // First slab - default to current year range
-    const currentYear = new Date().getFullYear();
-    startYear = currentYear;
-    endYear = currentYear;
+    startYear = "";
+    endYear = 2004;
   } else {
-    // Subsequent slabs - default to ending 1 year before previous slab starts
     const previousSlab = slabs[slabs.length - 1];
-    endYear = previousSlab.startYear - 1;
-    startYear = endYear; // Default to 1-year range
+    endYear = previousSlab.startYear;
+    startYear = "";
   }
-
-   // Collapse all previous slabs
-  const collapsedSlabs = slabs.map(slab => ({
-    ...slab,
-    collapsed: true
-  }));
 
   const newSlab: YearSlabUI = {
     id: Date.now().toString(),
     startYear,
-    endYear,    sNo: autoSNoData.sNo,
-    sNoTypeUI: autoSNoData.sNoTypeUI,
+    endYear,
+    sNoTypeUI: "survey_no",
+    sNo: "", // Start with empty field, let user enter manually
     areaUI: defaultArea,
-    integrated712: landBasicInfo?.integrated712 || "",
+    integrated712: "",
     paiky: false,
     paikyCount: 0,
     paikyEntries: [],
     ekatrikaran: false,
     ekatrikaranCount: 0,
     ekatrikaranEntries: [],
-    collapsed: false, // New slab is expanded by default
+    collapsed: false,
   };
 
-  setSlabs([...collapsedSlabs, newSlab]);
+  setSlabs([...slabs.map(s => ({ ...s, collapsed: true })), newSlab]);
 };
 
-  const removeSlab = (id: string) => setSlabs(slabs.filter((slab) => slab.id !== id));
+  const removeSlab = (id: string) => {
+
+    setSlabs(slabs.filter((slab) => slab.id !== id));
+  };
 
   // "Count" updating helpers
   const updatePaikyCount = (slabId: string, count: number) => {
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    const autoSNoData = getAutoPopulatedSNoData(landBasicInfo);
     const defaultEntry = {
-      sNo: autoSNoData?.sNo || "",
-      sNoTypeUI: autoSNoData?.sNoTypeUI || "survey_no",
-      areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
+      sNo: "", // Start with empty field
+      sNoTypeUI: "survey_no" as SNoTypeUI,
+      areaUI: { areaType: "acre_guntha" as AreaTypeUI, acre: 0, guntha: 0 },
       integrated712: ""
     };
 
     return {
       ...slab,
       paikyCount: count,
-      paiky: count > 0,
+      paiky: slab.paiky,
       paikyEntries: Array.from({ length: count }, (_, i) => {
         return slab.paikyEntries?.[i] || { ...defaultEntry };
       })
@@ -514,18 +766,17 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    const autoSNoData = getAutoPopulatedSNoData(landBasicInfo);
     const defaultEntry = {
-      sNo: autoSNoData?.sNo || "",
-      sNoTypeUI: autoSNoData?.sNoTypeUI || "survey_no",
-      areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
+      sNo: "", // Start with empty field
+      sNoTypeUI: "survey_no" as SNoTypeUI,
+      areaUI: { areaType: "acre_guntha" as AreaTypeUI, acre: 0, guntha: 0 },
       integrated712: ""
     };
 
     return {
       ...slab,
       ekatrikaranCount: count,
-      ekatrikaran: count > 0,
+      ekatrikaran: slab.ekatrikaran,
       ekatrikaranEntries: Array.from({ length: count }, (_, i) => {
         return slab.ekatrikaranEntries?.[i] || { ...defaultEntry };
       })
@@ -533,7 +784,7 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
   }));
 };
   
- const updateSlabEntry = (
+const updateSlabEntry = (
   slabId: string,
   type: "paiky" | "ekatrikaran",
   index: number,
@@ -542,7 +793,7 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    // Handle S.No type change for entries
+    // Handle S.No type change for entries - clear instead of auto-populate
     if (updates.sNoTypeUI) {
       const entries = type === "paiky" 
         ? slab.paikyEntries || [] 
@@ -550,11 +801,12 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
       const currentEntry = entries[index] || {};
       
       if (updates.sNoTypeUI !== currentEntry.sNoTypeUI) {
-        updates = {
-          ...updates,
-          sNo: getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI) || ""
-        };
-      }
+  const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
+  updates = {
+    ...updates,
+    sNo: autoPopulatedSNo // Auto-populate instead of clearing
+  };
+}
     }
 
     if (type === "paiky") {
@@ -579,115 +831,85 @@ const handleSaveAndNext = async () => {
   setLoading(true);
   
   try {
-    // Debug: Log the raw slab data
-    console.log('Raw slab data before conversion:', slabs);
-
     // Validate year ordering
     const { valid, message } = validateYearOrder(slabs);
     if (!valid) {
-      toast({
-        title: "Invalid year sequence",
-        description: message,
-        variant: "destructive"
-      });
+      toast({ title: "Invalid year sequence", description: message, variant: "destructive" });
       return;
     }
 
-    // Convert to database format
-    const dbSlabs = slabs.map(slab => {
-      // Debug each slab
-      console.log('Converting slab:', {
-        id: slab.id,
-        startYear: slab.startYear,
-        endYear: slab.endYear,
-        type: typeof slab.startYear
-      });
-
-      if (isNaN(slab.startYear) || isNaN(slab.endYear)) {
-        throw new Error(`Invalid year values for slab ${slab.id}`);
-      }
-
-      return {
-        id: slab.id,
-        start_year: slab.startYear, // Ensure proper mapping
-        end_year: slab.endYear,    // Ensure proper mapping
-        s_no: slab.sNo,
-        s_no_type: mapSNoTypeUIToContext(slab.sNoTypeUI),
-        area_value: slab.areaUI.areaType === "sq_m" 
-          ? slab.areaUI.sq_m || 0 
-          : convertToSquareMeters(slab.areaUI.acre || 0, "acre") + 
-            convertToSquareMeters(slab.areaUI.guntha || 0, "guntha"),
+    // Convert to database format - Fixed version
+    const dbSlabs = slabs.map(slab => ({
+      start_year: slab.startYear,
+      end_year: slab.endYear,
+      s_no: slab.sNo,
+      s_no_type: mapSNoTypeUIToContext(slab.sNoTypeUI),
+      area_value: slab.areaUI.areaType === "sq_m" 
+        ? slab.areaUI.sq_m || 0
+        : convertToSquareMeters(slab.areaUI.acre || 0, "acre") +
+          convertToSquareMeters(slab.areaUI.guntha || 0, "guntha"),
+      area_unit: "sq_m",
+      integrated_712: slab.integrated712,
+      paiky: slab.paiky,
+      paiky_count: slab.paikyCount,
+      ekatrikaran: slab.ekatrikaran,
+      ekatrikaran_count: slab.ekatrikaranCount,
+      
+      // FIXED: Properly structure the entries arrays
+      paiky_entries: slab.paikyEntries?.map(entry => ({
+        s_no: entry.sNo,
+        s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
+        area_value: entry.areaUI.areaType === "sq_m"
+          ? entry.areaUI.sq_m || 0
+          : convertToSquareMeters(entry.areaUI.acre || 0, "acre") +
+            convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
         area_unit: "sq_m",
-        integrated_712: slab.integrated712,
-        paiky: slab.paiky,
-        paiky_count: slab.paikyCount,
-        ekatrikaran: slab.ekatrikaran,
-        ekatrikaran_count: slab.ekatrikaranCount,
-        // Include entries if they exist
-        paiky_entries: slab.paiky && slab.paikyCount > 0 
-          ? slab.paikyEntries.slice(0, slab.paikyCount).map(entry => ({
-              s_no: entry.sNo,
-              s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
-              area_value: entry.areaUI.areaType === "sq_m" 
-                ? entry.areaUI.sq_m || 0
-                : convertToSquareMeters(entry.areaUI.acre || 0, "acre") +
-                  convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
-              area_unit: "sq_m",
-              integrated_712: entry.integrated712
-            }))
-          : [],
-        ekatrikaran_entries: slab.ekatrikaran && slab.ekatrikaranCount > 0
-          ? slab.ekatrikaranEntries.slice(0, slab.ekatrikaranCount).map(entry => ({
-              s_no: entry.sNo,
-              s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
-              area_value: entry.areaUI.areaType === "sq_m" 
-                ? entry.areaUI.sq_m || 0
-                : convertToSquareMeters(entry.areaUI.acre || 0, "acre") +
-                  convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
-              area_unit: "sq_m",
-              integrated_712: entry.integrated712
-            }))
-          : []
-      };
-    });
-
-    console.log('Converted data for saving:', dbSlabs);
+        integrated_712: entry.integrated712
+      })) || [], // Ensure it's always an array
+      
+      ekatrikaran_entries: slab.ekatrikaranEntries?.map(entry => ({
+        s_no: entry.sNo,
+        s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
+        area_value: entry.areaUI.areaType === "sq_m"
+          ? entry.areaUI.sq_m || 0
+          : convertToSquareMeters(entry.areaUI.acre || 0, "acre") +
+            convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
+        area_unit: "sq_m",
+        integrated_712: entry.integrated712
+      })) || [] // Ensure it's always an array
+    }));
 
     if (!landBasicInfo?.id) {
-      toast({
-        title: "Land record not found",
-        description: "Please complete step 1 first",
-        variant: "destructive"
-      });
+      toast({ title: "Land record not found", variant: "destructive" });
       return;
     }
 
-    const { error } = await LandRecordService.saveYearSlabs(
+    // Save to database
+    const { data: savedData, error } = await LandRecordService.saveYearSlabs(
       landBasicInfo.id,
       dbSlabs
     );
-
-    if (error) throw error;
+    
+    if (error) {
+      console.error('Save error details:', error);
+      throw error;
+    }
 
     // Update context
-    setYearSlabs(slabs.map(slab => ({
-      ...fromYearSlabUI(slab),
-      paikyCount: slab.paikyCount,
-      ekatrikaranCount: slab.ekatrikaranCount
-    })));
-    
+    const { data: fetchedSlabs } = await LandRecordService.getYearSlabs(landBasicInfo.id);
+    if (fetchedSlabs) {
+      setYearSlabs(fetchedSlabs);
+    }
+
     setCurrentStep(3);
     toast({ title: "Year slabs saved successfully" });
-
+    
   } catch (error) {
-    console.error('Save error details:', {
-      error: error.message,
-      stack: error.stack
-    });
-    toast({
-      title: "Save failed",
-      description: error.message,
-      variant: "destructive"
+    console.error('Save error:', error);
+    toast({ 
+      title: "Save failed", 
+      description: error?.message || "Unknown error occurred",
+      variant: "destructive" 
     });
   } finally {
     setLoading(false);
@@ -743,17 +965,23 @@ const toggleCollapse = (id: string) => {
               {/* Start Year Field */}
 <div className="space-y-2">
   <Label>Start Year *</Label>
-  <Input
-    type="number"
-    value={slab.startYear}
-    onChange={(e) => {
-      const newYear = parseInt(e.target.value);
+<Input
+  type="number"
+  value={slab.startYear === "" ? "" : slab.startYear}
+  onChange={(e) => {
+    const value = e.target.value;
+    if (value === "") {
+      updateSlab(slab.id, { startYear: "" });
+    } else {
+      const newYear = parseInt(value);
       if (!isNaN(newYear)) {
         updateSlab(slab.id, { startYear: newYear });
       }
-    }}
-    max={slab.endYear}  // Corrected: start ≤ end
-  />
+    }
+  }}
+  onWheel={(e) => e.currentTarget.blur()}
+  max={slab.endYear}
+/>
   <p className="text-xs text-muted-foreground">
     Must be ≤ end year ({slab.endYear})
   </p>
@@ -845,26 +1073,61 @@ const toggleCollapse = (id: string) => {
                   </Select>
                 </div>
                 <div className="space-y-2 md:col-span-2">
-        
-                  {areaFields(slab.areaUI, (areaUI) =>
-                    updateSlab(slab.id, { areaUI })
-                  )}
+        {areaFields({ 
+  area: slab.areaUI, 
+  onChange: (areaUI) => updateSlab(slab.id, { areaUI }) 
+})}
+
                 </div>
                 <div className="space-y-2">
   <Label>7/12 Document</Label>
-  <div className="flex items-center gap-2">
-    <Input
-      type="file"
-      accept=".pdf,.jpg,.jpeg,.png"
-      onChange={(e) => {
-        const file = e.target.files?.[0];
-        if (file) {
-          handleEntryFileUpload(file, slab.id);
-          e.target.value = '';
-        }
-      }}
-      disabled={loading}
-    />
+  <div className="flex items-center gap-4">
+    <div className="relative">
+      <input
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleEntryFileUpload(file, slab.id);
+            e.target.value = '';
+          }
+        }}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        disabled={loading}
+      />
+      <Button 
+        type="button" 
+        variant="outline" 
+        disabled={loading}
+        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50"
+      >
+        <Upload className="w-4 h-4" />
+        {loading ? "Uploading..." : "Choose File"}
+      </Button>
+    </div>
+    {slabUploadedFileNames[slab.id] && (
+      <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+        <span className="text-sm text-green-800 max-w-[200px] truncate" title={slabUploadedFileNames[slab.id]}>
+          {slabUploadedFileNames[slab.id]}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            updateSlab(slab.id, { integrated712: "" });
+            setSlabUploadedFileNames(prev => {
+              const newState = { ...prev };
+              delete newState[slab.id];
+              return newState;
+            });
+          }}
+          className="text-green-600 hover:text-green-800 text-lg leading-none"
+          title="Remove file"
+        >
+          ×
+        </button>
+      </div>
+    )}
     {slab.integrated712 && (
       <a 
         href={slab.integrated712} 
@@ -876,11 +1139,9 @@ const toggleCollapse = (id: string) => {
       </a>
     )}
   </div>
-  {loading && (
-    <p className="text-sm text-muted-foreground">
-      Uploading to land-documents bucket...
-    </p>
-  )}
+  <p className="text-xs text-gray-500">
+    Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+  </p>
 </div>
               </div>
             )}
@@ -962,15 +1223,22 @@ const toggleCollapse = (id: string) => {
                     <Label>Number of Paiky Entries</Label>
                     <Input
   type="number"
-  value={slab.paikyCount}
+  value={slab.paikyCount === 0 ? '' : slab.paikyCount}
   onChange={(e) => {
-    const value = e.target.value;
-    if (value === '' || (!isNaN(parseInt(value)) && parseInt(value) >= 0)) {
-      const count = value === '' ? 0 : parseInt(value);
-      updatePaikyCount(slab.id, count);
-      setCurrentPaikyPage(prev => ({ ...prev, [slab.id]: 0 }));
-    }
-  }}
+  const value = e.target.value;
+  
+  // Allow empty string (will be converted to 0)
+  if (value === '') {
+    updatePaikyCount(slab.id, 0);
+    return;
+  }
+  
+  // Only allow numbers >= 0
+  const numValue = parseInt(value);
+  if (!isNaN(numValue) && numValue >= 0) {
+    updatePaikyCount(slab.id, numValue);
+  }
+}}
   min="0"
   placeholder="0"
 />
@@ -1131,11 +1399,15 @@ const toggleCollapse = (id: string) => {
                             </div>
                             <div className="md:col-span-2">
                               <Label>Area</Label>
-                              {areaFields(entry.areaUI, (area) =>
-                                updateSlabEntry(slab.id, "paiky", globalIndex, {
-                                  areaUI: area,
-                                })
-                              )}
+                          
+
+  {areaFields({ 
+    area: entry.areaUI, 
+    onChange: (area) => updateSlabEntry(slab.id, "paiky", globalIndex, {
+      areaUI: area
+    })
+  })}
+
                             </div>
                             <div className="space-y-2">
                               <Label>7/12 Document</Label>
@@ -1185,16 +1457,22 @@ const toggleCollapse = (id: string) => {
                     <Label>Number of Ekatrikaran Entries</Label>
                     <Input
   type="number"
-  value={slab.ekatrikaranCount}
+  value={slab.ekatrikaranCount === 0 ? '' : slab.ekatrikaranCount}
   onChange={(e) => {
-    const value = e.target.value;
-    // Allow empty string or valid numbers
-    if (value === '' || (!isNaN(parseInt(value)) && parseInt(value) >= 0)) {
-      const count = value === '' ? 0 : parseInt(value);
-      updateEkatrikaranCount(slab.id, count);
-      setCurrentEkatrikaranPage(prev => ({ ...prev, [slab.id]: 0 }));
-    }
-  }}
+  const value = e.target.value;
+  
+  // Allow empty string (will be converted to 0)
+  if (value === '') {
+    updateEkatrikaranCount(slab.id, 0);
+    return;
+  }
+  
+  // Only allow numbers >= 0
+  const numValue = parseInt(value);
+  if (!isNaN(numValue) && numValue >= 0) {
+    updateEkatrikaranCount(slab.id, numValue);
+  }
+}}
   min="0"
   placeholder="0"
 />
@@ -1355,11 +1633,12 @@ const toggleCollapse = (id: string) => {
                             </div>
                             <div className="md:col-span-2">
                               <Label>Area</Label>
-                              {areaFields(entry.areaUI, (area) =>
-                                updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
-                                  areaUI: area,
-                                })
-                              )}
+                              {areaFields({ 
+    area: entry.areaUI, 
+    onChange: (area) => updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+      areaUI: area
+    })
+  })}
                             </div>
                             <div className="space-y-2">
                               <Label>7/12 Document</Label>
@@ -1406,16 +1685,13 @@ const toggleCollapse = (id: string) => {
         <Button onClick={addSlab} variant="outline" className="w-full bg-transparent">
           <Plus className="w-4 h-4 mr-2" /> Add Another Slab
         </Button>
-        <div className="flex justify-between">
-          <Button variant="outline" onClick={() => setCurrentStep(1)}>
-            <ArrowLeft className="w-4 h-4 mr-2" /> Previous
-          </Button>
+        <div className="flex justify-center pt-6">
+         
           <Button
             onClick={handleSaveAndNext}
             disabled={loading}
           >
-            {loading ? "Saving..." : "Next Step"}{" "}
-            <ArrowRight className="w-4 h-4 ml-2" />
+            {loading ? "Saving..." : "Save"}{" "}
           </Button>
         </div>
       </CardContent>

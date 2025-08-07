@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
 
 export interface AreaInput {
   value: number
@@ -15,33 +15,33 @@ export interface LandBasicInfo {
   sNoType: "s_no" | "block_no" | "re_survey_no"
   sNo: string
   isPromulgation: boolean
-  blockNo?: string
-  reSurveyNo?: string
-  integrated712?: string
+  blockNo: string
+  reSurveyNo: string
+  integrated712: string
+  integrated712FileName: string
 }
 
 export interface SlabEntry {
-  sNo: string;
-sNoType: "s_no" | "block_no" | "re_survey_no";
-area: { value: number; unit: "acre" | "guntha" | "sq_m" };
-integrated712?: string;
-
+  sNo: string
+  sNoType: "s_no" | "block_no" | "re_survey_no"
+  area: { value: number; unit: "acre" | "guntha" | "sq_m" }
+  integrated712?: string
 }
 
 export interface YearSlab {
-  id: string;
-  startYear: number;
-  endYear: number;
-  sNo: string;
-  sNoType: "s_no" | "block_no" | "re_survey_no";
-  area: { value: number; unit: "acre" | "guntha" | "sq_m" };
-  integrated712?: string;
-  paiky: boolean;
-  paikyCount: number;
-  paikyEntries: SlabEntry[];
-  ekatrikaran: boolean;
-  ekatrikaranCount: number;
-  ekatrikaranEntries: SlabEntry[];
+  id: string
+  startYear: number
+  endYear: number
+  sNo: string
+  sNoType: "s_no" | "block_no" | "re_survey_no"
+  area: { value: number; unit: "acre" | "guntha" | "sq_m" }
+  integrated712?: string
+  paiky: boolean
+  paikyCount: number
+  paikyEntries: SlabEntry[]
+  ekatrikaran: boolean
+  ekatrikaranCount: number
+  ekatrikaranEntries: SlabEntry[]
 }
 
 export interface Farmer {
@@ -59,10 +59,11 @@ export interface Panipatrak {
 
 export interface Nondh {
   id: string
-  number: number
+  number: string
   sNoType: "s_no" | "block_no" | "re_survey_no"
   affectedSNos: string[]
   nondhDoc?: string
+  nondhDocFileName?: string
 }
 
 export interface NondhDetail {
@@ -72,11 +73,37 @@ export interface NondhDetail {
   type: string
   subType?: string
   vigat?: string
-  status: "Valid" | "Invalid" | "Nullified"
+  status: "valid" | "invalid" | "nullified"
+  invalidReason?: string
+  oldOwner?: string
   showInOutput: boolean
   hasDocuments: boolean
   docUpload?: string
-  ownerRelations: any[]
+  ownerRelations: Array<{
+    id: string
+    ownerName: string
+    sNo: string
+    area: {
+      value: number
+      unit: 'guntha' | 'sq_m'
+    }
+    tenure: string
+    hukamType?: string
+    hukamDate?: string
+    restrainingOrder?: 'yes' | 'no'
+    isValid: boolean
+  }>
+  dbId?: string
+}
+
+export interface LocalFormData {
+  [key: number]: {
+    landBasicInfo?: LandBasicInfo
+    yearSlabs?: YearSlab[]
+    panipatraks?: Panipatrak[]
+    nondhs?: Nondh[]
+    nondhDetails?: NondhDetail[]
+  }
 }
 
 interface LandRecordContextType {
@@ -93,6 +120,12 @@ interface LandRecordContextType {
   setNondhs: (nondhs: Nondh[]) => void
   nondhDetails: NondhDetail[]
   setNondhDetails: (details: NondhDetail[]) => void
+  hasUnsavedChanges: Record<number, boolean>
+  setHasUnsavedChanges: (step: number, value: boolean) => void
+  resetUnsavedChanges: () => void
+  formData: LocalFormData
+  setFormData: (data: LocalFormData | ((prev: LocalFormData) => LocalFormData)) => void
+  updateFormData: (step: number, data: Partial<LocalFormData[number]>) => void
 }
 
 const LandRecordContext = createContext<LandRecordContextType | undefined>(undefined)
@@ -104,16 +137,83 @@ export function LandRecordProvider({ children }: { children: ReactNode }) {
   const [panipatraks, setPanipatraks] = useState<Panipatrak[]>([])
   const [nondhs, setNondhs] = useState<Nondh[]>([])
   const [nondhDetails, setNondhDetails] = useState<NondhDetail[]>([])
+  const [formData, setFormDataState] = useState<LocalFormData>({})
+  const [hasUnsavedChanges, setRawHasUnsavedChanges] = useState<Record<number, boolean>>({
+    1: false,
+    2: false,
+    3: false,
+    4: false,
+    5: false,
+    6: false
+  })
 
-  const canProceedToStep = (step: number) => {
+  const setHasUnsavedChanges = useCallback((step: number, value: boolean) => {
+    setRawHasUnsavedChanges(prev => {
+      // Only update if the value has actually changed
+      if (prev[step] !== value) {
+        return {
+          ...prev,
+          [step]: value
+        }
+      }
+      return prev
+    })
+  }, [])
+
+  const setFormData = useCallback((
+    data: LocalFormData | ((prev: LocalFormData) => LocalFormData)
+  ) => {
+    if (typeof data === 'function') {
+      setFormDataState(data)
+    } else {
+      setFormDataState(data)
+    }
+  }, [])
+
+  const updateFormData = useCallback((step: number, data: Partial<LocalFormData[number]>) => {
+  setFormDataState(prev => {
+    const prevStepData = prev[step] || {};
+    const newStepData = {
+      ...prevStepData,
+      ...data
+    };
+    
+    // Only proceed if there are actual changes
+    const hasChanged = Object.keys(data).some(key => {
+      return JSON.stringify(prevStepData[key]) !== JSON.stringify(data[key]);
+    });
+    
+    if (hasChanged) {
+      setHasUnsavedChanges(step, true);
+    }
+    
+    return {
+      ...prev,
+      [step]: newStepData
+    };
+  });
+}, [setHasUnsavedChanges]);
+
+  const resetUnsavedChanges = useCallback(() => {
+    setRawHasUnsavedChanges({
+      1: false,
+      2: false,
+      3: false,
+      4: false,
+      5: false,
+      6: false
+    })
+  }, [])
+
+  const canProceedToStep = useCallback((step: number) => {
     if (step <= currentStep) return true
-    if (step === 2 && landBasicInfo) return true
-    if (step === 3 && yearSlabs.length > 0) return true
-    if (step === 4 && panipatraks.length > 0) return true
-    if (step === 5 && nondhs.length > 0) return true
-    if (step === 6 && nondhDetails.length > 0) return true
+    if (step === 2 && formData[1]?.landBasicInfo) return true
+    if (step === 3 && formData[2]?.yearSlabs?.length) return true
+    if (step === 4 && formData[3]?.panipatraks?.length) return true
+    if (step === 5 && formData[4]?.nondhs?.length) return true
+    if (step === 6 && formData[5]?.nondhDetails?.length) return true
     return false
-  }
+  }, [currentStep, formData])
 
   return (
     <LandRecordContext.Provider
@@ -131,6 +231,12 @@ export function LandRecordProvider({ children }: { children: ReactNode }) {
         setNondhs,
         nondhDetails,
         setNondhDetails,
+        formData,
+        setFormData,
+        updateFormData,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
+        resetUnsavedChanges
       }}
     >
       {children}

@@ -1,92 +1,134 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Upload, ArrowRight } from "lucide-react"
+import { Upload } from "lucide-react"
 import { useLandRecord } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
-import { LandRecordService } from "@/lib/supabase";
-import { promulgationData, getDistricts, getTalukas, getVillages, isPromulgation } from "@/lib/mock-data";
+import { LandRecordService } from "@/lib/supabase"
+import { promulgationData, getDistricts, getTalukas, getVillages, isPromulgation } from "@/lib/mock-data"
+import { useStepFormData } from "@/hooks/use-step-form-data"
+import type { LandBasicInfo } from "@/contexts/land-record-context"
+
+const initialFormData: LandBasicInfo = {
+  district: "",
+  taluka: "",
+  village: "",
+  area: { value: 0, unit: "sq_m" },
+  sNoType: "s_no",
+  sNo: "",
+  isPromulgation: false,
+  blockNo: "",
+  reSurveyNo: "",
+  integrated712: "",
+  integrated712FileName: ""
+}
+
+function isEqual(obj1: any, obj2: any) {
+  return JSON.stringify(obj1) === JSON.stringify(obj2);
+}
 
 export default function LandBasicInfoComponent() {
-  const { landBasicInfo, setLandBasicInfo, setCurrentStep } = useLandRecord()
+  const { 
+    landBasicInfo, 
+    setLandBasicInfo, 
+    setCurrentStep, 
+    setHasUnsavedChanges, 
+    currentStep, 
+    hasUnsavedChanges 
+  } = useLandRecord()
   const { toast } = useToast()
 
-  // State for dropdowns & form
-  const [district, setDistrict] = useState("")
-  const [taluka, setTaluka] = useState("")
-  const [village, setVillage] = useState("")
-  const [promStatus, setPromStatus] = useState<boolean | null>(null)
-
   const [loading, setLoading] = useState(false)
-
-  // Other form fields
-  const [formData, setFormData] = useState({
-    area: { value: 0, unit: "sq_m" },
-    sNoType: "s_no",
-    sNo: "",
-    blockNo: "",
-    reSurveyNo: "",
-    integrated712: "",
-    integrated712FileName: "", // Store original filename separately
-  })
-
-  // State for file upload
   const [uploadedFileName, setUploadedFileName] = useState<string>("")
+
+  // Form data with proper initialization
+  const { getStepData, updateStepData } = useStepFormData(currentStep)
+  
+  // Get form data from context or use initial values
+  const contextData = getStepData()
+  const formData = contextData.landBasicInfo 
+    ? { ...initialFormData, ...contextData.landBasicInfo } 
+    : initialFormData
+
+  const district = formData.district
+  const taluka = formData.taluka
+  const village = formData.village
+
+  useEffect(() => {
+    if (!hasUnsavedChanges[currentStep]) return
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = 'You have unsaved changes. Are you sure you want to leave?'
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [hasUnsavedChanges, currentStep])
 
   // Prefill from previous info (if any)
   useEffect(() => {
-    if (landBasicInfo) {
-      setDistrict(landBasicInfo.district || "")
-      setTaluka(landBasicInfo.taluka || "")
-      setVillage(landBasicInfo.village || "")
-      setPromStatus(isPromulgation(landBasicInfo.district, landBasicInfo.taluka, landBasicInfo.village))
-      setFormData({
-        area: landBasicInfo.area || { value: 0, unit: "sq_m" },
-        sNoType: landBasicInfo.sNoType || "s_no",
-        sNo: landBasicInfo.sNo || "",
-        blockNo: landBasicInfo.blockNo || "",
-        reSurveyNo: landBasicInfo.reSurveyNo || "",
-        integrated712: landBasicInfo.integrated712 || "",
-        integrated712FileName: landBasicInfo.integrated712FileName || ""
-      })
-      
-      // Set uploaded file name - prioritize stored filename over URL parsing
-      if (landBasicInfo.integrated712FileName) {
-        setUploadedFileName(landBasicInfo.integrated712FileName)
-      } else if (landBasicInfo.integrated712) {
-        // Fallback: Extract filename from URL
-        const urlParts = landBasicInfo.integrated712.split('/')
-        const fileName = urlParts[urlParts.length - 1]
-        // Remove timestamp prefix if present (format: timestamp_filename)
-        const cleanFileName = fileName.includes('_') ? fileName.split('_').slice(1).join('_') : fileName
-        setUploadedFileName(cleanFileName || "Document uploaded")
+  if (landBasicInfo && !isEqual(landBasicInfo, formData)) {
+    updateStepData({
+      landBasicInfo: {
+        ...initialFormData,
+        ...landBasicInfo
       }
+    });
+    
+    if (landBasicInfo.integrated712FileName) {
+      setUploadedFileName(landBasicInfo.integrated712FileName);
+    } else if (landBasicInfo.integrated712) {
+      const urlParts = landBasicInfo.integrated712.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      const cleanFileName = fileName.includes('_') ? fileName.split('_').slice(1).join('_') : fileName;
+      setUploadedFileName(cleanFileName || "Document uploaded");
     }
-  }, [landBasicInfo])
+  }
+}, [landBasicInfo]); // Only depend on landBasicInfo
+
+  // Helper function to update form data
+  const updateFormField = useCallback((updates: Partial<LandBasicInfo>) => {
+    updateStepData({
+      landBasicInfo: {
+        ...formData,
+        ...updates
+      }
+    })
+  }, [formData, updateStepData])
 
   // Handlers for cascading selects
   const handleDistrictChange = (value: string) => {
-    setDistrict(value)
-    setTaluka("")
-    setVillage("")
-    setPromStatus(null)
+    updateFormField({
+      district: value,
+      taluka: "",
+      village: "",
+      isPromulgation: false
+    })
   }
+
   const handleTalukaChange = (value: string) => {
-    setTaluka(value)
-    setVillage("")
-    setPromStatus(null)
+    updateFormField({
+      taluka: value,
+      village: "",
+      isPromulgation: false
+    })
   }
+
   const handleVillageChange = (value: string) => {
-    setVillage(value)
-    setPromStatus(isPromulgation(district, taluka, value))
+    const isProm = isPromulgation(formData.district, formData.taluka, value)
+    updateFormField({
+      village: value,
+      isPromulgation: isProm
+    })
   }
 
   // File upload with better error handling and filename sanitization
@@ -96,25 +138,22 @@ export default function LandBasicInfoComponent() {
     try {
       setLoading(true)
       
-      // Sanitize filename for storage but keep original for display
       const sanitizedFileName = file.name
-        .replace(/[^a-zA-Z0-9._-]/g, '_') // Replace invalid chars with underscore
-        .replace(/_{2,}/g, '_') // Replace multiple underscores with single
-        .replace(/^_|_$/g, '') // Remove leading/trailing underscores
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .replace(/^_|_$/g, '')
       
       const path = `${Date.now()}_${sanitizedFileName}`
       const url = await uploadFile(file, "land-documents", path)
       
-      if (!url) {
-        throw new Error("Failed to upload file")
-      }
-      
-      setFormData((prev) => ({ 
-        ...prev, 
+      if (!url) throw new Error("Failed to upload file")
+
+      updateFormField({ 
         integrated712: url,
-        integrated712FileName: file.name // Store original filename for display
-      }))
-      setUploadedFileName(file.name) // Display original filename
+        integrated712FileName: file.name
+      })
+      
+      setUploadedFileName(file.name)
       toast({ title: "File uploaded successfully" })
       
     } catch (error) {
@@ -131,47 +170,46 @@ export default function LandBasicInfoComponent() {
 
   // Remove uploaded file
   const handleRemoveFile = () => {
-    setFormData((prev) => ({ 
-      ...prev, 
+    updateFormField({ 
       integrated712: "",
       integrated712FileName: ""
-    }))
+    })
     setUploadedFileName("")
   }
 
   // Submission
   const handleSubmit = async () => {
     // Validate all required fields
-    if (!district || !taluka || !village || !formData.blockNo) {
+    if (!formData.district || !formData.taluka || !formData.village || !formData.blockNo) {
       toast({ title: "Please fill all required fields", variant: "destructive" })
       return
     }
-    if (promStatus && !formData.reSurveyNo) {
+    if (formData.isPromulgation && !formData.reSurveyNo) {
       toast({ title: "Re Survey No is required for Promulgation", variant: "destructive" })
       return
     }
-    
+
     setLoading(true)
     try {
-      // Prepare data for saving
-      const landRecordData: any = {
-        district,
-        taluka,
-        village,
-        area_value: formData.area.value,
-        area_unit: formData.area.unit,
-        s_no_type: formData.sNoType,
-        s_no: formData.sNo,
-        is_promulgation: promStatus || false,
+      // Map form data to database schema - use default values for required fields
+      const landRecordData = {
+        district: formData.district,
+        taluka: formData.taluka,
+        village: formData.village,
+        area_value: formData.area.value || 0, // Default value
+        area_unit: formData.area.unit || 'sq_m', // Default unit
+        s_no_type: formData.sNoType || 's_no', // Default type
+        s_no: formData.sNo || formData.blockNo, // Use blockNo as fallback for s_no
+        is_promulgation: formData.isPromulgation || false,
         block_no: formData.blockNo,
         re_survey_no: formData.reSurveyNo || null,
         integrated_712: formData.integrated712 || null,
-        integrated_712_filename: formData.integrated712FileName || null, // Store filename in DB
+        integrated_712_filename: formData.integrated712FileName || null,
         current_step: 1,
         status: 'draft'
       }
 
-      // Only include ID if we're updating an existing record
+      // Add ID if updating existing record
       if (landBasicInfo?.id) {
         landRecordData.id = landBasicInfo.id
       }
@@ -180,24 +218,33 @@ export default function LandBasicInfoComponent() {
       
       if (error) throw error
 
-      // Update context with saved data
-      setLandBasicInfo({
+      // Update context with the saved data
+      const updatedInfo: LandBasicInfo = {
         id: result.id,
-        district, 
-        taluka, 
-        village, 
+        district: formData.district, 
+        taluka: formData.taluka, 
+        village: formData.village, 
         area: formData.area, 
         sNoType: formData.sNoType, 
         sNo: formData.sNo,
-        isPromulgation: promStatus, 
+        isPromulgation: formData.isPromulgation, 
         blockNo: formData.blockNo, 
         reSurveyNo: formData.reSurveyNo, 
         integrated712: formData.integrated712,
-        integrated712FileName: formData.integrated712FileName // Store in context
-      })
+        integrated712FileName: formData.integrated712FileName
+      }
+
+      setLandBasicInfo(updatedInfo)
       
+      // Update step data
+      updateStepData({
+        landBasicInfo: updatedInfo
+      })
+
+      setHasUnsavedChanges(currentStep, false)
       toast({ title: "Land basic info saved successfully" })
       setCurrentStep(2)
+      
     } catch (error) {
       console.error('Error saving land record:', error)
       toast({ title: "Error saving data", variant: "destructive" })
@@ -257,12 +304,14 @@ export default function LandBasicInfoComponent() {
           </div>
         </div>
 
+
+
         {/* Promulgation Display */}
-        {village && promStatus !== null && (
+        {formData.village && formData.isPromulgation !== null && (
           <div>
             <Label>Promulgation Status:</Label>{" "}
-            <span className={promStatus ? "text-green-600" : "text-red-600"}>
-              {promStatus ? "Yes" : "No"}
+            <span className={formData.isPromulgation ? "text-green-600" : "text-red-600"}>
+              {formData.isPromulgation ? "Yes" : "No"}
             </span>
           </div>
         )}
@@ -273,27 +322,27 @@ export default function LandBasicInfoComponent() {
           <Input
             id="block-no"
             value={formData.blockNo}
-            onChange={(e) => setFormData((prev) => ({ ...prev, blockNo: e.target.value }))}
+            onChange={(e) => updateFormField({ blockNo: e.target.value })}
             placeholder="Enter Block No"
           />
         </div>
 
         {/* Re Survey No - Only show if promulgation is Yes */}
-        {promStatus && (
+        {formData.isPromulgation && (
           <div className="p-4 border rounded-lg bg-blue-50">
             <div className="space-y-2">
               <Label htmlFor="re-survey-no">Re Survey No *</Label>
               <Input
                 id="re-survey-no"
                 value={formData.reSurveyNo}
-                onChange={(e) => setFormData((prev) => ({ ...prev, reSurveyNo: e.target.value }))}
+                onChange={(e) => updateFormField({ reSurveyNo: e.target.value })}
                 placeholder="Enter Re Survey No"
               />
             </div>
           </div>
         )}
 
-        {/* Document Upload with Better UX */}
+        {/* Document Upload */}
         <div className="space-y-2">
           <Label htmlFor="integrated-712">Integrated 7/12 Document</Label>
           <div className="flex items-center gap-4">
@@ -306,7 +355,6 @@ export default function LandBasicInfoComponent() {
                   const file = e.target.files?.[0]
                   if (file) {
                     handleFileUpload(file)
-                    // Clear the input so same file can be selected again
                     e.target.value = ''
                   }
                 }}
@@ -347,8 +395,7 @@ export default function LandBasicInfoComponent() {
         {/* Submit Button */}
         <div className="flex justify-end">
           <Button onClick={handleSubmit} disabled={loading} className="flex items-center gap-2">
-            {loading ? "Saving..." : "Next Step"}
-            <ArrowRight className="w-4 h-4" />
+            {loading ? "Saving..." : "Save & Continue"}        
           </Button>
         </div>
       </CardContent>
