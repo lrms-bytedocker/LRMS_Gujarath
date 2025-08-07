@@ -116,12 +116,15 @@ function getAutoPopulatedSNoData(landBasicInfo: any, selectedType: SNoTypeUI): s
   if (!landBasicInfo) return "";
   
   switch(selectedType) {
+    case "survey_no":
+      // Only return sNo for survey_no, no fallback to blockNo
+      return landBasicInfo.sNo || "";
     case "block_no":
+      // Only return blockNo for block_no
       return landBasicInfo.blockNo || "";
     case "re_survey_no":
-      return landBasicInfo.reSurveyNo || landBasicInfo.blockNo || "";
-    case "survey_no":
-      return landBasicInfo.sNo || landBasicInfo.blockNo || "";
+      // Only return reSurveyNo for re_survey_no
+      return landBasicInfo.reSurveyNo || "";
     default:
       return "";
   }
@@ -326,13 +329,13 @@ useEffect(() => {
         }
       }
 
-      // Fallback to empty state
+      // Fallback to empty state - let user enter S.No manually
       setSlabs([{
         id: "1",
         startYear: "",
         endYear: 2004,
         sNoTypeUI: "survey_no",
-        sNo: getAutoPopulatedSNoData(landBasicInfo, "survey_no"),
+        sNo: "", // Start with empty field
         areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
           areaType: "acre_guntha", 
           acre: 0, 
@@ -355,7 +358,7 @@ useEffect(() => {
         startYear: "",
         endYear: 2004,
         sNoTypeUI: "survey_no",
-        sNo: "",
+        sNo: "", // Start with empty field
         areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
         integrated712: "",
         paiky: false,
@@ -676,16 +679,17 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
   }
   return { valid: true };
 };
-  const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
+
+const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== id) return slab;
 
-    // When S.No type changes, fetch corresponding value
+    // When S.No type changes, clear the sNo field and let user enter manually
     if (updates.sNoTypeUI && updates.sNoTypeUI !== slab.sNoTypeUI) {
       return {
         ...slab,
         ...updates,
-        sNo: getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI)
+        sNo: "" // Clear the field instead of auto-populating
       };
     }
     
@@ -693,7 +697,7 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
   }));
 };
 
- const addSlab = () => {
+const addSlab = () => {
   const defaultArea = landBasicInfo?.area 
     ? toAreaUI(landBasicInfo.area) 
     : { areaType: "acre_guntha", acre: 0, guntha: 0 };
@@ -714,7 +718,7 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
     startYear,
     endYear,
     sNoTypeUI: "survey_no",
-    sNo: landBasicInfo?.sNo || landBasicInfo?.blockNo || "",
+    sNo: "", // Start with empty field, let user enter manually
     areaUI: defaultArea,
     integrated712: "",
     paiky: false,
@@ -736,22 +740,20 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
 
   // "Count" updating helpers
   const updatePaikyCount = (slabId: string, count: number) => {
-
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    const autoSNoData = getAutoPopulatedSNoData(landBasicInfo);
     const defaultEntry = {
-      sNo: autoSNoData?.sNo || "",
-      sNoTypeUI: autoSNoData?.sNoTypeUI || "survey_no",
-      areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
+      sNo: "", // Start with empty field
+      sNoTypeUI: "survey_no" as SNoTypeUI,
+      areaUI: { areaType: "acre_guntha" as AreaTypeUI, acre: 0, guntha: 0 },
       integrated712: ""
     };
 
     return {
       ...slab,
       paikyCount: count,
-      paiky: slab.paiky, // Keep checkbox state unchanged
+      paiky: slab.paiky,
       paikyEntries: Array.from({ length: count }, (_, i) => {
         return slab.paikyEntries?.[i] || { ...defaultEntry };
       })
@@ -760,22 +762,20 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
 };
 
 const updateEkatrikaranCount = (slabId: string, count: number) => {
-
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    const autoSNoData = getAutoPopulatedSNoData(landBasicInfo);
     const defaultEntry = {
-      sNo: autoSNoData?.sNo || "",
-      sNoTypeUI: autoSNoData?.sNoTypeUI || "survey_no",
-      areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
+      sNo: "", // Start with empty field
+      sNoTypeUI: "survey_no" as SNoTypeUI,
+      areaUI: { areaType: "acre_guntha" as AreaTypeUI, acre: 0, guntha: 0 },
       integrated712: ""
     };
 
     return {
       ...slab,
       ekatrikaranCount: count,
-      ekatrikaran: slab.ekatrikaran, // Keep checkbox state unchanged
+      ekatrikaran: slab.ekatrikaran,
       ekatrikaranEntries: Array.from({ length: count }, (_, i) => {
         return slab.ekatrikaranEntries?.[i] || { ...defaultEntry };
       })
@@ -783,7 +783,7 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
   }));
 };
   
- const updateSlabEntry = (
+const updateSlabEntry = (
   slabId: string,
   type: "paiky" | "ekatrikaran",
   index: number,
@@ -792,7 +792,7 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    // Handle S.No type change for entries
+    // Handle S.No type change for entries - clear instead of auto-populate
     if (updates.sNoTypeUI) {
       const entries = type === "paiky" 
         ? slab.paikyEntries || [] 
@@ -802,7 +802,7 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
       if (updates.sNoTypeUI !== currentEntry.sNoTypeUI) {
         updates = {
           ...updates,
-          sNo: getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI) || ""
+          sNo: "" // Clear the field instead of auto-populating
         };
       }
     }

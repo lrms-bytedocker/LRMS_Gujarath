@@ -323,71 +323,81 @@ export default function NondhDetails() {
   }
   
   updateNondhDetail(detailId, updates)
-}
- const validateArea = (value: number, unit: string) => {
-  if (unit === 'guntha' && value > 40) {
-    return {
-      valid: false,
-      message: "Guntha value cannot exceed 40"
-    };
+
+  // NEW: Call validity chain update when status changes to invalid
+  if (newStatus === 'invalid' && detail.oldOwner) {
+    // Find the old owner's nondh ID from the oldOwner field
+    updateValidityChain(detailId, detail.oldOwner, false) // false because this nondh is now invalid
+  } else if (newStatus === 'valid' && detail.oldOwner) {
+    // If changing back to valid, restore validity chain
+    updateValidityChain(detailId, detail.oldOwner, true)
   }
-  return { valid: true };
-};
-  const updateValidityChain = (currentDetailId: string, oldOwnerNondh: string, isValid: boolean) => {
-    const currentDetail = nondhDetailData.find(d => d.id === currentDetailId);
-    if (!currentDetail) return;
+}
 
-    // Find all nondh details for the same S.No, sorted by priority
-    const sameSnDetails = nondhDetailData
-      .filter(d => d.sNo === currentDetail.sNo)
-      .sort((a, b) => sortNondhsBySNoType(a, b, nondhs));
+const updateValidityChain = (currentDetailId: string, oldOwnerNondhId: string, isCurrentValid: boolean) => {
+  const currentDetail = nondhDetailData.find(d => d.id === currentDetailId);
+  if (!currentDetail) return;
 
-    const currentIndex = sameSnDetails.findIndex(d => d.id === currentDetailId);
-    const oldOwnerIndex = sameSnDetails.findIndex(d => d.nondhId === oldOwnerNondh);
+  // Find all nondh details for the same S.No, sorted by priority
+  const sameSnDetails = nondhDetailData
+    .filter(d => d.sNo === currentDetail.sNo)
+    .sort((a, b) => sortNondhsBySNoType(a, b, nondhs));
 
-    // Safety checks
-    if (oldOwnerIndex === -1 || currentIndex === -1 || oldOwnerIndex >= currentIndex) {
-      console.warn('Invalid validity chain update parameters');
-      return;
-    }
+  const currentIndex = sameSnDetails.findIndex(d => d.id === currentDetailId);
+  
+  // Find the old owner detail by matching nondh ID
+  const oldOwnerDetailIndex = sameSnDetails.findIndex(d => d.nondhId === oldOwnerNondhId);
 
-    // Get the old owner detail
-    const oldOwnerDetail = sameSnDetails[oldOwnerIndex];
+  // Safety checks
+  if (oldOwnerDetailIndex === -1 || currentIndex === -1 || oldOwnerDetailIndex >= currentIndex) {
+    console.warn('Invalid validity chain update parameters');
+    return;
+  }
+
+  // Get the old owner detail
+  const oldOwnerDetail = sameSnDetails[oldOwnerDetailIndex];
+  
+  // Logic: If current nondh becomes invalid, all previous nondhs in chain should become invalid
+  // If current nondh becomes valid, previous nondhs should become valid (unless they have their own invalid status)
+  
+  // Update validity for all nondhs between old owner and current nondh (inclusive of old owner, exclusive of current)
+  for (let i = oldOwnerDetailIndex; i < currentIndex; i++) {
+    const detailToUpdate = sameSnDetails[i];
     
-    // Determine if we need to invert the validity (if old owner is also Radd)
-    const shouldInvert = oldOwnerDetail.status === 'Invalid';
-
-    // Update validity for all nondhs between old owner and current nondh
-    for (let i = oldOwnerIndex; i < currentIndex; i++) {
-      const detailToUpdate = sameSnDetails[i];
-      const newValidityState = shouldInvert ? !isValid : isValid;
+    // Don't update the current detail itself, and respect explicit invalid status
+    if (detailToUpdate.id !== currentDetailId && detailToUpdate.status !== 'invalid') {
+      const newValidityState = isCurrentValid;
       
-      // Only update if this isn't the current Radd record itself
-      if (detailToUpdate.id !== currentDetailId) {
-        const updatedRelations = detailToUpdate.ownerRelations.map(relation => ({
-          ...relation,
-          isValid: newValidityState
-        }));
-        
-        updateNondhDetail(detailToUpdate.id, { ownerRelations: updatedRelations });
+      const updatedRelations = detailToUpdate.ownerRelations.map(relation => ({
+        ...relation,
+        isValid: newValidityState
+      }));
+      
+      updateNondhDetail(detailToUpdate.id, { ownerRelations: updatedRelations });
+      
+      // Recursively update if this detail also affects others
+      if (detailToUpdate.oldOwner && detailToUpdate.oldOwner !== oldOwnerNondhId) {
+        updateValidityChain(detailToUpdate.id, detailToUpdate.oldOwner, newValidityState);
       }
     }
   }
+}
 
   // Get previous owners for dropdown (Varsai, Hakkami, Vechadi)
-  const getPreviousOwners = (sNo: string, currentNondhId: string) => {
+const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   return nondhDetailData
     .filter(d => 
       d.sNo === sNo && 
       d.nondhId !== currentNondhId &&
-      ["Varsai", "Hakkami", "Vechadi"].includes(d.type) // Include these types
+      ["Varsai", "Hakkami", "Vechadi", "Kabjedaar", "Ekatrikaran"].includes(d.type) // Include more types
     )
     .sort((a, b) => sortNondhsBySNoType(a, b, nondhs))
     .flatMap(d => d.ownerRelations.map(r => ({ 
       name: r.ownerName, 
       area: r.area,
-      type: d.type // Include type for filtering if needed
-    }))) // Added missing parenthesis here
+      type: d.type,
+      nondhId: d.nondhId // FIX: Add the nondhId here
+    })))
     .filter(owner => owner.name.trim() !== '')
 }
 
@@ -417,20 +427,29 @@ export default function NondhDetails() {
         <div className="space-y-2">
           <Label>Old Owner *</Label>
           <Select
-            value={detail.oldOwner}
-            onValueChange={(value) => updateNondhDetail(detail.id, { oldOwner: value })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select Old Owner" />
-            </SelectTrigger>
-            <SelectContent>
-              {previousOwners.map((owner, index) => (
-                <SelectItem key={`${owner.name}_${index}`} value={owner.nondhId}>
-                  {owner.name} ({owner.area.value} {owner.area.unit})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+  value={detail.oldOwner}
+  onValueChange={(value) => {
+    updateNondhDetail(detail.id, { oldOwner: value })
+    
+    // NEW: Update validity chain when old owner changes
+    if (detail.status === 'invalid') {
+      updateValidityChain(detail.id, value, false)
+    } else {
+      updateValidityChain(detail.id, value, true)
+    }
+  }}
+>
+  <SelectTrigger>
+    <SelectValue placeholder="Select Old Owner" />
+  </SelectTrigger>
+  <SelectContent>
+    {previousOwners.map((owner, index) => (
+      <SelectItem key={`${owner.name}_${index}`} value={owner.nondhId}>
+        {owner.name} ({owner.area.value} {owner.area.unit})
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -1063,7 +1082,7 @@ export default function NondhDetails() {
                   const nondhA = nondhs.find((n) => n.id === a.nondhId)
                   const nondhB = nondhs.find((n) => n.id === b.nondhId)
                   if (!nondhA || !nondhB) return 0
-                  return sortNondhNumbers(nondhA, nondhB)
+                  return sortNondhsBySNoType(a, b, nondhs))
                 })
                 .map((detail) => {
                   const nondh = nondhs.find((n) => n.id === detail.nondhId)
