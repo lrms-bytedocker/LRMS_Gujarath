@@ -555,7 +555,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
         {/* Content commented out */}
       </div>
 
-      {area.areaType === "sq_m" ? (
+      {safeArea.areaType === "sq_m" ? (
         <div className="space-y-2">
           <Label>Square Meters</Label>
           <Input
@@ -604,7 +604,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-        {area.areaType === "sq_m" ? (
+        {safeArea.areaType === "sq_m" ? (
           <>
             <div className="space-y-2">
               <Label>Acres</Label>
@@ -685,13 +685,14 @@ const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
     if (slab.id !== id) return slab;
 
     // When S.No type changes, clear the sNo field and let user enter manually
-    if (updates.sNoTypeUI && updates.sNoTypeUI !== slab.sNoTypeUI) {
-      return {
-        ...slab,
-        ...updates,
-        sNo: "" // Clear the field instead of auto-populating
-      };
-    }
+   if (updates.sNoTypeUI && updates.sNoTypeUI !== slab.sNoTypeUI) {
+  const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
+  return {
+    ...slab,
+    ...updates,
+    sNo: autoPopulatedSNo // Auto-populate instead of clearing
+  };
+}
     
     return { ...slab, ...updates };
   }));
@@ -800,11 +801,12 @@ const updateSlabEntry = (
       const currentEntry = entries[index] || {};
       
       if (updates.sNoTypeUI !== currentEntry.sNoTypeUI) {
-        updates = {
-          ...updates,
-          sNo: "" // Clear the field instead of auto-populating
-        };
-      }
+  const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
+  updates = {
+    ...updates,
+    sNo: autoPopulatedSNo // Auto-populate instead of clearing
+  };
+}
     }
 
     if (type === "paiky") {
@@ -1397,11 +1399,15 @@ const toggleCollapse = (id: string) => {
                             </div>
                             <div className="md:col-span-2">
                               <Label>Area</Label>
-                              {areaFields(entry.areaUI, (area) =>
-                                updateSlabEntry(slab.id, "paiky", globalIndex, {
-                                  areaUI: area,
-                                })
-                              )}
+                          
+
+  {areaFields({ 
+    area: entry.areaUI, 
+    onChange: (area) => updateSlabEntry(slab.id, "paiky", globalIndex, {
+      areaUI: area
+    })
+  })}
+
                             </div>
                             <div className="space-y-2">
                               <Label>7/12 Document</Label>
@@ -1627,11 +1633,12 @@ const toggleCollapse = (id: string) => {
                             </div>
                             <div className="md:col-span-2">
                               <Label>Area</Label>
-                              {areaFields(entry.areaUI, (area) =>
-                                updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
-                                  areaUI: area,
-                                })
-                              )}
+                              {areaFields({ 
+    area: entry.areaUI, 
+    onChange: (area) => updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+      areaUI: area
+    })
+  })}
                             </div>
                             <div className="space-y-2">
                               <Label>7/12 Document</Label>

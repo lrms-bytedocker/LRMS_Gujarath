@@ -1,4 +1,5 @@
 "use client"
+import React from 'react'
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -1082,7 +1083,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
                   const nondhA = nondhs.find((n) => n.id === a.nondhId)
                   const nondhB = nondhs.find((n) => n.id === b.nondhId)
                   if (!nondhA || !nondhB) return 0
-                  return sortNondhsBySNoType(a, b, nondhs))
+                  return sortNondhsBySNoType(a, b, nondhs)
                 })
                 .map((detail) => {
                   const nondh = nondhs.find((n) => n.id === detail.nondhId)
