@@ -1,6 +1,4 @@
-
 "use client"
-
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,6 +13,7 @@ import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Eye, Loader2, ChevronDown,
 import { useLandRecord, type NondhDetail } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
+import { useStepFormData } from "@/hooks/use-step-form-data"
 
 const nondhTypes = [
   "Kabjedaar",
@@ -35,9 +34,9 @@ const tenureTypes = ["Navi", "Juni", "Kheti_Kheti_ma_Juni", "NA", "Bin_Kheti_Pre
 const hukamTypes = ["SSRD", "Collector", "Collector_ganot", "Prant", "Mamlajdaar", "GRT", "Jasu", "Krushipanch", "DILR"]
 
 const statusTypes = [
-  { value: "Pramanik", label: "Pramanik" },
-  { value: "Radd", label: "Radd" },
-  { value: "na_manjoor", label: "Na Manjoor" }
+  { value: "valid", label: "Valid" },
+  { value: "invalid", label: "Invalid" },
+  { value: "nullified", label: "Nullified" }
 ]
 
 // Enhanced sorting function for nondhs
@@ -76,10 +75,41 @@ const sortNondhsBySNoType = (a, b, nondhs) => {
 export default function NondhDetails() {
   const { yearSlabs, nondhs, setNondhs, nondhDetails, setNondhDetails, setCurrentStep, landBasicInfo } = useLandRecord()
   const { toast } = useToast()
+  const { getStepData, updateStepData, markAsSaved } = useStepFormData(5) // Step 5 for NondhDetails
   const [loading, setLoading] = useState(false)
-  const [nondhDetailData, setNondhDetailData] = useState<NondhDetail[]>([])
+  const [nondhDetailData, setNondhDetailData] = useState<NondhDetail[]>(getStepData().nondhDetails || [])
   const [collapsedNondhs, setCollapsedNondhs] = useState<Set<string>>(new Set())
   const [equalDistribution, setEqualDistribution] = useState<Record<string, boolean>>({})
+
+  // Initialize with saved data if available
+  useEffect(() => {
+  const stepData = getStepData()
+  if (stepData.nondhDetails) {
+    setNondhDetailData(stepData.nondhDetails)
+  }
+}, [getStepData])
+
+  // Update form data whenever nondhDetailData changes (with debouncing to prevent excessive updates)
+  useEffect(() => {
+    if (nondhDetailData.length > 0) {
+      const hasContent = nondhDetailData.some(detail => 
+        detail.type.trim() !== "" || 
+        detail.ownerRelations.length > 0 ||
+        detail.status !== "Pramanik"
+      )
+      
+      const currentStepData = getStepData()
+      const isDifferent = JSON.stringify(currentStepData.nondhDetails) !== JSON.stringify(nondhDetailData)
+      
+      if (hasContent && isDifferent) {
+        const timeoutId = setTimeout(() => {
+          updateStepData({ nondhDetails: nondhDetailData })
+        }, 300)
+        
+        return () => clearTimeout(timeoutId)
+      }
+    }
+  }, [nondhDetailData, updateStepData, getStepData])
 
   // Load nondhs from database first
   useEffect(() => {
@@ -120,125 +150,55 @@ export default function NondhDetails() {
   }, [landBasicInfo?.id, setNondhs, toast])
 
   useEffect(() => {
-    const loadNondhDetails = async () => {
-      if (!nondhs.length) return
+    const initializeData = () => {
+      if (nondhDetailData.length === 0) {
+        const initialData: NondhDetail[] = []
+        const sNoNondhMap = new Map<string, any[]>()
 
-      try {
-        const nondhIds = nondhs.map(n => n.id).filter(id => id && id !== "1" && id !== "new")
-        
-        if (nondhIds.length === 0) {
-          initializeFreshData()
-          return
-        }
+        nondhs.forEach(nondh => {
+          nondh.affectedSNos.forEach(sNo => {
+            if (!sNoNondhMap.has(sNo)) sNoNondhMap.set(sNo, [])
+            sNoNondhMap.get(sNo)!.push(nondh)
+          })
+        })
 
-        const { data: detailsData, error: detailsError } = await supabase
-          .from('nondh_details')
-          .select('*')
-          .in('nondh_id', nondhIds)
-
-        if (detailsError) throw detailsError
-
-        const { data: relationsData, error: relationsError } = await supabase
-          .from('nondh_owner_relations')
-          .select('*')
-          .in('nondh_detail_id', detailsData?.map(d => d.id) || [])
-
-        if (relationsError) throw relationsError
-
-        if (detailsData?.length) {
-          const loadedDetails = detailsData.map(detail => {
-            const relations = relationsData?.filter(r => r.nondh_detail_id === detail.id) || []
-            return {
-              id: `${detail.nondh_id}_${detail.s_no}`,
-              nondhId: detail.nondh_id,
-              sNo: detail.s_no,
-              type: detail.type,
-              subType: detail.sub_type || '',
-              vigat: detail.vigat || '',
-              status: detail.status as 'Pramanik' | 'Radd' | 'na_manjoor',
-              raddReason: detail.radd_reason || '',
-              showInOutput: detail.show_in_output,
-              hasDocuments: detail.has_documents,
-              docUpload: detail.doc_upload_url || '',
-              oldOwner: detail.old_owner || '',
-              ownerRelations: relations.map(r => ({
-                id: r.id.toString(),
-                ownerName: r.owner_name,
-                sNo: r.s_no,
-                area: { value: r.area_value, unit: r.area_unit as 'guntha' | 'sq_m' },
-                tenure: r.tenure,
-                isValid: r.is_valid !== false,
-                ...(r.hukam_type && { hukamType: r.hukam_type }),
-                ...(typeof r.restraining_order === 'boolean' && { 
-                  restrainingOrder: r.restraining_order ? 'yes' : 'no' 
-                })
-              })),
-              dbId: detail.id
-            }
+        Array.from(sNoNondhMap.keys())
+          .sort()
+          .forEach(sNo => {
+            sNoNondhMap.get(sNo)!.forEach(nondh => {
+              const newDetail = {
+                id: `${nondh.id}_${sNo}`,
+                nondhId: nondh.id,
+                sNo,
+                type: "Kabjedaar",
+                subType: "",
+                vigat: "",
+                status: "Pramanik",
+                raddReason: "",
+                showInOutput: false,
+                hasDocuments: false,
+                docUpload: "",
+                oldOwner: "",
+                hukamDate: "",
+                ownerRelations: [{
+                  id: Date.now().toString(),
+                  ownerName: "",
+                  sNo,
+                  area: { value: 0, unit: "sq_m" },
+                  tenure: "Navi",
+                  isValid: true
+                }],
+              }
+              initialData.push(newDetail)
+            })
           })
 
-          setNondhDetailData(loadedDetails)
-          setNondhDetails(loadedDetails)
-        } else {
-          initializeFreshData()
-        }
-      } catch (error) {
-        console.error('Load error:', error)
-        toast({
-          title: "Error loading nondh details",
-          variant: "destructive"
-        })
-        initializeFreshData()
+        setNondhDetailData(initialData)
       }
     }
 
-    const initializeFreshData = () => {
-      const initialData: NondhDetail[] = []
-      const sNoNondhMap = new Map<string, any[]>()
-
-      nondhs.forEach(nondh => {
-        nondh.affectedSNos.forEach(sNo => {
-          if (!sNoNondhMap.has(sNo)) sNoNondhMap.set(sNo, [])
-          sNoNondhMap.get(sNo)!.push(nondh)
-        })
-      })
-
-      Array.from(sNoNondhMap.keys())
-        .sort()
-        .forEach(sNo => {
-          sNoNondhMap.get(sNo)!.forEach(nondh => {
-            const newDetail = {
-              id: `${nondh.id}_${sNo}`,
-              nondhId: nondh.id,
-              sNo,
-              type: "Kabjedaar",
-              subType: "",
-              vigat: "",
-              status: "Pramanik",
-              raddReason: "",
-              showInOutput: false,
-              hasDocuments: false,
-              docUpload: "",
-              oldOwner: "",
-              hukamDate: "",
-              ownerRelations: [{
-                id: Date.now().toString(),
-                ownerName: "",
-                sNo,
-                area: { value: 0, unit: "sq_m" },
-                tenure: "Navi",
-                isValid: true
-              }],
-            }
-            initialData.push(newDetail)
-          })
-        })
-
-      setNondhDetailData(initialData)
-    }
-
-    loadNondhDetails()
-  }, [nondhs, setNondhDetails, toast])
+    initializeData()
+  }, [nondhs])
 
   const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
     setNondhDetailData((prev) => prev.map((detail) => (detail.id === id ? { ...detail, ...updates } : detail)))
@@ -352,113 +312,104 @@ export default function NondhDetails() {
     }
   }
 
-  // Handle status change and validity updates
-  const handleStatusChange = (detailId: string, newStatus: "Pramanik" | "Radd" | "na_manjoor") => {
+  const handleStatusChange = (detailId: string, newStatus: "valid" | "invalid" | "nullified") => {
   const detail = nondhDetailData.find(d => d.id === detailId)
   if (!detail) return
 
-  // First validate if changing to Radd requires old owner
-  if (newStatus === 'Radd' && detail.type === 'Varsai' && !detail.oldOwner) {
-    toast({
-      title: "Validation Error",
-      description: "Must select old owner when status is Radd for Varsai type",
-      variant: "destructive"
-    })
-    return
-  }
-
-  // Store previous status before updating
-  const previousStatus = detail.status
-
-  // Update the status first
-  updateNondhDetail(detailId, { 
+  // Clear invalid reason if status is no longer invalid
+  const updates = { 
     status: newStatus,
-    // Clear raddReason if changing from Radd to another status
-    raddReason: newStatus === 'Radd' ? detail.raddReason : '' 
-  })
-
-  // Handle validity chain updates
-  if (newStatus === 'Radd') {
-    const oldOwnerNondh = detail.oldOwner
-    if (oldOwnerNondh) {
-      updateValidityChain(detailId, oldOwnerNondh, false)
-    }
-  } else if (previousStatus === 'Radd') {
-    // Only revert validity if changing from Radd to another status
-    const oldOwnerNondh = detail.oldOwner
-    if (oldOwnerNondh) {
-      updateValidityChain(detailId, oldOwnerNondh, true)
-    }
+    invalidReason: newStatus === 'invalid' ? detail.invalidReason : '' 
   }
-
-  // Additional logic for na_manjoor status if needed
-  if (newStatus === 'na_manjoor') {
-    // You might want to handle this case specifically
-  }
-}
-
-  const updateValidityChain = (currentDetailId: string, oldOwnerNondh: string, isValid: boolean) => {
-  const currentDetail = nondhDetailData.find(d => d.id === currentDetailId);
-  if (!currentDetail) return;
-
-  // Find all nondh details for the same S.No, sorted by priority
-  const sameSnDetails = nondhDetailData
-    .filter(d => d.sNo === currentDetail.sNo)
-    .sort((a, b) => sortNondhsBySNoType(a, b, nondhs));
-
-  const currentIndex = sameSnDetails.findIndex(d => d.id === currentDetailId);
-  const oldOwnerIndex = sameSnDetails.findIndex(d => d.nondhId === oldOwnerNondh);
-
-  // Safety checks
-  if (oldOwnerIndex === -1 || currentIndex === -1 || oldOwnerIndex >= currentIndex) {
-    console.warn('Invalid validity chain update parameters');
-    return;
-  }
-
-  // Get the old owner detail
-  const oldOwnerDetail = sameSnDetails[oldOwnerIndex];
   
-  // Determine if we need to invert the validity (if old owner is also Radd)
-  const shouldInvert = oldOwnerDetail.status === 'Radd';
+  updateNondhDetail(detailId, updates)
+}
+ const validateArea = (value: number, unit: string) => {
+  if (unit === 'guntha' && value > 40) {
+    return {
+      valid: false,
+      message: "Guntha value cannot exceed 40"
+    };
+  }
+  return { valid: true };
+};
+  const updateValidityChain = (currentDetailId: string, oldOwnerNondh: string, isValid: boolean) => {
+    const currentDetail = nondhDetailData.find(d => d.id === currentDetailId);
+    if (!currentDetail) return;
 
-  // Update validity for all nondhs between old owner and current nondh
-  for (let i = oldOwnerIndex; i < currentIndex; i++) {
-    const detailToUpdate = sameSnDetails[i];
-    const newValidityState = shouldInvert ? !isValid : isValid;
+    // Find all nondh details for the same S.No, sorted by priority
+    const sameSnDetails = nondhDetailData
+      .filter(d => d.sNo === currentDetail.sNo)
+      .sort((a, b) => sortNondhsBySNoType(a, b, nondhs));
+
+    const currentIndex = sameSnDetails.findIndex(d => d.id === currentDetailId);
+    const oldOwnerIndex = sameSnDetails.findIndex(d => d.nondhId === oldOwnerNondh);
+
+    // Safety checks
+    if (oldOwnerIndex === -1 || currentIndex === -1 || oldOwnerIndex >= currentIndex) {
+      console.warn('Invalid validity chain update parameters');
+      return;
+    }
+
+    // Get the old owner detail
+    const oldOwnerDetail = sameSnDetails[oldOwnerIndex];
     
-    // Only update if this isn't the current Radd record itself
-    if (detailToUpdate.id !== currentDetailId) {
-      const updatedRelations = detailToUpdate.ownerRelations.map(relation => ({
-        ...relation,
-        isValid: newValidityState
-      }));
+    // Determine if we need to invert the validity (if old owner is also Radd)
+    const shouldInvert = oldOwnerDetail.status === 'Invalid';
+
+    // Update validity for all nondhs between old owner and current nondh
+    for (let i = oldOwnerIndex; i < currentIndex; i++) {
+      const detailToUpdate = sameSnDetails[i];
+      const newValidityState = shouldInvert ? !isValid : isValid;
       
-      updateNondhDetail(detailToUpdate.id, { ownerRelations: updatedRelations });
+      // Only update if this isn't the current Radd record itself
+      if (detailToUpdate.id !== currentDetailId) {
+        const updatedRelations = detailToUpdate.ownerRelations.map(relation => ({
+          ...relation,
+          isValid: newValidityState
+        }));
+        
+        updateNondhDetail(detailToUpdate.id, { ownerRelations: updatedRelations });
+      }
     }
   }
+
+  // Get previous owners for dropdown (Varsai, Hakkami, Vechadi)
+  const getPreviousOwners = (sNo: string, currentNondhId: string) => {
+  return nondhDetailData
+    .filter(d => 
+      d.sNo === sNo && 
+      d.nondhId !== currentNondhId &&
+      ["Varsai", "Hakkami", "Vechadi"].includes(d.type) // Include these types
+    )
+    .sort((a, b) => sortNondhsBySNoType(a, b, nondhs))
+    .flatMap(d => d.ownerRelations.map(r => ({ 
+      name: r.ownerName, 
+      area: r.area,
+      type: d.type // Include type for filtering if needed
+    }))) // Added missing parenthesis here
+    .filter(owner => owner.name.trim() !== '')
 }
 
-  // Get previous owners for Varsai dropdown
-  const getPreviousOwners = (sNo: string, currentNondhId: string) => {
-    return nondhDetailData
-      .filter(d => d.sNo === sNo && d.nondhId !== currentNondhId)
-      .sort((a, b) => sortNondhsBySNoType(a, b, nondhs))
-      .flatMap(d => d.ownerRelations.map(r => ({ name: r.ownerName, area: r.area })))
-      .filter(owner => owner.name.trim() !== '')
-  }
-
+  const updateNondhDetailData = (newData: NondhDetail[]) => {
+  setNondhDetailData(newData)
+  updateStepData({ nondhDetails: newData })
+}
   const handleFileUpload = async (file: File, detailId: string) => {
     try {
       const path = `nondh-detail-documents/${Date.now()}_${file.name}`
       const url = await uploadFile(file, "land-documents", path)
-      updateNondhDetail(detailId, { docUpload: url })
-      toast({ title: "File uploaded successfully" })
+      const updatedDetails = nondhDetailData.map(detail => 
+      detail.id === detailId ? { ...detail, docUpload: url } : detail
+    )
+    updateNondhDetailData(updatedDetails)
+    toast({ title: "File uploaded successfully" })
     } catch (error) {
       toast({ title: "Error uploading file", variant: "destructive" })
     }
   }
 
-  const renderVarsaiFields = (detail: NondhDetail) => {
+  const renderOwnerSelectionFields = (detail: NondhDetail) => {
     const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId)
     
     return (
@@ -474,7 +425,7 @@ export default function NondhDetails() {
             </SelectTrigger>
             <SelectContent>
               {previousOwners.map((owner, index) => (
-                <SelectItem key={`${owner.name}_${index}`} value={owner.name}>
+                <SelectItem key={`${owner.name}_${index}`} value={owner.nondhId}>
                   {owner.name} ({owner.area.value} {owner.area.unit})
                 </SelectItem>
               ))}
@@ -530,30 +481,43 @@ export default function NondhDetails() {
                 </div>
                 <div className="space-y-2">
                   <Label>Area Value</Label>
-                  <Input
-                    type="number"
-                    value={relation.area.value}
-                    onChange={(e) => {
-                      const newValue = parseFloat(e.target.value) || 0
-                      updateOwnerRelation(detail.id, relation.id, {
-                        area: { ...relation.area, value: newValue },
-                      })
-                      
-                      // Auto-redistribute if equal distribution is enabled and this is old owner
-                      if (index === 0 && equalDistribution[detail.id] && detail.ownerRelations.length > 1) {
-                        const newOwnersCount = detail.ownerRelations.length - 1
-                        const equalArea = newValue / newOwnersCount
-                        
-                        const redistributed = detail.ownerRelations.map((r, i) => {
-                          if (i === 0) return r
-                          return { ...r, area: { ...r.area, value: equalArea } }
-                        })
-                        
-                        updateNondhDetail(detail.id, { ownerRelations: redistributed })
-                      }
-                    }}
-                    placeholder="Enter area"
-                  />
+<Input
+  type="number"
+  value={relation.area.value === 0 ? '' : relation.area.value}
+  onChange={(e) => {
+    const inputValue = e.target.value;
+    const numericValue = inputValue === '' ? 0 : parseFloat(inputValue);
+    
+    // Skip validation if empty (allowing backspace)
+    if (inputValue === '') {
+      updateOwnerRelation(detail.id, relation.id, {
+        area: { ...relation.area, value: 0 }
+      });
+      return;
+    }
+
+    // Validate guntha limit
+    if (relation.area.unit === 'guntha' && numericValue > 40) {
+      toast({
+        title: "Validation Error",
+        description: "Guntha value cannot exceed 40",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Only update if valid number
+    if (!isNaN(numericValue)) {
+      updateOwnerRelation(detail.id, relation.id, {
+        area: { ...relation.area, value: numericValue }
+      });
+    }
+  }}
+  min={0}
+  max={relation.area.unit === 'guntha' ? 40 : undefined}
+  placeholder="Enter area"
+  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+/>
                 </div>
                 <div className="space-y-2">
                   <Label>Area Unit</Label>
@@ -583,8 +547,8 @@ export default function NondhDetails() {
   }
 
   const renderTypeSpecificFields = (detail: NondhDetail) => {
-    if (detail.type === "Varsai") {
-      return renderVarsaiFields(detail)
+    if (["Varsai", "Hakkami", "Vechadi"].includes(detail.type)) {
+      return renderOwnerSelectionFields(detail)
     }
 
     switch (detail.type) {
@@ -692,18 +656,18 @@ export default function NondhDetails() {
       case "Hukam":
         return (
           <div className="space-y-4">
-             <div className="space-y-2">
-    <Label>Hukam Date *</Label>
-    <Input
-      type="date"
-      value={detail.ownerRelations[0]?.hukamDate || ''}
-      onChange={(e) => updateOwnerRelation(
-        detail.id, 
-        detail.ownerRelations[0]?.id, 
-        { hukamDate: e.target.value }
-      )}
-    />
-  </div>
+            <div className="space-y-2">
+              <Label>Hukam Date *</Label>
+              <Input
+                type="date"
+                value={detail.ownerRelations[0]?.hukamDate || ''}
+                onChange={(e) => updateOwnerRelation(
+                  detail.id, 
+                  detail.ownerRelations[0]?.id, 
+                  { hukamDate: e.target.value }
+                )}
+              />
+            </div>
 
             <div className="space-y-4">
               <Label>Restraining Order Passed?</Label>
@@ -885,7 +849,6 @@ export default function NondhDetails() {
           sNo: slab.sNo,
           url: slab.integrated712,
           type: "Main Slab",
-          // Show individual slab area, not total
           area: slab.area ? `${slab.area.value} ${slab.area.unit}` : 'N/A'
         })
       }
@@ -937,7 +900,7 @@ export default function NondhDetails() {
         sub_type: detail.subType,
         vigat: detail.vigat,
         status: detail.status,
-        radd_reason: detail.raddReason || null,
+        invalid_reason: detail.status === 'invalid' ? detail.invalidReason : null,
         old_owner: detail.oldOwner || null,
         show_in_output: detail.showInOutput,
         has_documents: detail.hasDocuments,
@@ -1018,8 +981,9 @@ export default function NondhDetails() {
       })
 
       setNondhDetails(updatedDetails)
-      toast({ title: "Nondh details saved successfully" })
-      setCurrentStep(6)
+      markAsSaved()
+    toast({ title: "Nondh details saved successfully" })
+    setCurrentStep(6)
     } catch (error) {
       console.error('Save error:', error)
       toast({
@@ -1173,30 +1137,30 @@ export default function NondhDetails() {
         <div className="space-y-2">
           <Label>Status</Label>
           <Select
-            value={detail.status}
-            onValueChange={(value) => handleStatusChange(detail.id, value)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {statusTypes.map((status) => (
-                <SelectItem key={status.value} value={status.value}>
-                  {status.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {detail.status === "Radd" && (
-            <div className="space-y-2 mt-2">
-              <Label>Radd Reason *</Label>
-              <Input
-                value={detail.raddReason}
-                onChange={(e) => updateNondhDetail(detail.id, { raddReason: e.target.value })}
-                placeholder="Enter reason for Radd"
-              />
-            </div>
-          )}
+  value={detail.status}
+  onValueChange={(value) => handleStatusChange(detail.id, value)}
+>
+  <SelectTrigger>
+    <SelectValue />
+  </SelectTrigger>
+  <SelectContent>
+    {statusTypes.map((status) => (
+      <SelectItem key={status.value} value={status.value}>
+        {status.label}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
+{detail.status === "invalid" && (
+  <div className="space-y-2 mt-2">
+    <Label>Invalid Reason *</Label>
+    <Input
+      value={detail.invalidReason}
+      onChange={(e) => updateNondhDetail(detail.id, { invalidReason: e.target.value })}
+      placeholder="Enter reason for invalidation"
+    />
+  </div>
+)}
         </div>
       </div>
 
@@ -1275,7 +1239,7 @@ export default function NondhDetails() {
               </>
             ) : (
               <>
-                Save and Continue
+                Save
               </>
             )}
           </Button>

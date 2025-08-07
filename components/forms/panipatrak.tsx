@@ -20,6 +20,7 @@ import {
 import { LandRecordService } from "@/lib/supabase"; 
 import { toast } from "@/hooks/use-toast";
 import { convertToSquareMeters, convertFromSquareMeters } from "@/lib/supabase";
+import { useStepFormData } from "@/hooks/use-step-form-data";
 
 type AreaUnit = "acre" | "sq_m";
 type FarmerStrict = {
@@ -33,9 +34,15 @@ type FarmerStrict = {
 };
 
 function getYearPeriods(slab: YearSlab) {
+  if (!slab.startYear || !slab.endYear) return [];
+  
   const periods: { from: number; to: number; period: string }[] = [];
   for (let y = slab.startYear; y < slab.endYear; y++) {
-    periods.push({ from: y, to: y + 1, period: `${y}-${y + 1}` });
+    periods.push({ 
+      from: y, 
+      to: y + 1, 
+      period: `${y}-${y + 1}` 
+    });
   }
   return periods;
 }
@@ -249,12 +256,12 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
 };
 
 export default function PanipatrakStep() {
-  const { yearSlabs, setPanipatraks, setCurrentStep, landBasicInfo } = useLandRecord();
+  const { yearSlabs, setCurrentStep, currentStep, landBasicInfo } = useLandRecord();
+  const { getStepData, updateStepData } = useStepFormData(3);
   const [loading, setLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [expandedSlabs, setExpandedSlabs] = useState<Record<string, boolean>>({});
   const [expandedPeriods, setExpandedPeriods] = useState<Record<string, boolean>>({});
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [slabPanels, setSlabPanels] = useState<{
     [slabId: string]: {
@@ -270,7 +277,6 @@ export default function PanipatrakStep() {
     };
   }>({});
 
-  // Initialize panels with default data
   const initializePanelsWithDefaults = (slabs: YearSlab[]) => {
     const newPanels: typeof slabPanels = {};
     const initialExpanded: Record<string, boolean> = {};
@@ -306,62 +312,104 @@ export default function PanipatrakStep() {
     setExpandedPeriods(initialPeriodsExpanded);
     return newPanels;
   };
-
   useEffect(() => {
-    if (!yearSlabs || yearSlabs.length === 0) {
-      setIsInitialized(false);
-      return;
-    }
+  console.log("Slab panels state:", slabPanels);
+}, [slabPanels]);
 
-    const initializePanels = async () => {
-      let newPanels = initializePanelsWithDefaults(yearSlabs);
+useEffect(() => {
+  console.log("Year slabs:", yearSlabs);
+}, [yearSlabs]);
+  // Initialize panels with default data or saved data
 
-      if (landBasicInfo?.id) {
-        try {
-          const { data, error } = await LandRecordService.getPanipatraks(landBasicInfo.id);
-          if (!error && data && data.length > 0) {
-            const bySlabId: Record<string, Panipatrak[]> = {};
-            data.forEach(p => {
-              if (!bySlabId[p.slabId]) bySlabId[p.slabId] = [];
-              bySlabId[p.slabId].push(p);
-            });
+useEffect(() => {
+  if (yearSlabs.length === 0) {
+    setIsInitialized(false);
+    return;
+  }
 
-            Object.keys(newPanels).forEach(slabId => {
-              if (bySlabId[slabId]) {
-                newPanels[slabId].periods = newPanels[slabId].periods.map(period => {
-                  const savedData = bySlabId[slabId].find(p => p.year === period.from);
-                  if (savedData && savedData.farmers && savedData.farmers.length > 0) {
-                    return {
-                      ...period,
-                      farmers: savedData.farmers.map(f => ({
-                        id: f.id || `farmer-${Date.now()}-${Math.random()}`,
-                        name: f.name || "",
-                        area: f.area || { value: 0, unit: "acre" },
-                        areaType: f.area?.unit === "sq_m" ? "sq_m" : "acre_guntha",
-                        acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
-                        guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
-                        sq_m: f.area?.unit === "sq_m" ? f.area.value : undefined
-                      })),
-                      sameAsAbove: false
-                    };
-                  }
-                  return period;
-                });
-              }
-            });
-          }
-        } catch (error) {
-          console.warn("Could not load saved panipatraks:", error);
-        }
+  const initializePanels = () => {
+    const stepData = getStepData();
+    const savedPanipatraks = stepData?.panipatraks || [];
+    
+    const newPanels: typeof slabPanels = {};
+    const initialExpanded: Record<string, boolean> = {};
+    const initialPeriodsExpanded: Record<string, boolean> = {};
+
+    yearSlabs.forEach(slab => {
+      const periods = getYearPeriods(slab);
+      const slabPanipatraks = savedPanipatraks.filter(p => p.slabId === slab.id);
+      
+      newPanels[slab.id] = {
+        slab,
+        sameForAll: false,
+        periods: periods.map(pr => {
+          const savedData = slabPanipatraks.find(p => p.year === pr.from);
+          return {
+            ...pr,
+            sameAsAbove: false,
+            farmers: savedData?.farmers?.length 
+              ? savedData.farmers.map(f => ({
+                  id: f.id || `farmer-${Date.now()}-${Math.random()}`,
+                  name: f.name || "",
+                  area: f.area || { value: 0, unit: "acre" },
+                  areaType: f.area?.unit === "sq_m" ? "sq_m" : "acre_guntha",
+                  acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
+                  guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
+                  sq_m: f.area?.unit === "sq_m" ? f.area.value : undefined
+                }))
+              : [{
+                  id: `farmer-${Date.now()}-${Math.random()}`,
+                  name: "",
+                  area: { value: 0, unit: "acre" },
+                  areaType: "acre_guntha",
+                  acre: 0,
+                  guntha: 0
+                }]
+          };
+        })
+      };
+      
+      initialExpanded[slab.id] = true;
+      if (periods.length > 0) {
+        initialPeriodsExpanded[`${slab.id}-${periods[0].period}`] = true;
       }
+    });
 
-      setSlabPanels(newPanels);
-      setIsInitialized(true);
-    };
+    setSlabPanels(newPanels);
+    setExpandedSlabs(initialExpanded);
+    setExpandedPeriods(initialPeriodsExpanded);
+    setIsInitialized(true);
+  };
 
-    initializePanels();
-  }, [yearSlabs, landBasicInfo?.id]);
+  initializePanels();
+}, [yearSlabs]); // Only depend on yearSlabs
 
+  // Update form data whenever slabPanels changes
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const panipatraks: Panipatrak[] = [];
+    Object.values(slabPanels).forEach(({ periods, slab }) => {
+      periods.forEach(p => {
+        panipatraks.push({
+          slabId: slab.id,
+          sNo: slab.sNo,
+          year: p.from,
+          farmers: p.farmers.map(f => ({
+            id: f.id,
+            name: f.name.trim(),
+            area: {
+              value: f.area.value || 0,
+              unit: f.area.unit
+            }
+          }))
+        });
+      });
+    });
+
+    updateStepData({ panipatraks });
+  }, [slabPanels, isInitialized]);
+  
   const addFarmer = (slabId: string, periodIdx: number) => {
     setSlabPanels(prev => {
       const newPanels = JSON.parse(JSON.stringify(prev)); // Deep copy to avoid mutations
@@ -461,7 +509,7 @@ export default function PanipatrakStep() {
       
       return newPanels;
     });
-    setHasUnsavedChanges(true);
+    setHasUnsavedChanges(currentStep, true);
   };
 
   const checkSameAsAbove = (slabId: string, periodIdx: number, checked: boolean) => {
@@ -513,87 +561,77 @@ export default function PanipatrakStep() {
   };
 
   const handleSubmit = async () => {
-    if (!landBasicInfo?.id) {
-      toast({
-        title: "Error",
-        description: "Land record not found",
-        variant: "destructive"
-      });
-      return;
+  if (!landBasicInfo?.id) {
+    toast({
+      title: "Error",
+      description: "Land record not found",
+      variant: "destructive"
+    });
+    return;
+  }
+
+  setLoading(true);
+  
+  try {
+    const panipatraks: Panipatrak[] = [];
+    
+    const hasEmptyFarmers = Object.values(slabPanels).some(({ periods }) => 
+      periods.some(p => 
+        p.farmers.some(f => !f.name.trim())
+      )
+    );
+
+    if (hasEmptyFarmers) {
+      throw new Error("All farmers must have a name");
     }
 
-    setLoading(true);
-    
-    try {
-      const panipatraks: Panipatrak[] = [];
-      
-      const hasEmptyFarmers = Object.values(slabPanels).some(({ periods }) => 
-        periods.some(p => 
-          p.farmers.some(f => !f.name.trim())
-        )
-      );
-
-      if (hasEmptyFarmers) {
-        throw new Error("All farmers must have a name");
-      }
-
-      Object.values(slabPanels).forEach(({ periods, slab }) => {
-        // Debug log to check slab data
-        console.log('Processing slab:', slab);
-        
-        periods.forEach(p => {
-          // Validate slab.id is a proper UUID
-          if (!slab.id || typeof slab.id !== 'string' || slab.id === '1') {
-            console.error('Invalid slab ID:', slab.id);
-            throw new Error(`Invalid slab ID: ${slab.id}`);
-          }
-
-          panipatraks.push({
-            slabId: slab.id,
-            sNo: slab.sNo,
-            year: p.from,
-            farmers: p.farmers.map(f => ({
-              id: f.id,
-              name: f.name.trim(),
-              area: {
-                value: f.area.value || 0,
-                unit: f.area.unit
-              }
-            }))
-          });
+    Object.values(slabPanels).forEach(({ periods, slab }) => {
+      periods.forEach(p => {
+        panipatraks.push({
+          slabId: slab.id,
+          sNo: slab.sNo,
+          year: p.from,
+          farmers: p.farmers.map(f => ({
+            id: f.id,
+            name: f.name.trim(),
+            area: {
+              value: f.area.value || 0,
+              unit: f.area.unit
+            }
+          }))
         });
       });
+    });
 
-      console.log('Panipatraks to save:', panipatraks);
+    console.log('Panipatraks to save:', panipatraks);
 
-      const { error } = await LandRecordService.savePanipatraks(
-        landBasicInfo.id,
-        panipatraks
-      );
+    // Actually call the save function
+    const { error } = await LandRecordService.savePanipatraks(
+      landBasicInfo.id,
+      panipatraks
+    );
 
-      if (error) {
-        console.error('Save error:', error);
-        throw error;
-      }
-
-      setPanipatraks(panipatraks);
-      setHasUnsavedChanges(false);
-      setCurrentStep(4);
-      toast({ title: "Panipatraks saved successfully" });
-
-    } catch (error: unknown) {
-      console.error('Submit error:', error);
-      toast({
-        title: "Save failed",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
+    if (error) {
+      console.error('Save error:', error);
+      throw error;
     }
-  };
 
-  if (!yearSlabs.length) {
+    setCurrentStep(4);
+    toast({ title: "Panipatraks saved successfully" });
+
+  } catch (error: unknown) {
+    console.error('Submit error:', error);
+    toast({
+      title: "Save failed",
+      description: error instanceof Error ? error.message : "An unknown error occurred",
+      variant: "destructive"
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
+ if (!yearSlabs.length) {
     return <div className="p-10">Please add year slabs in Step 2!</div>;
   }
 
@@ -608,7 +646,7 @@ export default function PanipatrakStep() {
     );
   }
 
-  return (
+ return (
     <Card>
       <CardHeader>
         <CardTitle>Step 3: Panipatrak (Farmer Details)</CardTitle>

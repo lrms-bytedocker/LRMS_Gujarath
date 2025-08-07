@@ -100,9 +100,9 @@ CREATE TABLE nondh_details (
     type VARCHAR(255) NOT NULL,
     sub_type VARCHAR(255),
     vigat TEXT,
-    radd_reason TEXT,
+    invalid_reason TEXT,  -- Changed from radd_reason
     old_owner VARCHAR(255),
-    status VARCHAR(20) DEFAULT 'Valid' CHECK (status IN ('Valid', 'Invalid', 'Nullified')),
+    status VARCHAR(20) DEFAULT 'valid' CHECK (status IN ('valid', 'invalid', 'nullified')),  -- Updated values
     show_in_output BOOLEAN DEFAULT true,
     has_documents BOOLEAN DEFAULT false,
     doc_upload_url TEXT,

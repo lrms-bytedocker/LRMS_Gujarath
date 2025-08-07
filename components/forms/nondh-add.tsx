@@ -1,5 +1,4 @@
 "use client"
-
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,13 +10,16 @@ import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Loader2 } from "lucide-rea
 import { useLandRecord, type Nondh } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
+import { useStepFormData } from "@/hooks/use-step-form-data"
 
 type SNoTypeUI = "block_no" | "re_survey_no" | "survey_no";
 
 export default function NondhAdd() {
-  const { yearSlabs, nondhs, setNondhs, setCurrentStep, landBasicInfo } = useLandRecord()
+  const { yearSlabs, setCurrentStep, currentStep, landBasicInfo} = useLandRecord()
   const { toast } = useToast()
+  const { getStepData, updateStepData, markAsSaved } = useStepFormData(4) // Step 4 for NondhAdd
   const [loading, setLoading] = useState(false)
+  const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set())
   const [nondhData, setNondhData] = useState<Nondh[]>([
     {
       id: "1",
@@ -25,8 +27,41 @@ export default function NondhAdd() {
       sNoType: "s_no",
       affectedSNos: [],
       nondhDoc: "",
+      nondhDocFileName: "",
     },
   ])
+
+  // Initialize with saved data if available
+  useEffect(() => {
+    const stepData = getStepData()
+    if (stepData.nondhs && stepData.nondhs.length > 0) {
+      setNondhData(stepData.nondhs)
+    }
+  }, [getStepData])
+
+  // Update form data whenever nondhData changes (with debouncing to prevent excessive updates)
+  useEffect(() => {
+  if (nondhData.length > 0) {
+    // Only update if there's actual content that's different from initial state
+    const hasContent = nondhData.some(nondh => 
+      nondh.number.trim() !== "" || 
+      nondh.affectedSNos.length > 0 || 
+      nondh.nondhDoc !== ""
+    );
+    
+    // Also check if the data is actually different from what's already saved
+    const currentStepData = getStepData();
+    const isDifferent = JSON.stringify(currentStepData.nondhs) !== JSON.stringify(nondhData);
+    
+    if ((hasContent || nondhData.length > 1) && isDifferent) {
+      const timeoutId = setTimeout(() => {
+        updateStepData({ nondhs: nondhData });
+      }, 300);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }
+}, [nondhData, updateStepData, getStepData]);
 
   // Get unique S.Nos from all slabs
   const getAllSNos = () => {
@@ -41,12 +76,6 @@ export default function NondhAdd() {
 
   const availableSNos = getAllSNos()
 
-  useEffect(() => {
-    if (nondhs.length > 0) {
-      setNondhData(nondhs)
-    }
-  }, [nondhs])
-
   // Automatically add new nondh when user starts typing in last empty one
   useEffect(() => {
     const lastNondh = nondhData[nondhData.length - 1];
@@ -59,6 +88,7 @@ export default function NondhAdd() {
         sNoType: "s_no",
         affectedSNos: [],
         nondhDoc: "",
+        nondhDocFileName: "",
       }]);
       return;
     }
@@ -71,6 +101,7 @@ export default function NondhAdd() {
         sNoType: "s_no",
         affectedSNos: [],
         nondhDoc: "",
+        nondhDocFileName: "",
       };
       setNondhData(prev => [...prev, newNondh]);
     }
@@ -87,6 +118,7 @@ export default function NondhAdd() {
         sNoType: "s_no",
         affectedSNos: [],
         nondhDoc: "",
+        nondhDocFileName: "",
       }]);
     }
   };
@@ -111,84 +143,121 @@ export default function NondhAdd() {
   }
 
   const handleFileUpload = async (file: File, nondhId: string) => {
+    if (!file) return;
+
     try {
-      setLoading(true)
-      const path = `nondh-documents/${Date.now()}_${file.name}`
+      setUploadingFiles(prev => new Set(prev).add(nondhId))
+      
+      const sanitizedFileName = file.name
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .replace(/^_|_$/g, '');
+      
+      const path = `nondh-documents/${Date.now()}_${sanitizedFileName}`
       const url = await uploadFile(file, "land-documents", path)
-      updateNondh(nondhId, { nondhDoc: url })
+      
+      if (!url) throw new Error("Failed to upload file");
+
+      updateNondh(nondhId, { 
+        nondhDoc: url,
+        nondhDocFileName: file.name
+      })
       toast({ title: "File uploaded successfully" })
     } catch (error) {
+      console.error('File upload error:', error);
       toast({ 
         title: "Error uploading file", 
         description: error instanceof Error ? error.message : "Upload failed",
         variant: "destructive" 
       })
     } finally {
-      setLoading(false)
+      setUploadingFiles(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(nondhId)
+        return newSet
+      })
     }
   }
 
+  const handleRemoveFile = (nondhId: string) => {
+    updateNondh(nondhId, { 
+      nondhDoc: "",
+      nondhDocFileName: ""
+    });
+  }
+
+  const getDisplayFileName = (nondh: Nondh) => {
+    if (nondh.nondhDocFileName) {
+      return nondh.nondhDocFileName;
+    } else if (nondh.nondhDoc) {
+      const urlParts = nondh.nondhDoc.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      const cleanFileName = fileName.includes('_') ? fileName.split('_').slice(1).join('_') : fileName;
+      return cleanFileName || "Document uploaded";
+    }
+    return "";
+  }
+
   const validateNondhNumber = (number: string) => {
-    // Regex for numbers separated by / or - (e.g. 10-35 or 30/45)
     const regex = /^(\d+([-/]\d+)*)$/
     return regex.test(number)
   }
 
   function getAutoPopulatedSNoData(selectedType: SNoTypeUI): string[] {
-  if (!landBasicInfo) return [];
-  
-  switch(selectedType) {
-    case "block_no":
-      return landBasicInfo.blockNo ? [landBasicInfo.blockNo] : [];
-    case "re_survey_no":
-      return landBasicInfo.reSurveyNo ? [landBasicInfo.reSurveyNo] : [];
-    case "survey_no":
-      // Handle case where sNo might be multiple values (comma separated)
-      return landBasicInfo.sNo ? 
-        landBasicInfo.sNo.split(',').map((s: string) => s.trim()) : [];
-    default:
-      return [];
+    const stepData = getStepData();
+    if (!landBasicInfo) return [];
+    
+    switch(selectedType) {
+      case "block_no":
+        return landBasicInfo.blockNo ? [landBasicInfo.blockNo] : [];
+      case "re_survey_no":
+        return landBasicInfo.reSurveyNo ? [landBasicInfo.reSurveyNo] : [];
+      case "survey_no":
+        return landBasicInfo.sNo ? 
+          landBasicInfo.sNo.split(',').map((s: string) => s.trim()) : [];
+      default:
+        return [];
+    }
   }
-}
 
   const handleAutoFill = (nondhId: string) => {
-  const nondh = nondhData.find(n => n.id === nondhId);
-  if (!nondh) return;
+    const nondh = nondhData.find(n => n.id === nondhId);
+    if (!nondh) return;
 
-  const sNoType: SNoTypeUI = nondh.sNoType === "s_no" ? "survey_no" : nondh.sNoType;
-  const autoPopulatedValues = getAutoPopulatedSNoData(sNoType);
-  
-  if (autoPopulatedValues.length > 0) {
-    // Filter values that exist in availableSNos and aren't already selected
-    const newValues = autoPopulatedValues.filter(
-      val => availableSNos.includes(val) && 
-             !nondh.affectedSNos.includes(val)
-    );
+    const sNoType: SNoTypeUI = nondh.sNoType === "s_no" ? "survey_no" : nondh.sNoType;
+    const autoPopulatedValues = getAutoPopulatedSNoData(sNoType);
     
-    if (newValues.length > 0) {
-      updateNondh(nondhId, { 
-        affectedSNos: [...nondh.affectedSNos, ...newValues]
-      });
-      toast({
-        title: "Auto-filled affected S.Nos",
-        description: `Added: ${newValues.join(", ")}`
-      });
+    if (autoPopulatedValues.length > 0) {
+      const newValues = autoPopulatedValues.filter(
+        val => availableSNos.includes(val) && 
+               !nondh.affectedSNos.includes(val)
+      );
+      
+      if (newValues.length > 0) {
+        updateNondh(nondhId, { 
+          affectedSNos: [...nondh.affectedSNos, ...newValues]
+        });
+        toast({
+          title: "Auto-filled affected S.Nos",
+          description: `Added: ${newValues.join(", ")}`
+        });
+      } else {
+        toast({
+          title: "No new S.Nos to add",
+          description: "All matching S.Nos are already selected"
+        });
+      }
     } else {
       toast({
-        title: "No new S.Nos to add",
-        description: "All matching S.Nos are already selected"
+        title: "No data available",
+        description: `No ${sNoType.replace("_", " ")} found for this land record`,
+        variant: "destructive"
       });
     }
-  } else {
-    toast({
-      title: "No data available",
-      description: `No ${sNoType.replace("_", " ")} found for this land record`,
-      variant: "destructive"
-    });
   }
-}
 
   const handleSubmit = async () => {
+    const stepData = getStepData();
     if (!landBasicInfo?.id) {
       toast({ 
         title: "Error", 
@@ -224,6 +293,7 @@ export default function NondhAdd() {
         s_no_type: nondh.sNoType,
         affected_s_nos: nondh.affectedSNos,
         nondh_doc_url: nondh.nondhDoc,
+        nondh_doc_filename: nondh.nondhDocFileName || null,
       }))
 
       // Delete existing nondhs for this land record
@@ -241,7 +311,13 @@ export default function NondhAdd() {
 
       if (insertError) throw insertError
 
-      setNondhs(validNondhs)
+      // Update local state with only valid nondhs
+      setNondhData(validNondhs)
+      updateStepData({ nondhs: validNondhs })
+      
+      // Mark this step as saved
+      markAsSaved()
+      
       toast({ title: "Nondh data saved successfully" })
       setCurrentStep(5)
     } catch (error) {
@@ -327,7 +403,6 @@ export default function NondhAdd() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleAutoFill(nondh.id)}
-                    disabled={!landBasicInfo}
                   >
                     Auto-fill Current Type
                   </Button>
@@ -355,20 +430,58 @@ export default function NondhAdd() {
               <div className="space-y-2">
                 <Label>Nondh Document</Label>
                 <div className="flex items-center gap-4">
-                  <Input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleFileUpload(file, nondh.id)
-                    }}
-                    disabled={loading}
-                  />
-                  <Upload className="w-5 h-5 text-muted-foreground" />
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          handleFileUpload(file, nondh.id)
+                          e.target.value = ''
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      disabled={uploadingFiles.has(nondh.id)}
+                    />
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      disabled={uploadingFiles.has(nondh.id)}
+                      className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {uploadingFiles.has(nondh.id) ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4" />
+                          Choose File
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  {getDisplayFileName(nondh) && (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                      <span className="text-sm text-green-800 max-w-[200px] truncate" title={getDisplayFileName(nondh)}>
+                        {getDisplayFileName(nondh)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(nondh.id)}
+                        className="text-green-600 hover:text-green-800 text-lg leading-none"
+                        title="Remove file"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {nondh.nondhDoc && (
-                  <p className="text-sm text-green-600">Document uploaded successfully</p>
-                )}
+                <p className="text-xs text-gray-500">
+                  Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+                </p>
               </div>
             </div>
           </Card>
@@ -383,7 +496,7 @@ export default function NondhAdd() {
               </>
             ) : (
               <>
-                Save and Continue
+                Save
               </>
             )}
           </Button>
