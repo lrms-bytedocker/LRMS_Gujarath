@@ -15,6 +15,7 @@ import { useLandRecord, type NondhDetail } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { useStepFormData } from "@/hooks/use-step-form-data"
+import { date } from 'zod'
 
 const nondhTypes = [
   "Kabjedaar",
@@ -40,38 +41,249 @@ const statusTypes = [
   { value: "nullified", label: "Nullified" }
 ]
 
-// Enhanced sorting function for nondhs
-const sortNondhsBySNoType = (a, b, nondhs) => {
-  const nondhA = nondhs.find(n => n.id === a.nondhId)
-  const nondhB = nondhs.find(n => n.id === b.nondhId)
-  
-  if (!nondhA || !nondhB) return 0
 
-  // Priority: s_no > block_no > resurvey_no
-  const priorityOrder = ['s_no', 'block_no', 'resurvey_no']
+// Enhanced sorting function for nondhs
+const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]) => {
+  const nondhA = nondhs.find(n => n.id === a.nondhId);
+  const nondhB = nondhs.find(n => n.id === b.nondhId);
   
-  const priorityA = priorityOrder.indexOf(nondhA.sNoType) !== -1 ? priorityOrder.indexOf(nondhA.sNoType) : 999
-  const priorityB = priorityOrder.indexOf(nondhB.sNoType) !== -1 ? priorityOrder.indexOf(nondhB.sNoType) : 999
+  if (!nondhA || !nondhB) return 0;
+
+  // Priority order: survey_no > block_no > resurvey_no
+  const priorityOrder = ['survey_no', 'block_no', 'resurvey_no'];
   
-  if (priorityA !== priorityB) {
-    return priorityA - priorityB
+  const priorityA = priorityOrder.indexOf(nondhA.sNoType);
+  const priorityB = priorityOrder.indexOf(nondhB.sNoType);
+  
+  // If both have defined priorities, sort by priority
+  if (priorityA !== -1 && priorityB !== -1) {
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+  } else if (priorityA !== -1) {
+    return -1; // A has priority, B doesn't
+  } else if (priorityB !== -1) {
+    return 1; // B has priority, A doesn't
   }
   
-  // If same priority, sort by nondh number
-  const getFirstNumber = (str) => {
-    const match = str.match(/^(\d+)/)
-    return match ? parseInt(match[1]) : 0
-  }
+  // If same priority or undefined, sort by nondh number
+  const getFirstNumber = (str: string) => {
+    const match = str.match(/^(\d+)/);
+    return match ? parseInt(match[1]) : 0;
+  };
   
-  const numA = getFirstNumber(nondhA.number)
-  const numB = getFirstNumber(nondhB.number)
+  const numA = getFirstNumber(nondhA.number);
+  const numB = getFirstNumber(nondhB.number);
   
   if (numA !== numB) {
-    return numA - numB
+    return numA - numB;
   }
   
-  return nondhA.number.localeCompare(nondhB.number)
+  return nondhA.number.localeCompare(nondhB.number);
+};
+
+const GUNTHAS_PER_ACRE = 40;
+const SQM_PER_GUNTHA = 101.1714; // Approx 1 guntha = 101.1714 sq meters
+const SQM_PER_ACRE = SQM_PER_GUNTHA * GUNTHAS_PER_ACRE; // Approx 1 acre = 4046.856 sq meters
+const convertToSquareMeters = (value: number, unit: "acre" | "guntha"): number => {
+  if (unit === "acre") return value * 4046.86
+  if (unit === "guntha") return value * 101.171
+  return value
 }
+
+const convertFromSquareMeters = (value: number, unit: "acre" | "guntha"): number => {
+  if (unit === "acre") return value / 4046.86
+  if (unit === "guntha") return value / 101.171
+  return value
+}
+
+type AreaUnit = "acre" | "guntha" | "sq_m";
+
+interface AreaFieldsProps {
+  area: { value: number; unit: AreaUnit };
+  onChange: (area: { value: number; unit: AreaUnit }) => void;
+}
+
+const areaFields = ({ area, onChange }: AreaFieldsProps) => {
+  // Calculate current area in square meters (single source of truth)
+  const currentSqm = area.unit === "sq_m"
+    ? area.value
+    : area.unit === "acre"
+      ? area.value * SQM_PER_ACRE
+      : area.value * SQM_PER_GUNTHA;
+
+  // Calculate derived values for display
+  const totalGunthas = currentSqm / SQM_PER_GUNTHA;
+  const acres = totalGunthas / GUNTHAS_PER_ACRE; // Keep as decimal for display
+  const gunthas = (acres % 1) * GUNTHAS_PER_ACRE;
+
+  const handlePrimaryChange = (value: string, field: "acre" | "guntha" | "sq_m") => {
+    const num = value === "" ? 0 : parseFloat(value);
+    if (isNaN(num)) return;
+
+    if (area.unit === "sq_m") {
+      // When unit is sq_m, primary field is square meters
+      onChange({ value: num, unit: "sq_m" });
+    } else {
+      // When unit is acre, primary fields are acre and guntha
+      if (field === "acre") {
+        // Update the full acre value (including decimals)
+        onChange({ value: num, unit: "acre" });
+      } else if (field === "guntha") {
+        // Update guntha fraction, keep existing acres
+        const currentAcres = Math.floor(area.value);
+        const clampedGuntha = Math.min(num, 39.99); // Ensure guntha < 40
+        const newTotalValue = currentAcres + (clampedGuntha / 40);
+        onChange({ value: newTotalValue, unit: "acre" });
+      }
+    }
+  };
+
+  const handleSecondaryChange = (value: string, field: "acre" | "guntha" | "sq_m") => {
+    const num = value === "" ? 0 : parseFloat(value);
+    if (isNaN(num)) return;
+
+    if (area.unit === "sq_m") {
+      // When unit is sq_m, secondary fields (acre/guntha) should update the sq_m value
+      if (field === "acre") {
+        const currentGunthaValue = gunthas;
+        const newSqm = (num * GUNTHAS_PER_ACRE + currentGunthaValue) * SQM_PER_GUNTHA;
+        onChange({ value: newSqm, unit: "sq_m" });
+      } else if (field === "guntha") {
+        const currentAcreValue = acres;
+        const clampedGuntha = Math.min(num, 39.99);
+        const newSqm = (currentAcreValue * GUNTHAS_PER_ACRE + clampedGuntha) * SQM_PER_GUNTHA;
+        onChange({ value: newSqm, unit: "sq_m" });
+      }
+    } else {
+      // When unit is acre, secondary field is sq_m - convert sq_m to acre
+      if (field === "sq_m") {
+        const newAcreValue = num / SQM_PER_ACRE;
+        onChange({ value: newAcreValue, unit: "acre" });
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-4">
+        {/* Unit Selector - Increased width */}
+        <div className="space-y-2 w-[180px]">
+          <Label>Unit</Label>
+          <Select
+            value={area.unit}
+            onValueChange={(unit) => {
+              const newUnit = unit as AreaUnit;
+              if (newUnit === "sq_m") {
+                onChange({ value: currentSqm, unit: newUnit });
+              } else if (newUnit === "acre") {
+                onChange({ value: currentSqm / SQM_PER_ACRE, unit: newUnit });
+              } else {
+                onChange({ value: currentSqm / SQM_PER_GUNTHA, unit: newUnit });
+              }
+            }}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="acre">Acre-Guntha</SelectItem>
+              <SelectItem value="sq_m">Square Meters</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Primary Fields */}
+        {area.unit === "sq_m" ? (
+          <div className="space-y-2 min-w-[150px] flex-1">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={area.value || ""}
+              onChange={(e) => handlePrimaryChange(e.target.value, "sq_m")}
+              placeholder="Enter square meters"
+              className="w-full"
+            />
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 min-w-[150px] flex-1">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={area.value.toFixed(2) || ""}
+                onChange={(e) => handlePrimaryChange(e.target.value, "acre")}
+                placeholder="Enter acres"
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2 min-w-[120px] flex-1">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39.99"
+                step="0.01"
+                value={((area.value % 1) * 40).toFixed(2) || ""}
+                onChange={(e) => handlePrimaryChange(e.target.value, "guntha")}
+                placeholder="Enter gunthas"
+                className="w-full"
+              />
+            </div>
+          </>
+        )}
+
+        {/* Secondary Fields */}
+        {area.unit === "sq_m" ? (
+          <>
+            <div className="space-y-2 min-w-[150px] flex-1">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={acres.toFixed(2) || ""}
+                onChange={(e) => handleSecondaryChange(e.target.value, "acre")}
+                placeholder="0.00"
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2 min-w-[120px] flex-1">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39.99"
+                step="0.01"
+                value={gunthas.toFixed(2) || ""}
+                onChange={(e) => handleSecondaryChange(e.target.value, "guntha")}
+                placeholder="0.00"
+                className="w-full"
+              />
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2 min-w-[150px] flex-1">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={currentSqm.toFixed(2) || ""}
+              onChange={(e) => handleSecondaryChange(e.target.value, "sq_m")}
+              placeholder="0.00"
+              className="w-full"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default function NondhDetails() {
   const { yearSlabs, nondhs, setNondhs, nondhDetails, setNondhDetails, setCurrentStep, landBasicInfo } = useLandRecord()
@@ -81,7 +293,18 @@ export default function NondhDetails() {
   const [nondhDetailData, setNondhDetailData] = useState<NondhDetail[]>(getStepData().nondhDetails || [])
   const [collapsedNondhs, setCollapsedNondhs] = useState<Set<string>>(new Set())
   const [equalDistribution, setEqualDistribution] = useState<Record<string, boolean>>({})
-
+const getSurveyNumberType = (sNo: string): string => {
+  // First check if it's a block number
+  if (landBasicInfo?.blockNo && sNo === landBasicInfo.blockNo) {
+    return 'block_no';
+  }
+  // Then check if it's a resurvey number
+  if (landBasicInfo?.reSurveyNo && sNo === landBasicInfo.reSurveyNo) {
+    return 'resurvey_no';
+  }
+  // Everything else is considered a survey number
+  return 'survey_no';
+};
   // Initialize with saved data if available
   useEffect(() => {
   const stepData = getStepData()
@@ -172,7 +395,8 @@ export default function NondhDetails() {
                 nondhId: nondh.id,
                 sNo,
                 type: "Kabjedaar",
-                subType: "",
+                reason: "",
+                date: "",
                 vigat: "",
                 status: "Pramanik",
                 raddReason: "",
@@ -384,23 +608,23 @@ const updateValidityChain = (currentDetailId: string, oldOwnerNondhId: string, i
   }
 }
 
-  // Get previous owners for dropdown (Varsai, Hakkami, Vechadi)
+  // Get previous owners for dropdown (Varsai, Hakkami, Vechadi, Hayati_ma_hakh_dakhal)
 const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   return nondhDetailData
     .filter(d => 
       d.sNo === sNo && 
       d.nondhId !== currentNondhId &&
-      ["Varsai", "Hakkami", "Vechadi", "Kabjedaar", "Ekatrikaran"].includes(d.type) // Include more types
+      ["Varsai", "Hakkami", "Vechadi", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type)
     )
     .sort((a, b) => sortNondhsBySNoType(a, b, nondhs))
     .flatMap(d => d.ownerRelations.map(r => ({ 
       name: r.ownerName, 
       area: r.area,
       type: d.type,
-      nondhId: d.nondhId // FIX: Add the nondhId here
+      nondhId: d.nondhId
     })))
-    .filter(owner => owner.name.trim() !== '')
-}
+    .filter(owner => owner.name.trim() !== '');
+};
 
   const updateNondhDetailData = (newData: NondhDetail[]) => {
   setNondhDetailData(newData)
@@ -421,38 +645,93 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   }
 
   const renderOwnerSelectionFields = (detail: NondhDetail) => {
-    const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId)
-    
-    return (
-      <div className="space-y-4">
+  const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
+  
+  // For Hakkami - get previous owners for both dropdowns
+  const hakkamiPreviousOwners = detail.type === "Hakkami" 
+    ? getPreviousOwners(detail.sNo, detail.nondhId)
+    : [];
+
+  return (
+    <div className="space-y-4">
+      {/* Old Owner Field - shown for all types except Varsai */}
         <div className="space-y-2">
           <Label>Old Owner *</Label>
           <Select
-  value={detail.oldOwner}
-  onValueChange={(value) => {
-    updateNondhDetail(detail.id, { oldOwner: value })
-    
-    // NEW: Update validity chain when old owner changes
-    if (detail.status === 'invalid') {
-      updateValidityChain(detail.id, value, false)
-    } else {
-      updateValidityChain(detail.id, value, true)
-    }
-  }}
->
-  <SelectTrigger>
-    <SelectValue placeholder="Select Old Owner" />
-  </SelectTrigger>
-  <SelectContent>
-    {previousOwners.map((owner, index) => (
-      <SelectItem key={`${owner.name}_${index}`} value={owner.nondhId}>
-        {owner.name} ({owner.area.value} {owner.area.unit})
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
+            value={detail.oldOwner}
+            onValueChange={(value) => {
+              updateNondhDetail(detail.id, { oldOwner: value });
+              if (detail.status === 'invalid') {
+                updateValidityChain(detail.id, value, false);
+              } else {
+                updateValidityChain(detail.id, value, true);
+              }
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select Old Owner" />
+            </SelectTrigger>
+            <SelectContent>
+              {previousOwners.map((owner, index) => (
+                <SelectItem key={`${owner.name}_${index}`} value={owner.nondhId}>
+                  {owner.name} ({owner.area.value} {owner.area.unit})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
+
+      {/* Special handling for Hakkami */}
+      {detail.type === "Hakkami" && (
+        <div className="space-y-2">
+          <Label>New Owner *</Label>
+          <Select
+            value={detail.ownerRelations[0]?.ownerName || ''}
+            onValueChange={(value) => {
+              if (detail.ownerRelations.length === 0) {
+                addOwnerRelation(detail.id);
+              }
+              updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { 
+                ownerName: value 
+              });
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select New Owner" />
+            </SelectTrigger>
+            <SelectContent>
+              {hakkamiPreviousOwners.map((owner, index) => (
+                <SelectItem key={`new_${owner.name}_${index}`} value={owner.name}>
+                  {owner.name} ({owner.area.value} {owner.area.unit})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Special handling for Vechadi */}
+      {detail.type === "Vechadi" && (
+        <div className="space-y-2">
+          <Label>New Owner *</Label>
+          <Input
+            value={detail.ownerRelations[0]?.ownerName || ''}
+            onChange={(e) => {
+              if (detail.ownerRelations.length === 0) {
+                addOwnerRelation(detail.id);
+              }
+              updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { 
+                ownerName: e.target.value 
+              });
+            }}
+            placeholder="Enter new owner name"
+          />
+        </div>
+      )}
+
+      {/* Equal distribution checkbox - shown for Hayati and Varsai */}
+      {(detail.type === "Hayati_ma_hakh_dakhal" || detail.type === "Varsai") && (
         <div className="flex items-center space-x-2">
           <Checkbox
             id={`equal_dist_${detail.id}`}
@@ -461,115 +740,117 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
           />
           <Label htmlFor={`equal_dist_${detail.id}`}>Equal Distribution of Land</Label>
         </div>
+      )}
 
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <Label>Owner Details</Label>
-            <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add New Owner
-            </Button>
-          </div>
+      {/* Owner Details Section */}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <Label>
+            {detail.type === "Varsai" || detail.type === "Hayati_ma_hakh_dakhal" ? "New Owner Details" : "Owner Details"}
+          </Label>
+          <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
+            <Plus className="w-4 h-4 mr-2" />
+            {detail.type === "Varsai" || detail.type === "Hayati_ma_hakh_dakhal" ? "Add New Owner" : "Add Owner"}
+          </Button>
+        </div>
 
-          {detail.ownerRelations.map((relation, index) => (
-            <Card key={relation.id} className="p-3">
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="font-medium">
-                  {index === 0 ? "Old Owner" : `New Owner ${index}`}
-                </h4>
-                {index > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => removeOwnerRelation(detail.id, relation.id)}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+        {detail.ownerRelations.map((relation, index) => (
+          <Card key={relation.id} className="p-3">
+            <div className="flex justify-between items-center mb-3">
+              <h4 className="font-medium">
+                {detail.type === "Varsai" 
+                  ? `New Owner ${index + 1}`
+                  : index === 0 
+                    ? (detail.type === "Hakkami" || detail.type === "Vechadi") 
+                      ? "New Owner" 
+                      : "Old Owner"
+                    : `New Owner ${index}`}
+              </h4>
+              {index > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeOwnerRelation(detail.id, relation.id)}
+                  className="text-red-600"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Owner Name Field - disabled for Hakkami new owner */}
+              <div className="space-y-2">
+                <Label>Owner Name</Label>
+                {detail.type === "Hakkami" && index === 0 ? (
+                  <Input
+                    value={relation.ownerName}
+                    disabled
+                    placeholder="Selected from dropdown"
+                  />
+                ) : (
+                  <Input
+                    value={relation.ownerName}
+                    onChange={(e) => updateOwnerRelation(
+                      detail.id, 
+                      relation.id, 
+                      { ownerName: e.target.value }
+                    )}
+                    placeholder="Enter owner name"
+                  />
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="space-y-2">
-                  <Label>Owner Name</Label>
-                  <Input
-                    value={relation.ownerName}
-                    onChange={(e) => updateOwnerRelation(detail.id, relation.id, { ownerName: e.target.value })}
-                    placeholder="Enter owner name"
-                    disabled={index === 0 && detail.oldOwner}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Area Value</Label>
-<Input
-  type="number"
-  value={relation.area.value === 0 ? '' : relation.area.value}
-  onChange={(e) => {
-    const inputValue = e.target.value;
-    const numericValue = inputValue === '' ? 0 : parseFloat(inputValue);
-    
-    // Skip validation if empty (allowing backspace)
-    if (inputValue === '') {
-      updateOwnerRelation(detail.id, relation.id, {
-        area: { ...relation.area, value: 0 }
-      });
-      return;
-    }
+              {/* Area Field */}
+              <div className="space-y-2">
+                <Label>Area</Label>
+                {areaFields({
+    area: relation.area,
+    onChange: (newArea) => updateOwnerRelation(
+      detail.id, 
+      relation.id, 
+      { area: newArea }
+    )
+  })}
+              </div>
 
-    // Validate guntha limit
-    if (relation.area.unit === 'guntha' && numericValue > 40) {
-      toast({
-        title: "Validation Error",
-        description: "Guntha value cannot exceed 40",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Only update if valid number
-    if (!isNaN(numericValue)) {
-      updateOwnerRelation(detail.id, relation.id, {
-        area: { ...relation.area, value: numericValue }
-      });
-    }
-  }}
-  min={0}
-  max={relation.area.unit === 'guntha' ? 40 : undefined}
-  placeholder="Enter area"
-  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-/>
-                </div>
+              {/* Tenure Field - shown for all except Vechadi */}
+              {detail.type !== "Vechadi" && (
                 <div className="space-y-2">
-                  <Label>Area Unit</Label>
+                  <Label>Tenure</Label>
                   <Select
-                    value={relation.area.unit}
-                    onValueChange={(value) =>
-                      updateOwnerRelation(detail.id, relation.id, {
-                        area: { ...relation.area, unit: value },
-                      })
-                    }
+                    value={relation.tenure || "Navi"}
+                    onValueChange={(value) => updateOwnerRelation(
+                      detail.id, 
+                      relation.id, 
+                      { tenure: value }
+                    )}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="guntha">Guntha</SelectItem>
-                      <SelectItem value="sq_m">Square Meter</SelectItem>
+                      {tenureTypes.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-            </Card>
-          ))}
-        </div>
+              )}
+            </div>
+          </Card>
+        ))}
       </div>
-    )
-  }
+    </div>
+  );
+};
 
   const renderTypeSpecificFields = (detail: NondhDetail) => {
-    if (["Varsai", "Hakkami", "Vechadi"].includes(detail.type)) {
-      return renderOwnerSelectionFields(detail)
-    }
+   if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechadi"].includes(detail.type)) {
+    return renderOwnerSelectionFields(detail);
+  }
 
     switch (detail.type) {
       case "Kabjedaar":
@@ -635,37 +916,16 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Area Value</Label>
-                      <Input
-                        type="number"
-                        value={relation.area.value}
-                        onChange={(e) =>
-                          updateOwnerRelation(detail.id, relation.id, {
-                            area: { ...relation.area, value: Number.parseFloat(e.target.value) || 0 },
-                          })
-                        }
-                        placeholder="Enter area"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Area Unit</Label>
-                      <Select
-                        value={relation.area.unit}
-                        onValueChange={(value) =>
-                          updateOwnerRelation(detail.id, relation.id, {
-                            area: { ...relation.area, unit: value },
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="guntha">Guntha</SelectItem>
-                          <SelectItem value="sq_m">Square Meter</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+  <Label>Area</Label>
+  {areaFields({
+    area: relation.area,
+    onChange: (newArea) => updateOwnerRelation(
+      detail.id, 
+      relation.id, 
+      { area: newArea }
+    )
+  })}
+</div>
                   </div>
                 </Card>
               ))}
@@ -674,136 +934,126 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
         )
 
       case "Hukam":
-        return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Hukam Date *</Label>
-              <Input
-                type="date"
-                value={detail.ownerRelations[0]?.hukamDate || ''}
-                onChange={(e) => updateOwnerRelation(
-                  detail.id, 
-                  detail.ownerRelations[0]?.id, 
-                  { hukamDate: e.target.value }
-                )}
-              />
-            </div>
+  return (
+    <div className="space-y-4">
+      {/* Keep existing Hukam-specific fields */}
+      <div className="space-y-2">
+        <Label>Hukam Date *</Label>
+        <Input
+          type="date"
+          value={detail.ownerRelations[0]?.hukamDate || ''}
+          onChange={(e) => updateOwnerRelation(
+            detail.id, 
+            detail.ownerRelations[0]?.id, 
+            { hukamDate: e.target.value }
+          )}
+        />
+      </div>
 
-            <div className="space-y-4">
-              <Label>Restraining Order Passed?</Label>
-              <RadioGroup
-                value={detail.ownerRelations[0]?.restrainingOrder || "no"}
-                onValueChange={(value) => {
-                  if (detail.ownerRelations.length === 0) {
-                    addOwnerRelation(detail.id)
-                  }
-                  updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { restrainingOrder: value })
-                }}
-                className="flex gap-6"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="yes" id={`yes_${detail.id}`} />
-                  <Label htmlFor={`yes_${detail.id}`}>Yes</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="no" id={`no_${detail.id}`} />
-                  <Label htmlFor={`no_${detail.id}`}>No</Label>
-                </div>
-              </RadioGroup>
-            </div>
+      <div className="space-y-4">
+        <Label>Restraining Order Passed?</Label>
+        <RadioGroup
+          value={detail.ownerRelations[0]?.restrainingOrder || "no"}
+          onValueChange={(value) => {
+            if (detail.ownerRelations.length === 0) {
+              addOwnerRelation(detail.id)
+            }
+            updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { restrainingOrder: value })
+          }}
+          className="flex gap-6"
+        >
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="yes" id={`yes_${detail.id}`} />
+            <Label htmlFor={`yes_${detail.id}`}>Yes</Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="no" id={`no_${detail.id}`} />
+            <Label htmlFor={`no_${detail.id}`}>No</Label>
+          </div>
+        </RadioGroup>
+      </div>
 
-            <div className="space-y-2">
-              <Label>Tenure Change</Label>
-              <Select
-                value={detail.ownerRelations[0]?.tenure || "Navi"}
-                onValueChange={(value) => {
-                  if (detail.ownerRelations.length === 0) {
-                    addOwnerRelation(detail.id)
-                  }
-                  updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { tenure: value })
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {tenureTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <div className="space-y-2">
+        <Label>Hukam Type</Label>
+        <Select
+          value={detail.ownerRelations[0]?.hukamType || "SSRD"}
+          onValueChange={(value) => {
+            if (detail.ownerRelations.length === 0) {
+              addOwnerRelation(detail.id)
+            }
+            updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { hukamType: value })
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {hukamTypes.map((type) => (
+              <SelectItem key={type} value={type}>
+                {type}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-            <div className="space-y-2">
-              <Label>Hukam Type</Label>
-              <Select
-                value={detail.ownerRelations[0]?.hukamType || "SSRD"}
-                onValueChange={(value) => {
-                  if (detail.ownerRelations.length === 0) {
-                    addOwnerRelation(detail.id)
-                  }
-                  updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { hukamType: value })
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {hukamTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      {/* Add Owner Details section similar to Kabjedaar */}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <Label>Owner Details</Label>
+          <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Owner
+          </Button>
+        </div>
+
+        {detail.ownerRelations.map((relation, index) => (
+          <Card key={relation.id} className="p-3">
+            <div className="flex justify-between items-center mb-3">
+              <h4 className="font-medium">Owner {index + 1}</h4>
+              {detail.ownerRelations.length > 1 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeOwnerRelation(detail.id, relation.id)}
+                  className="text-red-600"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="space-y-2">
+                <Label>Owner Name</Label>
+                <Input
+                  value={relation.ownerName}
+                  onChange={(e) => updateOwnerRelation(
+                    detail.id, 
+                    relation.id, 
+                    { ownerName: e.target.value }
+                  )}
+                  placeholder="Enter owner name"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label>Area</Label>
-                <Input
-                  type="number"
-                  value={detail.ownerRelations[0]?.area?.value || 0}
-                  onChange={(e) => {
-                    if (detail.ownerRelations.length === 0) {
-                      addOwnerRelation(detail.id)
-                    }
-                    updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, {
-                      area: { value: Number.parseFloat(e.target.value) || 0, unit: "sq_m" },
-                    })
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>S.No</Label>
-                <Input
-                  value={detail.ownerRelations[0]?.sNo || detail.sNo}
-                  onChange={(e) => {
-                    if (detail.ownerRelations.length === 0) {
-                      addOwnerRelation(detail.id)
-                    }
-                    updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { sNo: e.target.value })
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>New Owner Name</Label>
-                <Input
-                  value={detail.ownerRelations[0]?.ownerName || ""}
-                  onChange={(e) => {
-                    if (detail.ownerRelations.length === 0) {
-                      addOwnerRelation(detail.id)
-                    }
-                    updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { ownerName: e.target.value })
-                  }}
-                  placeholder="Enter new owner name"
-                />
+                {areaFields({
+    area: relation.area,
+    onChange: (newArea) => updateOwnerRelation(
+      detail.id, 
+      relation.id, 
+      { area: newArea }
+    )
+  })}
               </div>
             </div>
-          </div>
-        )
+          </Card>
+        ))}
+      </div>
+    </div>
+  )
 
       default:
         return (
@@ -840,18 +1090,16 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Area</Label>
-                    <Input
-                      type="number"
-                      value={relation.area.value}
-                      onChange={(e) =>
-                        updateOwnerRelation(detail.id, relation.id, {
-                          area: { ...relation.area, value: Number.parseFloat(e.target.value) || 0 },
-                        })
-                      }
-                      placeholder="Enter area"
-                    />
-                  </div>
+  <Label>Area</Label>
+  {areaFields({
+    area: relation.area,
+    onChange: (newArea) => updateOwnerRelation(
+      detail.id, 
+      relation.id, 
+      { area: newArea }
+    )
+  })}
+</div>
                 </div>
               </Card>
             ))}
@@ -917,7 +1165,8 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
         nondh_id: detail.nondhId,
         s_no: detail.sNo,
         type: detail.type,
-        sub_type: detail.subType,
+        reason: detail.reason || null,
+  date: detail.date || null,
         vigat: detail.vigat,
         status: detail.status,
         invalid_reason: detail.status === 'invalid' ? detail.invalidReason : null,
@@ -1073,10 +1322,33 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
 
         {/* Nondh Details by S.No */}
         {Object.keys(groupedDetails)
-          .sort()
-          .map((sNo) => (
-            <Card key={sNo} className="p-4">
-              <h3 className="text-xl font-semibold mb-4">S.No: {sNo}</h3>
+  .sort((a, b) => {
+    const aType = getSurveyNumberType(a);
+    const bType = getSurveyNumberType(b);
+    const priorityOrder = ['survey_no', 'block_no', 'resurvey_no'];
+    const aPriority = priorityOrder.indexOf(aType);
+    const bPriority = priorityOrder.indexOf(bType);
+
+    // First sort by type priority
+    if (aPriority !== bPriority) {
+      return aPriority - bPriority;
+    }
+    
+    // Then sort numerically within each type
+    return a.localeCompare(b, undefined, { numeric: true });
+  })
+  .map((sNo) => {
+    const sNoType = getSurveyNumberType(sNo);
+    const displayLabel = 
+      sNoType === 'block_no' ? 'Block No' :
+      sNoType === 'resurvey_no' ? 'Resurvey No' : 'Survey No';
+
+    return (
+      <Card key={sNo} className="p-4">
+        <h3 className="text-xl font-semibold mb-4">
+          {sNoType === 'survey_no' ? 'Survey No' : 
+ sNoType === 'block_no' ? 'Block No' : 'Resurvey No'}: {sNo}
+        </h3>
 
               {groupedDetails[sNo]
                 .sort((a, b) => {
@@ -1114,34 +1386,46 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   {!collapsedNondhs.has(detail.id) && (
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 mt-4">
-        <div className="space-y-2">
-          <Label>Nondh Type *</Label>
-          <Select
-            value={detail.type}
-            onValueChange={(value) => updateNondhDetail(detail.id, { type: value })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {nondhTypes.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {type}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+  <div className="space-y-2">
+    <Label>Nondh Type *</Label>
+    <Select
+      value={detail.type}
+      onValueChange={(value) => updateNondhDetail(detail.id, { type: value })}
+    >
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {nondhTypes.map((type) => (
+          <SelectItem key={type} value={type}>
+            {type}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
 
-        <div className="space-y-2">
-          <Label>Sub Type</Label>
-          <Input
-            value={detail.subType}
-            onChange={(e) => updateNondhDetail(detail.id, { subType: e.target.value })}
-            placeholder="Enter sub type"
-          />
-        </div>
-      </div>
+  {/* Add Date Field */}
+  <div className="space-y-2">
+    <Label>Date *</Label>
+    <Input
+      type="date"
+      value={detail.date || ''}
+      onChange={(e) => updateNondhDetail(detail.id, { date: e.target.value })}
+    />
+  </div>
+</div>
+
+{/* Add Reason Field */}
+<div className="space-y-2 mb-4">
+  <Label>Reason</Label>
+  <Textarea
+    value={detail.reason}
+    onChange={(e) => updateNondhDetail(detail.id, { reason: e.target.value })}
+    placeholder="Enter reason for this nondh"
+    rows={3}
+  />
+</div>
 
       <div className="space-y-4 mb-4">
         <div className="space-y-2">
@@ -1248,7 +1532,8 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
                   )
                 })}
             </Card>
-          ))}
+    );
+})}
 
         <div className="flex justify-center pt-6">
           <Button onClick={handleSubmit} disabled={loading}>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { ChevronUp, ChevronDown  } from "lucide-react";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -245,6 +245,21 @@ const EKATRIKARAN_PER_PAGE = 5;
 const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ekatrikaran'>>({});
 const [slabUploadedFileNames, setSlabUploadedFileNames] = useState<Record<string, string>>({});
 const [entryUploadedFileNames, setEntryUploadedFileNames] = useState<Record<string, string>>({});
+const [initialLoading, setInitialLoading] = useState(true);
+
+// Add this function at the top of your component
+const extractFilenameFromUrl = (url: string): string => {
+  if (!url) return '';
+  try {
+    const urlParts = url.split('/');
+    const filename = urlParts[urlParts.length - 1];
+    // Remove timestamp prefix if it exists (timestamp_originalfilename)
+    const match = filename.match(/^\d+_(.+)$/);
+    return match ? match[1] : filename;
+  } catch {
+    return '';
+  }
+};
 
   const handleEntryFileUpload = async (
   file: File,
@@ -317,25 +332,78 @@ const [entryUploadedFileNames, setEntryUploadedFileNames] = useState<Record<stri
 useEffect(() => {
   const loadData = async () => {
     try {
+      setInitialLoading(true);
+      // First try to get saved step data
+      const stepData = getStepData();
+      
+      // Restore filename states if they exist
+      if (stepData?.slabUploadedFileNames) {
+        setSlabUploadedFileNames(stepData.slabUploadedFileNames);
+      }
+      if (stepData?.entryUploadedFileNames) {
+        setEntryUploadedFileNames(stepData.entryUploadedFileNames);
+      }
+      
       if (landBasicInfo?.id) {
         const { data: dbSlabs, error } = await LandRecordService.getYearSlabs(landBasicInfo.id);
         
         if (!error && dbSlabs) {
-          setSlabs(dbSlabs.map(s => ({
+          const uiSlabs = dbSlabs.map(s => ({
             ...toYearSlabUI(s),
             collapsed: false
-          })));
+          }));
+          
+          setSlabs(uiSlabs);
+          
+          // Extract filenames from database data and update state
+          const newSlabFileNames = {};
+          const newEntryFileNames = {};
+          
+          uiSlabs.forEach(slab => {
+            // Extract filename from URL for main slab
+            if (slab.integrated712) {
+              const filename = extractFilenameFromUrl(slab.integrated712);
+              if (filename) {
+                newSlabFileNames[slab.id] = filename;
+              }
+            }
+            
+            // Extract filenames for paiky entries
+            slab.paikyEntries?.forEach((entry, index) => {
+              if (entry.integrated712) {
+                const filename = extractFilenameFromUrl(entry.integrated712);
+                if (filename) {
+                  newEntryFileNames[`${slab.id}_paiky_${index}`] = filename;
+                }
+              }
+            });
+            
+            // Extract filenames for ekatrikaran entries
+            slab.ekatrikaranEntries?.forEach((entry, index) => {
+              if (entry.integrated712) {
+                const filename = extractFilenameFromUrl(entry.integrated712);
+                if (filename) {
+                  newEntryFileNames[`${slab.id}_ekatrikaran_${index}`] = filename;
+                }
+              }
+            });
+          });
+          
+          // Merge with existing filename states (prioritize step data over extracted)
+          setSlabUploadedFileNames(prev => ({ ...newSlabFileNames, ...prev }));
+          setEntryUploadedFileNames(prev => ({ ...newEntryFileNames, ...prev }));
+          
           return;
         }
       }
 
-      // Fallback to empty state - let user enter S.No manually
+      // Fallback to empty state
       setSlabs([{
         id: "1",
         startYear: "",
         endYear: 2004,
         sNoTypeUI: "survey_no",
-        sNo: "", // Start with empty field
+        sNo: "",
         areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
           areaType: "acre_guntha", 
           acre: 0, 
@@ -358,7 +426,7 @@ useEffect(() => {
         startYear: "",
         endYear: 2004,
         sNoTypeUI: "survey_no",
-        sNo: "", // Start with empty field
+        sNo: "",
         areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
         integrated712: "",
         paiky: false,
@@ -369,6 +437,8 @@ useEffect(() => {
         ekatrikaranEntries: [],
         collapsed: false
       }]);
+    } finally {
+      setInitialLoading(false);
     }
   };
 
@@ -376,24 +446,27 @@ useEffect(() => {
 }, [landBasicInfo]);
 
 useEffect(() => {
-    if (slabs.length > 0) {
-      // Only update if there's actual content
-      const hasContent = slabs.some(slab => 
-  (slab.sNo && slab.sNo.trim() !== "") || 
-  slab.startYear !== "" ||
-  slab.paikyEntries.length > 0 ||
-  slab.ekatrikaranEntries.length > 0
-);
+  if (slabs.length > 0) {
+    const hasContent = slabs.some(slab => 
+      (slab.sNo && slab.sNo.trim() !== "") || 
+      slab.startYear !== "" ||
+      slab.paikyEntries.length > 0 ||
+      slab.ekatrikaranEntries.length > 0
+    );
+    
+    if (hasContent || slabs.length > 1) {
+      const timeoutId = setTimeout(() => {
+        updateStepData({ 
+          yearSlabs: slabs.map(fromYearSlabUI),
+          slabUploadedFileNames, // Save slab filenames
+          entryUploadedFileNames // Save entry filenames
+        });
+      }, 300);
       
-      if (hasContent || slabs.length > 1) {
-        const timeoutId = setTimeout(() => {
-          updateStepData({ yearSlabs: slabs.map(fromYearSlabUI) });
-        }, 300);
-        
-        return () => clearTimeout(timeoutId);
-      }
+      return () => clearTimeout(timeoutId);
     }
-  }, [slabs, updateStepData]);
+  }
+}, [slabs, slabUploadedFileNames, entryUploadedFileNames, updateStepData]);
 
 useEffect(() => {
   const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -934,11 +1007,17 @@ const toggleCollapse = (id: string) => {
         )}
       </CardHeader>
       <CardContent className="space-y-6">
-        {slabs.map((slab, slabIndex) => (
-  <Card key={slab.id} className="p-4">
-    <div className="flex justify-between items-center mb-4">
-      <div className="flex items-center space-x-4">
-        <h3 className="text-lg font-semibold">Slab {slabIndex + 1}</h3>
+        {initialLoading ? (
+          <div className="flex justify-center items-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin" />
+        </div>
+      ) : (
+        <>
+          {slabs.map((slab, slabIndex) => (
+            <Card key={slab.id} className="p-4">
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center space-x-4">
+                  <h3 className="text-lg font-semibold">Slab {slabIndex + 1}</h3>
         <Button 
           variant="ghost" 
           size="sm"
@@ -1081,7 +1160,7 @@ const toggleCollapse = (id: string) => {
                 </div>
                 <div className="space-y-2">
   <Label>7/12 Document</Label>
-  <div className="flex items-center gap-4">
+  <div className="space-y-2">
     <div className="relative">
       <input
         type="file"
@@ -1100,15 +1179,16 @@ const toggleCollapse = (id: string) => {
         type="button" 
         variant="outline" 
         disabled={loading}
-        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50"
+        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
       >
         <Upload className="w-4 h-4" />
         {loading ? "Uploading..." : "Choose File"}
       </Button>
     </div>
+    
     {slabUploadedFileNames[slab.id] && (
-      <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
-        <span className="text-sm text-green-800 max-w-[200px] truncate" title={slabUploadedFileNames[slab.id]}>
+      <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+        <span className="text-sm text-green-800 truncate flex-1" title={slabUploadedFileNames[slab.id]}>
           {slabUploadedFileNames[slab.id]}
         </span>
         <button
@@ -1121,19 +1201,20 @@ const toggleCollapse = (id: string) => {
               return newState;
             });
           }}
-          className="text-green-600 hover:text-green-800 text-lg leading-none"
+          className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
           title="Remove file"
         >
           ×
         </button>
       </div>
     )}
+    
     {slab.integrated712 && (
       <a 
         href={slab.integrated712} 
         target="_blank" 
         rel="noopener noreferrer"
-        className="text-sm text-blue-600 hover:underline"
+        className="inline-block text-sm text-blue-600 hover:underline"
       >
         View Document
       </a>
@@ -1409,36 +1490,72 @@ const toggleCollapse = (id: string) => {
   })}
 
                             </div>
-                            <div className="space-y-2">
-                              <Label>7/12 Document</Label>
-                              <Input
-                                type="file"
-                                accept=".pdf,.jpg,.jpeg,.png"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    handleEntryFileUpload(
-                                      file, 
-                                      slab.id,
-                                      'create',
-                                      globalIndex,
-                                      'paiky'
-                                    );
-                                  }
-                                }}
-                                disabled={loading}
-                              />
-                              {entry.integrated712 && (
-                                <a 
-                                  href={entry.integrated712} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-blue-600 hover:underline"
-                                >
-                                  View Document
-                                </a>
-                              )}
-                            </div>
+                           <div className="space-y-2">
+  <Label>7/12 Document</Label>
+  <div className="space-y-2">
+    <div className="relative">
+      <input
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleEntryFileUpload(file, slab.id);
+            e.target.value = '';
+          }
+        }}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        disabled={loading}
+      />
+      <Button 
+        type="button" 
+        variant="outline" 
+        disabled={loading}
+        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
+      >
+        <Upload className="w-4 h-4" />
+        {loading ? "Uploading..." : "Choose File"}
+      </Button>
+    </div>
+    
+    {slabUploadedFileNames[slab.id] && (
+      <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+        <span className="text-sm text-green-800 truncate flex-1" title={slabUploadedFileNames[slab.id]}>
+          {slabUploadedFileNames[slab.id]}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            updateSlab(slab.id, { integrated712: "" });
+            setSlabUploadedFileNames(prev => {
+              const newState = { ...prev };
+              delete newState[slab.id];
+              return newState;
+            });
+          }}
+          className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
+          title="Remove file"
+        >
+          ×
+        </button>
+      </div>
+    )}
+    
+    {slab.integrated712 && (
+      <a 
+        href={slab.integrated712} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="inline-block text-sm text-blue-600 hover:underline"
+      >
+        View Document
+      </a>
+    )}
+  </div>
+  <p className="text-xs text-gray-500">
+    Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+  </p>
+</div>
                           </div>
                         </Card>
                       );
@@ -1641,35 +1758,71 @@ const toggleCollapse = (id: string) => {
   })}
                             </div>
                             <div className="space-y-2">
-                              <Label>7/12 Document</Label>
-                              <Input
-                                type="file"
-                                accept=".pdf,.jpg,.jpeg,.png"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    handleEntryFileUpload(
-                                      file, 
-                                      slab.id,
-                                      'create',
-                                      globalIndex,
-                                      'ekatrikaran'
-                                    );
-                                  }
-                                }}
-                                disabled={loading}
-                              />
-                              {entry.integrated712 && (
-                                <a 
-                                  href={entry.integrated712} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-blue-600 hover:underline"
-                                >
-                                  View Document
-                                </a>
-                              )}
-                            </div>
+  <Label>7/12 Document</Label>
+  <div className="space-y-2">
+    <div className="relative">
+      <input
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleEntryFileUpload(file, slab.id);
+            e.target.value = '';
+          }
+        }}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        disabled={loading}
+      />
+      <Button 
+        type="button" 
+        variant="outline" 
+        disabled={loading}
+        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
+      >
+        <Upload className="w-4 h-4" />
+        {loading ? "Uploading..." : "Choose File"}
+      </Button>
+    </div>
+    
+    {slabUploadedFileNames[slab.id] && (
+      <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+        <span className="text-sm text-green-800 truncate flex-1" title={slabUploadedFileNames[slab.id]}>
+          {slabUploadedFileNames[slab.id]}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            updateSlab(slab.id, { integrated712: "" });
+            setSlabUploadedFileNames(prev => {
+              const newState = { ...prev };
+              delete newState[slab.id];
+              return newState;
+            });
+          }}
+          className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
+          title="Remove file"
+        >
+          ×
+        </button>
+      </div>
+    )}
+    
+    {slab.integrated712 && (
+      <a 
+        href={slab.integrated712} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="inline-block text-sm text-blue-600 hover:underline"
+      >
+        View Document
+      </a>
+    )}
+  </div>
+  <p className="text-xs text-gray-500">
+    Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+  </p>
+</div>
                           </div>
                         </Card>
                       );
@@ -1694,6 +1847,8 @@ const toggleCollapse = (id: string) => {
             {loading ? "Saving..." : "Save"}{" "}
           </Button>
         </div>
+         </>
+      )}
       </CardContent>
     </Card>
   );

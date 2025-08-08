@@ -71,7 +71,7 @@ export interface NondhDetail {
   nondhId: string
   sNo: string
   type: string
-  subType?: string
+  reason?: string
   vigat?: string
   status: "valid" | "invalid" | "nullified"
   invalidReason?: string
@@ -79,14 +79,12 @@ export interface NondhDetail {
   showInOutput: boolean
   hasDocuments: boolean
   docUpload?: string
+  date?: string
   ownerRelations: Array<{
     id: string
     ownerName: string
     sNo: string
-    area: {
-      value: number
-      unit: 'guntha' | 'sq_m'
-    }
+    area: { value: number; unit: AreaUnit };
     tenure: string
     hukamType?: string
     hukamDate?: string

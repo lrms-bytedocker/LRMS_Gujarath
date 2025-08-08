@@ -115,13 +115,20 @@ CREATE TABLE nondh_owner_relations (
     nondh_detail_id UUID REFERENCES nondh_details(id) ON DELETE CASCADE,
     owner_name VARCHAR(255) NOT NULL,
     s_no VARCHAR(255) NOT NULL,
-    area_value NUMERIC NOT NULL,
-    area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('guntha', 'sq_m')),
+    -- Combined acre-guntha storage
+    acres NUMERIC,
+    gunthas NUMERIC,
+    -- OR square meters
+    square_meters NUMERIC,
+    area_unit NUMERIC,
+    -- Field to indicate which unit is being used
+    area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('acre_guntha', 'sq_m')),
     tenure VARCHAR(50) NOT NULL,
     hukam_type VARCHAR(50),
     hukam_date DATE,
     restraining_order BOOLEAN,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    is_valid BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
 );
 
 -- Create indexes for better performance

@@ -48,28 +48,12 @@ function getYearPeriods(slab: YearSlab) {
 }
 
 const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) => {
-  // Calculate all values
-  const currentSqm = farmer.areaType === "sq_m" 
-    ? farmer.sq_m || 0
-    : convertToSquareMeters(farmer.acre || 0, "acre") + 
-      convertToSquareMeters(farmer.guntha || 0, "guntha");
-
-  const acreValue = convertFromSquareMeters(currentSqm, "acre");
-  const gunthaValue = convertFromSquareMeters(currentSqm, "guntha");
+  // Calculate current area in square meters (single source of truth)
+  const currentSqm = farmer.area.value || 0;
 
   // Handlers for each input type
   const handleSqmChange = (value: string) => {
-    if (value === "") {
-      onChange({ 
-        ...farmer, 
-        sq_m: undefined,
-        acre: undefined,
-        guntha: undefined,
-        area: { value: 0, unit: "sq_m" }
-      });
-      return;
-    }
-    const num = parseFloat(value);
+    const num = value === "" ? 0 : parseFloat(value);
     if (!isNaN(num)) {
       onChange({
         ...farmer,
@@ -82,79 +66,59 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
   };
 
   const handleAcreChange = (value: string) => {
-    if (value === "") {
-      onChange({ 
-        ...farmer, 
-        acre: undefined,
-        sq_m: convertToSquareMeters(farmer.guntha || 0, "guntha"),
-        area: { value: convertToSquareMeters(farmer.guntha || 0, "guntha"), unit: "sq_m" }
-      });
-      return;
-    }
-    const num = parseFloat(value);
+    const num = value === "" ? 0 : parseFloat(value);
     if (!isNaN(num)) {
-      const sqm = convertToSquareMeters(num, "acre") + 
-                 convertToSquareMeters(farmer.guntha || 0, "guntha");
+      const guntha = farmer.guntha || 0;
+      const totalSqm = convertToSquareMeters(num, "acre") + 
+                      convertToSquareMeters(guntha, "guntha");
       onChange({ 
         ...farmer, 
         acre: num,
-        sq_m: sqm,
-        area: { value: sqm, unit: "sq_m" }
+        sq_m: totalSqm,
+        area: { value: totalSqm, unit: "sq_m" }
       });
     }
   };
 
   const handleGunthaChange = (value: string) => {
-    if (value === "") {
-      onChange({ 
-        ...farmer, 
-        guntha: undefined,
-        sq_m: convertToSquareMeters(farmer.acre || 0, "acre"),
-        area: { value: convertToSquareMeters(farmer.acre || 0, "acre"), unit: "sq_m" }
-      });
-      return;
-    }
-    let num = parseFloat(value);
+    let num = value === "" ? 0 : parseFloat(value);
     if (!isNaN(num)) {
       if (num >= 40) {
         num = 39.99;
         toast({ title: "Guntha must be less than 40" });
       }
-      const sqm = convertToSquareMeters(farmer.acre || 0, "acre") + 
-                 convertToSquareMeters(num, "guntha");
+      const acre = farmer.acre || 0;
+      const totalSqm = convertToSquareMeters(acre, "acre") + 
+                      convertToSquareMeters(num, "guntha");
       onChange({ 
         ...farmer, 
         guntha: num,
-        sq_m: sqm,
-        area: { value: sqm, unit: "sq_m" }
+        sq_m: totalSqm,
+        area: { value: totalSqm, unit: "sq_m" }
       });
     }
   };
 
   return (
     <div className="space-y-4">
-      {/* Area Type Selector */}
       <Select
         value={farmer.areaType}
         onValueChange={(val) => {
           const newType = val as "acre_guntha" | "sq_m";
-          if (newType === "acre_guntha") {
-            onChange({
-              ...farmer,
-              areaType: newType,
-              acre: parseFloat(acreValue.toFixed(2)),
-              guntha: parseFloat((gunthaValue % 40).toFixed(2)),
-              sq_m: undefined
-            });
-          } else {
-            onChange({
-              ...farmer,
-              areaType: newType,
-              sq_m: currentSqm,
-              acre: undefined,
-              guntha: undefined
-            });
-          }
+          // Get current values before switching
+          const currentSqm = farmer.area.value || 0;
+          const currentAcre = farmer.acre || convertFromSquareMeters(currentSqm, "acre");
+          const currentGuntha = farmer.guntha || convertFromSquareMeters(currentSqm, "guntha") % 40;
+          
+          onChange({
+            ...farmer,
+            areaType: newType,
+            // Preserve all values but switch the display
+            sq_m: newType === "sq_m" ? currentSqm : farmer.sq_m,
+            acre: newType === "acre_guntha" ? currentAcre : farmer.acre,
+            guntha: newType === "acre_guntha" ? currentGuntha : farmer.guntha,
+            area: { value: currentSqm, unit: "sq_m" } // Always stored in sqm
+          });
         }}
       >
         <SelectTrigger className="w-[180px]">
@@ -219,8 +183,15 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
                 type="number"
                 min={0}
                 step="0.01"
-                value={farmer.acre ?? ""}
-                onChange={(e) => handleAcreChange(e.target.value)}
+                value={convertFromSquareMeters(farmer.area.value || 0, "acre")}
+                onChange={(e) => {
+                  const acres = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                  if (!isNaN(acres)) {
+                    const totalSqm = convertToSquareMeters(acres, "acre") + 
+                                   convertToSquareMeters(farmer.guntha || 0, "guntha");
+                    handleSqmChange(totalSqm.toString());
+                  }
+                }}
                 placeholder="Enter acres"
               />
             </div>
@@ -231,8 +202,19 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
                 min={0}
                 max={39.99}
                 step="0.01"
-                value={farmer.guntha ?? ""}
-                onChange={(e) => handleGunthaChange(e.target.value)}
+                value={convertFromSquareMeters(farmer.area.value || 0, "guntha") % 40}
+                onChange={(e) => {
+                  let guntha = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                  if (!isNaN(guntha)) {
+                    if (guntha >= 40) {
+                      guntha = 39.99;
+                      toast({ title: "Guntha must be less than 40" });
+                    }
+                    const totalSqm = convertToSquareMeters(farmer.acre || 0, "acre") + 
+                                   convertToSquareMeters(guntha, "guntha");
+                    handleSqmChange(totalSqm.toString());
+                  }
+                }}
                 placeholder="Enter guntha"
               />
             </div>
@@ -244,8 +226,13 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
               type="number"
               min={0}
               step="0.01"
-              value={farmer.sq_m ?? ""}
-              onChange={(e) => handleSqmChange(e.target.value)}
+              value={farmer.area.value || ""}
+              onChange={(e) => {
+                const sqm = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                if (!isNaN(sqm)) {
+                  handleSqmChange(sqm.toString());
+                }
+              }}
               placeholder="Enter sq. meters"
             />
           </div>
@@ -392,7 +379,7 @@ useEffect(() => {
     Object.values(slabPanels).forEach(({ periods, slab }) => {
       periods.forEach(p => {
         panipatraks.push({
-          slabId: slab.id,
+          slabId: slab.yearSlabId || slab.id,
           sNo: slab.sNo,
           year: p.from,
           farmers: p.farmers.map(f => ({
@@ -509,7 +496,7 @@ useEffect(() => {
       
       return newPanels;
     });
-    setHasUnsavedChanges(currentStep, true);
+
   };
 
   const checkSameAsAbove = (slabId: string, periodIdx: number, checked: boolean) => {
@@ -588,7 +575,7 @@ useEffect(() => {
     Object.values(slabPanels).forEach(({ periods, slab }) => {
       periods.forEach(p => {
         panipatraks.push({
-          slabId: slab.id,
+          slabId: slab.yearSlabId || slab.id,
           sNo: slab.sNo,
           year: p.from,
           farmers: p.farmers.map(f => ({
@@ -768,7 +755,6 @@ useEffect(() => {
                                       })
                                     }
                                     placeholder="Enter farmer name"
-                                    disabled={period.sameAsAbove}
                                     className="w-full"
                                   />
                                 </div>

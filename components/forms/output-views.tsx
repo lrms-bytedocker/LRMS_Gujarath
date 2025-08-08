@@ -11,6 +11,7 @@ import { ArrowLeft, Download, Eye } from "lucide-react"
 import { useLandRecord } from "@/contexts/land-record-context"
 import { convertToSquareMeters } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase"
 
 interface PassbookEntry {
   year: number
@@ -18,6 +19,7 @@ interface PassbookEntry {
   area: number
   sNo: string
   nondhNumber: number
+  createdAt: string
 }
 
 export default function OutputViews() {
@@ -28,45 +30,71 @@ export default function OutputViews() {
   const [dateFilter, setDateFilter] = useState("")
 
   useEffect(() => {
-    generatePassbookData()
+    fetchPassbookData()
     generateFilteredNondhs()
   }, [yearSlabs, panipatraks, nondhs, nondhDetails])
 
-  const generatePassbookData = () => {
-    const passbook: PassbookEntry[] = []
+  const fetchPassbookData = async () => {
+    try {
+      // Fetch all valid owner relations from Supabase
+      const { data: ownerRelations, error } = await supabase
+        .from('nondh_owner_relations')
+        .select(`
+          owner_name,
+          s_no,
+          acres,
+          gunthas,
+          square_meters,
+          area_value,
+          area_unit,
+          is_valid,
+          created_at,
+          nondh_details (
+            nondh_id,
+            nondhs (number)
+          )
+        `)
+        .eq('is_valid', true)
 
-    // Generate from panipatraks
-    panipatraks.forEach((panipatrak) => {
-      panipatrak.farmers.forEach((farmer) => {
-        const area = convertToSquareMeters(farmer.area.value, farmer.area.unit)
+      if (error) throw error
 
-        // Find related nondhs for this S.No
-        const relatedNondhs = nondhs.filter((nondh) => nondh.affectedSNos.includes(panipatrak.sNo))
+      // Transform the data into passbook format
+      const passbookEntries = ownerRelations.map(relation => {
+        // Calculate area based on the unit, using area_value as fallback
+        let area = 0
+        if (relation.area_unit === 'acre_guntha') {
+          // Convert acre-guntha to square meters
+          const totalGunthas = (relation.acres || 0) * 40 + (relation.gunthas || 0)
+          area = convertToSquareMeters(totalGunthas, 'guntha')
+        } else if (relation.square_meters) {
+          area = relation.square_meters
+        } else if (relation.area_value) {
+          // Use area_value as fallback if square_meters is not available
+          area = relation.area_value
+        }
 
-        relatedNondhs.forEach((nondh) => {
-          passbook.push({
-            year: panipatrak.year,
-            ownerName: farmer.name,
-            area: area,
-            sNo: panipatrak.sNo,
-            nondhNumber: nondh.number,
-          })
-        })
+        // Extract year from created_at date
+        const year = new Date(relation.created_at).getFullYear()
 
-        // If no related nondhs, still add entry
-        if (relatedNondhs.length === 0) {
-          passbook.push({
-            year: panipatrak.year,
-            ownerName: farmer.name,
-            area: area,
-            sNo: panipatrak.sNo,
-            nondhNumber: 0,
-          })
+        return {
+          year,
+          ownerName: relation.owner_name,
+          area,
+          sNo: relation.s_no,
+          nondhNumber: relation.nondh_details?.nondhs?.number || 0,
+          createdAt: relation.created_at
         }
       })
-    })
 
-    setPassbookData(passbook.sort((a, b) => a.year - b.year))
+      setPassbookData(passbookEntries.sort((a, b) => a.year - b.year))
+    } catch (error) {
+      console.error('Error fetching passbook data:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch passbook data',
+        variant: 'destructive'
+      })
+    }
   }
 
   const generateFilteredNondhs = () => {
@@ -78,6 +106,7 @@ export default function OutputViews() {
           ...detail,
           nondhNumber: nondh?.number || 0,
           createdAt: new Date().toISOString().split("T")[0], // Mock date
+          reason: detail.reason || detail.vigat || "-" // Use reason or vigat as fallback
         }
       })
       .sort((a, b) => a.nondhNumber - b.nondhNumber)
@@ -133,7 +162,7 @@ export default function OutputViews() {
                   <TableHead>Nondh No.</TableHead>
                   <TableHead>S.No</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead>Sub Type</TableHead>
+                  <TableHead>Reason</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Vigat</TableHead>
                   <TableHead>Documents</TableHead>
@@ -145,7 +174,7 @@ export default function OutputViews() {
                     <TableCell>{nondh.nondhNumber}</TableCell>
                     <TableCell>{nondh.sNo}</TableCell>
                     <TableCell>{nondh.type}</TableCell>
-                    <TableCell>{nondh.subType || "-"}</TableCell>
+                    <TableCell>{nondh.reason}</TableCell>
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded text-xs ${
