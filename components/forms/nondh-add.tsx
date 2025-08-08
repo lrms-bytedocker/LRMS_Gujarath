@@ -65,15 +65,28 @@ export default function NondhAdd() {
 
   // Get unique S.Nos from all slabs
   const getAllSNos = () => {
-    const sNos = new Set<string>()
-    yearSlabs.forEach((slab) => {
-      sNos.add(slab.sNo)
-      slab.paikyEntries.forEach((entry) => sNos.add(entry.sNo))
-      slab.ekatrikaranEntries.forEach((entry) => sNos.add(entry.sNo))
-    })
-    return Array.from(sNos).filter((sNo) => sNo.trim() !== "")
-  }
-
+  const sNos = new Map<string, { type: "s_no" | "block_no" | "re_survey_no" }>();
+  
+  yearSlabs.forEach((slab) => {
+    if (slab.sNo.trim() !== "") {
+      sNos.set(slab.sNo, { type: slab.sNoType });
+    }
+    
+    slab.paikyEntries.forEach((entry) => {
+      if (entry.sNo.trim() !== "") {
+        sNos.set(entry.sNo, { type: entry.sNoType });
+      }
+    });
+    
+    slab.ekatrikaranEntries.forEach((entry) => {
+      if (entry.sNo.trim() !== "") {
+        sNos.set(entry.sNo, { type: entry.sNoType });
+      }
+    });
+  });
+  
+  return sNos;
+}
   const availableSNos = getAllSNos()
 
   // Automatically add new nondh when user starts typing in last empty one
@@ -199,9 +212,12 @@ export default function NondhAdd() {
   }
 
   const validateNondhNumber = (number: string) => {
-  // More strict regex: must start with digit(s), followed by - or /, then digit(s)
-  const regex = /^\d+([-/]\d+)+$/
-  return regex.test(number.trim())
+  // Allows:
+  // - Plain digits (1234)
+  // - Hyphen-separated (10-35 or 10-35-40)
+  // - Slash-separated (30/45 or 30/45/60)
+  const regex = /^(\d+([-/]\d+)*|\d+)$/
+  return regex.test(number)
 }
 
   function getAutoPopulatedSNoData(selectedType: SNoTypeUI): string[] {
@@ -276,15 +292,11 @@ export default function NondhAdd() {
       )
       
       // Validate nondh numbers format
-      const hasInvalidNumbers = validNondhs.some(nondh => {
-  const trimmedNumber = nondh.number.trim();
-  if (!trimmedNumber) return true;
-  return !validateNondhNumber(trimmedNumber);
-});
+      const hasInvalidNumbers = validNondhs.some(nondh => !validateNondhNumber(nondh.number))
+      if (hasInvalidNumbers) {
+        throw new Error("Nondh numbers must be in format like 10-35 or 30/45")
+      }
 
-if (hasInvalidNumbers) {
-  throw new Error("All Nondh numbers must be in format: number-number or number/number (e.g. 10-35, 30/45)")
-}
       // Validate that all nondhs have at least one affected S.No
       const hasEmptyAffectedSNos = validNondhs.some(nondh => nondh.affectedSNos.length === 0)
       if (hasEmptyAffectedSNos) {
@@ -361,18 +373,18 @@ if (hasInvalidNumbers) {
             <div className="space-y-4">
               {/* Nondh Number */}
               <div className="space-y-2">
-                <Label>Nondh Number * (e.g. 10-35 or 30/45)</Label>
-                <Input
-                  value={nondh.number}
-                  onChange={(e) => updateNondh(nondh.id, { number: e.target.value })}
-                  placeholder="Enter nondh number (e.g. 10-35 or 30/45)"
-                />
-                {nondh.number && !validateNondhNumber(nondh.number) && (
-  <p className="text-sm text-red-500">
-    Invalid format. Must be numbers separated by - or / (e.g. 10-35, 30/45, 123-456-789)
-  </p>
-)}
-              </div>
+  <Label>Nondh Number * (e.g. 1234, 10-35 or 30/45)</Label>
+  <Input
+    value={nondh.number}
+    onChange={(e) => updateNondh(nondh.id, { number: e.target.value })}
+    placeholder="Enter nondh number (e.g. 1234, 10-35 or 30/45)"
+  />
+  {nondh.number && !validateNondhNumber(nondh.number) && (
+    <p className="text-sm text-red-500">
+      Invalid format. Use numbers only (1234) or separated by / or - (e.g. 10-35 or 30/45)
+    </p>
+  )}
+</div>
 
               {/* Affected S.Nos */}
              
@@ -382,42 +394,36 @@ if (hasInvalidNumbers) {
   </div>
 
   <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto border rounded p-3">
-    {availableSNos.map((sNo) => {
-      // Determine the type for each S.No
-      let sNoType = "Survey_no";
-      if (landBasicInfo?.blockNo && sNo === landBasicInfo.blockNo) {
-        sNoType = "Block_no";
-      } else if (landBasicInfo?.reSurveyNo && sNo === landBasicInfo.reSurveyNo) {
-        sNoType = "Re_survey_no";
-      }
-      
-      return (
-        <div key={sNo} className="flex items-center space-x-2">
-          <Checkbox
-            id={`${nondh.id}_${sNo}`}
-            checked={nondh.affectedSNos.includes(sNo)}
-            onCheckedChange={(checked) => handleSNoSelection(nondh.id, sNo, checked as boolean)}
-          />
-          <Label htmlFor={`${nondh.id}_${sNo}`} className="text-sm">
-            {sNo} ({sNoType.replace("_", " ")})
-          </Label>
-        </div>
-      );
-    })}
-  </div>
+  {Array.from(availableSNos.entries()).map(([sNo, { type }]) => {
+    const sNoType = type === "s_no" ? "Survey" : 
+                   type === "block_no" ? "Block" : 
+                   "Re-survey";
+    
+    return (
+      <div key={sNo} className="flex items-center space-x-2">
+        <Checkbox
+          id={`${nondh.id}_${sNo}`}
+          checked={nondh.affectedSNos.includes(sNo)}
+          onCheckedChange={(checked) => handleSNoSelection(nondh.id, sNo, checked as boolean)}
+        />
+        <Label htmlFor={`${nondh.id}_${sNo}`} className="text-sm">
+          {sNo} ({sNoType})
+        </Label>
+      </div>
+    );
+  })}
+</div>
   {nondh.affectedSNos.length > 0 && (
-    <p className="text-sm text-muted-foreground">
-      Selected: {nondh.affectedSNos.map(sNo => {
-        let type = "Survey";
-        if (landBasicInfo?.blockNo && sNo === landBasicInfo.blockNo) {
-          type = "Block";
-        } else if (landBasicInfo?.reSurveyNo && sNo === landBasicInfo.reSurveyNo) {
-          type = "Re-survey";
-        }
-        return `${sNo} (${type})`;
-      }).join(", ")}
-    </p>
-  )}
+  <p className="text-sm text-muted-foreground">
+    Selected: {nondh.affectedSNos.map(sNo => {
+      const type = availableSNos.get(sNo)?.type || "s_no";
+      const typeDisplay = type === "s_no" ? "Survey" : 
+                        type === "block_no" ? "Block" : 
+                        "Re-survey";
+      return `${sNo} (${typeDisplay})`;
+    }).join(", ")}
+  </p>
+)}
 </div>
 
               {/* Document Upload */}

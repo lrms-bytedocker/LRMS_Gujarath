@@ -754,21 +754,34 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
 };
 
 const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
-  setSlabs(prev => prev.map(slab => {
-    if (slab.id !== id) return slab;
-
-    // When S.No type changes, clear the sNo field and let user enter manually
-   if (updates.sNoTypeUI && updates.sNoTypeUI !== slab.sNoTypeUI) {
-  const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
-  return {
-    ...slab,
-    ...updates,
-    sNo: autoPopulatedSNo // Auto-populate instead of clearing
-  };
-}
+  setSlabs(prev => {
+    const newSlabs = [...prev];
+    const index = newSlabs.findIndex(s => s.id === id);
     
-    return { ...slab, ...updates };
-  }));
+    if (index === -1) return newSlabs;
+
+    // Handle S.No type changes
+    if (updates.sNoTypeUI && updates.sNoTypeUI !== newSlabs[index].sNoTypeUI) {
+      const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
+      updates = {
+        ...updates,
+        sNo: autoPopulatedSNo
+      };
+    }
+
+    // Update current slab
+    newSlabs[index] = { ...newSlabs[index], ...updates };
+
+    // If start year changed, update NEXT slab's end year (not previous)
+    if (updates.startYear !== undefined && index < newSlabs.length - 1) {
+      newSlabs[index + 1] = {
+        ...newSlabs[index + 1],
+        endYear: updates.startYear
+      };
+    }
+
+    return newSlabs;
+  });
 };
 
 const addSlab = () => {
@@ -792,7 +805,7 @@ const addSlab = () => {
     startYear,
     endYear,
     sNoTypeUI: "survey_no",
-    sNo: "", // Start with empty field, let user enter manually
+    sNo: "",
     areaUI: defaultArea,
     integrated712: "",
     paiky: false,
@@ -866,20 +879,18 @@ const updateSlabEntry = (
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    // Handle S.No type change for entries - clear instead of auto-populate
+    // Handle S.No type change for entries
     if (updates.sNoTypeUI) {
-      const entries = type === "paiky" 
-        ? slab.paikyEntries || [] 
-        : slab.ekatrikaranEntries || [];
+      const entries = type === 'paiky' ? slab.paikyEntries : slab.ekatrikaranEntries;
       const currentEntry = entries[index] || {};
       
       if (updates.sNoTypeUI !== currentEntry.sNoTypeUI) {
-  const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
-  updates = {
-    ...updates,
-    sNo: autoPopulatedSNo // Auto-populate instead of clearing
-  };
-}
+        const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
+        updates = {
+          ...updates,
+          sNo: autoPopulatedSNo
+        };
+      }
     }
 
     if (type === "paiky") {
@@ -1016,27 +1027,32 @@ const toggleCollapse = (id: string) => {
           {slabs.map((slab, slabIndex) => (
             <Card key={slab.id} className="p-4">
               <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center space-x-4">
-                  <h3 className="text-lg font-semibold">Slab {slabIndex + 1}</h3>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          onClick={() => toggleCollapse(slab.id)}
-        >
-          {slab.collapsed ? 'Expand' : 'Collapse'}
-        </Button>
-      </div>
-      {slabs.length > 1 && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => removeSlab(slab.id)}
-          className="text-red-600"
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
-      )}
+  <div className="flex items-center space-x-4">
+    <h3 className="text-lg font-semibold">Slab {slabIndex + 1}</h3>
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <span>{slab.startYear || '?'}</span>
+      <span>-</span>
+      <span>{slab.endYear}</span>
     </div>
+    <Button 
+      variant="ghost" 
+      size="sm"
+      onClick={() => toggleCollapse(slab.id)}
+    >
+      {slab.collapsed ? 'Expand' : 'Collapse'}
+    </Button>
+  </div>
+  {slabs.length > 1 && (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => removeSlab(slab.id)}
+      className="text-red-600"
+    >
+      <Trash2 className="w-4 h-4" />
+    </Button>
+  )}
+</div>
     {!slab.collapsed && (
       <>
             {/* Start/End year */}

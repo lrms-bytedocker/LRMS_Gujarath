@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Eye, Loader2, ChevronDown, ChevronUp } from "lucide-react"
+import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Eye, Loader2, ChevronDown, ChevronUp, Badge } from "lucide-react"
 import { useLandRecord, type NondhDetail } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
@@ -21,13 +21,14 @@ const nondhTypes = [
   "Kabjedaar",
   "Ekatrikaran",
   "Varsai",
-  "Hakkami",
   "Hayati_ma_hakh_dakhal",
-  "Salesdeed",
-  "Opp_Salesdeed",
+  "Hakkami",
+  "Vechand",
+  "Durasti",
+  "Promulgation",
   "Hukam",
+  "Vehchani",
   "Bojo",
-  "Vechadi",
   "Other",
 ]
 
@@ -40,68 +41,28 @@ const statusTypes = [
   { value: "invalid", label: "Invalid" },
   { value: "nullified", label: "Nullified" }
 ]
-
-
-// Enhanced sorting function for nondhs
-const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]) => {
-  const nondhA = nondhs.find(n => n.id === a.nondhId);
-  const nondhB = nondhs.find(n => n.id === b.nondhId);
-  
-  if (!nondhA || !nondhB) return 0;
-
-  // Priority order: survey_no > block_no > resurvey_no
-  const priorityOrder = ['survey_no', 'block_no', 'resurvey_no'];
-  
-  const priorityA = priorityOrder.indexOf(nondhA.sNoType);
-  const priorityB = priorityOrder.indexOf(nondhB.sNoType);
-  
-  // If both have defined priorities, sort by priority
-  if (priorityA !== -1 && priorityB !== -1) {
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
-  } else if (priorityA !== -1) {
-    return -1; // A has priority, B doesn't
-  } else if (priorityB !== -1) {
-    return 1; // B has priority, A doesn't
-  }
-  
-  // If same priority or undefined, sort by nondh number
-  const getFirstNumber = (str: string) => {
-    const match = str.match(/^(\d+)/);
-    return match ? parseInt(match[1]) : 0;
-  };
-  
-  const numA = getFirstNumber(nondhA.number);
-  const numB = getFirstNumber(nondhB.number);
-  
-  if (numA !== numB) {
-    return numA - numB;
-  }
-  
-  return nondhA.number.localeCompare(nondhB.number);
-};
-
 const GUNTHAS_PER_ACRE = 40;
 const SQM_PER_GUNTHA = 101.1714; // Approx 1 guntha = 101.1714 sq meters
 const SQM_PER_ACRE = SQM_PER_GUNTHA * GUNTHAS_PER_ACRE; // Approx 1 acre = 4046.856 sq meters
-const convertToSquareMeters = (value: number, unit: "acre" | "guntha"): number => {
-  if (unit === "acre") return value * 4046.86
-  if (unit === "guntha") return value * 101.171
-  return value
-}
 
-const convertFromSquareMeters = (value: number, unit: "acre" | "guntha"): number => {
-  if (unit === "acre") return value / 4046.86
-  if (unit === "guntha") return value / 101.171
-  return value
-}
 
 type AreaUnit = "acre" | "guntha" | "sq_m";
 
 interface AreaFieldsProps {
-  area: { value: number; unit: AreaUnit };
-  onChange: (area: { value: number; unit: AreaUnit }) => void;
+  area: { 
+    value: number; 
+    unit: 'acre_guntha' | 'sq_m';
+    acres?: number;
+    gunthas?: number;
+    square_meters?: number;
+  };
+  onChange: (area: { 
+    value: number; 
+    unit: 'acre_guntha' | 'sq_m';
+    acres?: number;
+    gunthas?: number;
+    square_meters?: number;
+  }) => void;
 }
 
 const areaFields = ({ area, onChange }: AreaFieldsProps) => {
@@ -114,7 +75,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
 
   // Calculate derived values for display
   const totalGunthas = currentSqm / SQM_PER_GUNTHA;
-  const acres = totalGunthas / GUNTHAS_PER_ACRE; // Keep as decimal for display
+  const acres = totalGunthas / GUNTHAS_PER_ACRE;
   const gunthas = (acres % 1) * GUNTHAS_PER_ACRE;
 
   const handlePrimaryChange = (value: string, field: "acre" | "guntha" | "sq_m") => {
@@ -122,17 +83,13 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
     if (isNaN(num)) return;
 
     if (area.unit === "sq_m") {
-      // When unit is sq_m, primary field is square meters
       onChange({ value: num, unit: "sq_m" });
     } else {
-      // When unit is acre, primary fields are acre and guntha
       if (field === "acre") {
-        // Update the full acre value (including decimals)
         onChange({ value: num, unit: "acre" });
       } else if (field === "guntha") {
-        // Update guntha fraction, keep existing acres
         const currentAcres = Math.floor(area.value);
-        const clampedGuntha = Math.min(num, 39.99); // Ensure guntha < 40
+        const clampedGuntha = Math.min(num, 39.99);
         const newTotalValue = currentAcres + (clampedGuntha / 40);
         onChange({ value: newTotalValue, unit: "acre" });
       }
@@ -144,7 +101,6 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
     if (isNaN(num)) return;
 
     if (area.unit === "sq_m") {
-      // When unit is sq_m, secondary fields (acre/guntha) should update the sq_m value
       if (field === "acre") {
         const currentGunthaValue = gunthas;
         const newSqm = (num * GUNTHAS_PER_ACRE + currentGunthaValue) * SQM_PER_GUNTHA;
@@ -156,7 +112,6 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
         onChange({ value: newSqm, unit: "sq_m" });
       }
     } else {
-      // When unit is acre, secondary field is sq_m - convert sq_m to acre
       if (field === "sq_m") {
         const newAcreValue = num / SQM_PER_ACRE;
         onChange({ value: newAcreValue, unit: "acre" });
@@ -166,8 +121,126 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end gap-4">
-        {/* Unit Selector - Increased width */}
+      {/* On mobile: Stack all fields vertically */}
+      <div className="md:hidden space-y-4">
+        {/* Unit Selector */}
+        <div className="space-y-2 w-full">
+          <Label>Unit</Label>
+          <Select
+            value={area.unit}
+            onValueChange={(unit) => {
+              const newUnit = unit as AreaUnit;
+              if (newUnit === "sq_m") {
+                onChange({ value: currentSqm, unit: newUnit });
+              } else if (newUnit === "acre") {
+                onChange({ value: currentSqm / SQM_PER_ACRE, unit: newUnit });
+              } else {
+                onChange({ value: currentSqm / SQM_PER_GUNTHA, unit: newUnit });
+              }
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="acre">Acre-Guntha</SelectItem>
+              <SelectItem value="sq_m">Square Meters</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Primary Field */}
+        {area.unit === "sq_m" ? (
+          <div className="space-y-2 w-full">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={area.value || ""}
+              onChange={(e) => handlePrimaryChange(e.target.value, "sq_m")}
+              placeholder="Enter square meters"
+              className="w-full"
+            />
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 w-full">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={area.value.toFixed(2) || ""}
+                onChange={(e) => handlePrimaryChange(e.target.value, "acre")}
+                placeholder="Enter acres"
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2 w-full">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39.99"
+                step="0.01"
+                value={((area.value % 1) * 40).toFixed(2) || ""}
+                onChange={(e) => handlePrimaryChange(e.target.value, "guntha")}
+                placeholder="Enter gunthas"
+                className="w-full"
+              />
+            </div>
+          </>
+        )}
+
+        {/* Secondary Fields */}
+        {area.unit === "sq_m" ? (
+          <>
+            <div className="space-y-2 w-full">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={acres.toFixed(2) || ""}
+                onChange={(e) => handleSecondaryChange(e.target.value, "acre")}
+                placeholder="0.00"
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2 w-full">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39.99"
+                step="0.01"
+                value={gunthas.toFixed(2) || ""}
+                onChange={(e) => handleSecondaryChange(e.target.value, "guntha")}
+                placeholder="0.00"
+                className="w-full"
+              />
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2 w-full">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={currentSqm.toFixed(2) || ""}
+              onChange={(e) => handleSecondaryChange(e.target.value, "sq_m")}
+              placeholder="0.00"
+              className="w-full"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* On desktop: Original single-row layout */}
+      <div className="hidden md:flex items-end gap-4">
+        {/* Unit Selector */}
         <div className="space-y-2 w-[180px]">
           <Label>Unit</Label>
           <Select
@@ -293,6 +366,36 @@ export default function NondhDetails() {
   const [nondhDetailData, setNondhDetailData] = useState<NondhDetail[]>(getStepData().nondhDetails || [])
   const [collapsedNondhs, setCollapsedNondhs] = useState<Set<string>>(new Set())
   const [equalDistribution, setEqualDistribution] = useState<Record<string, boolean>>({})
+  const getSNoTypesFromSlabs = () => {
+  const sNoTypes = new Map<string, "s_no" | "block_no" | "re_survey_no">();
+  
+  // Process main slab S.Nos
+  yearSlabs.forEach(slab => {
+    if (slab.sNo) {
+      sNoTypes.set(slab.sNo, slab.sNoType);
+    }
+  });
+  
+  // Process paiky entries
+  yearSlabs.forEach(slab => {
+    slab.paikyEntries.forEach(entry => {
+      if (entry.sNo) {
+        sNoTypes.set(entry.sNo, entry.sNoType);
+      }
+    });
+  });
+  
+  // Process ekatrikaran entries
+  yearSlabs.forEach(slab => {
+    slab.ekatrikaranEntries.forEach(entry => {
+      if (entry.sNo) {
+        sNoTypes.set(entry.sNo, entry.sNoType);
+      }
+    });
+  });
+  
+  return sNoTypes;
+};
 const getSurveyNumberType = (sNo: string): string => {
   // First check if it's a block number
   if (landBasicInfo?.blockNo && sNo === landBasicInfo.blockNo) {
@@ -304,6 +407,26 @@ const getSurveyNumberType = (sNo: string): string => {
   }
   // Everything else is considered a survey number
   return 'survey_no';
+};
+
+// Enhanced sorting function for nondhs
+const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]) => {
+  const sNoTypes = getSNoTypesFromSlabs();
+  const typeA = sNoTypes.get(a.sNo) || 's_no';
+  const typeB = sNoTypes.get(b.sNo) || 's_no';
+  
+  // Priority order: survey_no > block_no > resurvey_no
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+  const priorityA = priorityOrder.indexOf(typeA);
+  const priorityB = priorityOrder.indexOf(typeB);
+  
+  // First sort by type priority
+  if (priorityA !== priorityB) {
+    return priorityA - priorityB;
+  }
+  
+  // Then sort numerically within each type
+  return a.sNo.localeCompare(b.sNo, undefined, { numeric: true });
 };
   // Initialize with saved data if available
   useEffect(() => {
@@ -317,10 +440,13 @@ const getSurveyNumberType = (sNo: string): string => {
   useEffect(() => {
     if (nondhDetailData.length > 0) {
       const hasContent = nondhDetailData.some(detail => 
-        detail.type.trim() !== "" || 
-        detail.ownerRelations.length > 0 ||
-        detail.status !== "Pramanik"
-      )
+  detail.type.trim() !== "" || 
+  detail.ownerRelations.some(rel => rel.ownerName.trim() !== "") ||
+  detail.status !== "valid" ||
+  detail.reason.trim() !== "" ||
+  detail.vigat.trim() !== "" ||
+  detail.date.trim() !== ""
+)
       
       const currentStepData = getStepData()
       const isDifferent = JSON.stringify(currentStepData.nondhDetails) !== JSON.stringify(nondhDetailData)
@@ -374,56 +500,36 @@ const getSurveyNumberType = (sNo: string): string => {
   }, [landBasicInfo?.id, setNondhs, toast])
 
   useEffect(() => {
-    const initializeData = () => {
-      if (nondhDetailData.length === 0) {
-        const initialData: NondhDetail[] = []
-        const sNoNondhMap = new Map<string, any[]>()
-
-        nondhs.forEach(nondh => {
-          nondh.affectedSNos.forEach(sNo => {
-            if (!sNoNondhMap.has(sNo)) sNoNondhMap.set(sNo, [])
-            sNoNondhMap.get(sNo)!.push(nondh)
-          })
-        })
-
-        Array.from(sNoNondhMap.keys())
-          .sort()
-          .forEach(sNo => {
-            sNoNondhMap.get(sNo)!.forEach(nondh => {
-              const newDetail = {
-                id: `${nondh.id}_${sNo}`,
-                nondhId: nondh.id,
-                sNo,
-                type: "Kabjedaar",
-                reason: "",
-                date: "",
-                vigat: "",
-                status: "Pramanik",
-                raddReason: "",
-                showInOutput: false,
-                hasDocuments: false,
-                docUpload: "",
-                oldOwner: "",
-                hukamDate: "",
-                ownerRelations: [{
-                  id: Date.now().toString(),
-                  ownerName: "",
-                  sNo,
-                  area: { value: 0, unit: "sq_m" },
-                  tenure: "Navi",
-                  isValid: true
-                }],
-              }
-              initialData.push(newDetail)
-            })
-          })
-
-        setNondhDetailData(initialData)
-      }
+  const initializeData = () => {
+    if (nondhDetailData.length === 0) {
+      const initialData: NondhDetail[] = nondhs.map(nondh => ({
+        id: nondh.id,
+        nondhId: nondh.id,
+        sNo: nondh.affectedSNos[0] || '',
+        type: "Kabjedaar",
+        reason: "",
+        date: "",
+        vigat: "",
+        status: "valid",
+        raddReason: "",
+        showInOutput: false,
+        hasDocuments: false,
+        docUpload: "",
+        oldOwner: "",
+        hukamDate: "",
+        ownerRelations: [{
+          id: Date.now().toString(),
+          ownerName: "",
+          area: { value: 0, unit: "sq_m" },
+          tenure: "Navi",
+          isValid: true
+        }],
+      }));
+      setNondhDetailData(initialData);
     }
-
-    initializeData()
-  }, [nondhs])
+  };
+  initializeData();
+}, [nondhs]);
 
   const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
     setNondhDetailData((prev) => prev.map((detail) => (detail.id === id ? { ...detail, ...updates } : detail)))
@@ -537,84 +643,88 @@ const getSurveyNumberType = (sNo: string): string => {
     }
   }
 
-  const handleStatusChange = (detailId: string, newStatus: "valid" | "invalid" | "nullified") => {
-  const detail = nondhDetailData.find(d => d.id === detailId)
-  if (!detail) return
+const updateValidityChain = (currentDetailId: string) => {
+  // Get all nondhs sorted by priority (survey > block > resurvey)
+  const sortedNondhs = [...nondhs].sort((a, b) => {
+    const aType = getSurveyNumberType(a.affectedSNos[0] || '');
+    const bType = getSurveyNumberType(b.affectedSNos[0] || '');
+    const priorityOrder = ['survey_no', 'block_no', 'resurvey_no'];
+    const aPriority = priorityOrder.indexOf(aType);
+    const bPriority = priorityOrder.indexOf(bType);
+    
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return a.number - b.number;
+  });
 
-  // Clear invalid reason if status is no longer invalid
-  const updates = { 
+  // Find the index of the current nondh in the sorted list
+  const currentIndex = sortedNondhs.findIndex(n => 
+    nondhDetailData.some(d => d.id === currentDetailId && d.nondhId === n.id)
+  );
+
+  if (currentIndex === -1) return;
+
+  // When current nondh is invalid:
+  // Walk backwards through previous nondhs
+  let foundExplicitInvalid = false;
+  
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const nondh = sortedNondhs[i];
+    const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
+    
+    if (!detail) continue;
+
+    // If we find an explicitly invalid nondh
+    if (detail.status === 'invalid') {
+      foundExplicitInvalid = true;
+      // Don't modify this nondh's owners
+      continue;
+    }
+
+    // Toggle validity based on whether we found an explicit invalid
+    const shouldBeValid = foundExplicitInvalid;
+    
+    const updatedRelations = detail.ownerRelations.map(relation => ({
+      ...relation,
+      isValid: shouldBeValid
+    }));
+    
+    updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+  }
+};
+
+// Updated handleStatusChange
+const handleStatusChange = (detailId: string, newStatus: "valid" | "invalid" | "nullified") => {
+  const detail = nondhDetailData.find(d => d.id === detailId);
+  if (!detail) return;
+
+  const isNowValid = newStatus === 'valid';
+  
+  // First update the detail's status
+  updateNondhDetail(detailId, { 
     status: newStatus,
     invalidReason: newStatus === 'invalid' ? detail.invalidReason : '' 
-  }
+  });
+
+  // Then update all owner relations' isValid based on the new status
+  const updatedRelations = detail.ownerRelations.map(relation => ({
+    ...relation,
+    isValid: isNowValid
+  }));
   
-  updateNondhDetail(detailId, updates)
+  updateNondhDetail(detailId, { ownerRelations: updatedRelations });
 
-  // NEW: Call validity chain update when status changes to invalid
-  if (newStatus === 'invalid' && detail.oldOwner) {
-    // Find the old owner's nondh ID from the oldOwner field
-    updateValidityChain(detailId, detail.oldOwner, false) // false because this nondh is now invalid
-  } else if (newStatus === 'valid' && detail.oldOwner) {
-    // If changing back to valid, restore validity chain
-    updateValidityChain(detailId, detail.oldOwner, true)
+  // Only update chain if marking as invalid
+  if (!isNowValid) {
+    updateValidityChain(detailId);
   }
-}
-
-const updateValidityChain = (currentDetailId: string, oldOwnerNondhId: string, isCurrentValid: boolean) => {
-  const currentDetail = nondhDetailData.find(d => d.id === currentDetailId);
-  if (!currentDetail) return;
-
-  // Find all nondh details for the same S.No, sorted by priority
-  const sameSnDetails = nondhDetailData
-    .filter(d => d.sNo === currentDetail.sNo)
-    .sort((a, b) => sortNondhsBySNoType(a, b, nondhs));
-
-  const currentIndex = sameSnDetails.findIndex(d => d.id === currentDetailId);
-  
-  // Find the old owner detail by matching nondh ID
-  const oldOwnerDetailIndex = sameSnDetails.findIndex(d => d.nondhId === oldOwnerNondhId);
-
-  // Safety checks
-  if (oldOwnerDetailIndex === -1 || currentIndex === -1 || oldOwnerDetailIndex >= currentIndex) {
-    console.warn('Invalid validity chain update parameters');
-    return;
-  }
-
-  // Get the old owner detail
-  const oldOwnerDetail = sameSnDetails[oldOwnerDetailIndex];
-  
-  // Logic: If current nondh becomes invalid, all previous nondhs in chain should become invalid
-  // If current nondh becomes valid, previous nondhs should become valid (unless they have their own invalid status)
-  
-  // Update validity for all nondhs between old owner and current nondh (inclusive of old owner, exclusive of current)
-  for (let i = oldOwnerDetailIndex; i < currentIndex; i++) {
-    const detailToUpdate = sameSnDetails[i];
-    
-    // Don't update the current detail itself, and respect explicit invalid status
-    if (detailToUpdate.id !== currentDetailId && detailToUpdate.status !== 'invalid') {
-      const newValidityState = isCurrentValid;
-      
-      const updatedRelations = detailToUpdate.ownerRelations.map(relation => ({
-        ...relation,
-        isValid: newValidityState
-      }));
-      
-      updateNondhDetail(detailToUpdate.id, { ownerRelations: updatedRelations });
-      
-      // Recursively update if this detail also affects others
-      if (detailToUpdate.oldOwner && detailToUpdate.oldOwner !== oldOwnerNondhId) {
-        updateValidityChain(detailToUpdate.id, detailToUpdate.oldOwner, newValidityState);
-      }
-    }
-  }
-}
-
-  // Get previous owners for dropdown (Varsai, Hakkami, Vechadi, Hayati_ma_hakh_dakhal)
+};
+  // Get previous owners for dropdown (Varsai, Hakkami, Vechand, Hayati_ma_hakh_dakhal)
 const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   return nondhDetailData
     .filter(d => 
       d.sNo === sNo && 
       d.nondhId !== currentNondhId &&
-      ["Varsai", "Hakkami", "Vechadi", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type)
+      ["Varsai", "Hakkami", "Vechand", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type)
     )
     .sort((a, b) => sortNondhsBySNoType(a, b, nondhs))
     .flatMap(d => d.ownerRelations.map(r => ({ 
@@ -711,8 +821,8 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
         </div>
       )}
 
-      {/* Special handling for Vechadi */}
-      {detail.type === "Vechadi" && (
+      {/* Special handling for Vechand */}
+      {detail.type === "Vechand" && (
         <div className="space-y-2">
           <Label>New Owner *</Label>
           <Input
@@ -761,7 +871,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
                 {detail.type === "Varsai" 
                   ? `New Owner ${index + 1}`
                   : index === 0 
-                    ? (detail.type === "Hakkami" || detail.type === "Vechadi") 
+                    ? (detail.type === "Hakkami" || detail.type === "Vechand") 
                       ? "New Owner" 
                       : "Old Owner"
                     : `New Owner ${index}`}
@@ -814,8 +924,8 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   })}
               </div>
 
-              {/* Tenure Field - shown for all except Vechadi */}
-              {detail.type !== "Vechadi" && (
+              {/* Tenure Field - shown for all except Vechand */}
+              {detail.type !== "Vechand" && (
                 <div className="space-y-2">
                   <Label>Tenure</Label>
                   <Select
@@ -848,7 +958,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
 };
 
   const renderTypeSpecificFields = (detail: NondhDetail) => {
-   if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechadi"].includes(detail.type)) {
+   if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechand"].includes(detail.type)) {
     return renderOwnerSelectionFields(detail);
   }
 
@@ -1149,121 +1259,195 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   }
 
   const handleSubmit = async () => {
-    if (!nondhs.length || !nondhDetailData.length) {
-      toast({
-        title: "Error",
-        description: "No nondh data available to save",
-        variant: "destructive"
-      })
-      return
+  if (!nondhs.length) {
+    toast({
+      title: "Error",
+      description: "No nondh data available to save",
+      variant: "destructive"
+    });
+    return;
+  }
+
+  // Filter out empty/incomplete nondh details
+  const validNondhDetails = nondhDetailData.filter(detail => {
+    // Check if detail has meaningful content
+    const hasOwnerNames = detail.ownerRelations.some(rel => rel.ownerName.trim() !== "");
+    const hasReason = detail.reason.trim() !== "";
+    const hasVigat = detail.vigat.trim() !== "";
+    const hasDate = detail.date.trim() !== "";
+    const isNonDefaultStatus = detail.status !== "valid";
+    const hasDocuments = detail.hasDocuments && detail.docUpload;
+    
+    // Special handling for different nondh types
+    const hasTypeSpecificData = (() => {
+      switch (detail.type) {
+        case "Hukam":
+          return detail.ownerRelations.some(rel => 
+            rel.hukamDate || rel.hukamType || rel.restrainingOrder
+          );
+        case "Varsai":
+        case "Hakkami":
+        case "Vechand":
+        case "Hayati_ma_hakh_dakhal":
+          return detail.oldOwner && detail.oldOwner.trim() !== "";
+        default:
+          return true; // For basic types, owner names are sufficient
+      }
+    })();
+    
+    return hasOwnerNames || hasReason || hasVigat || hasDate || 
+           isNonDefaultStatus || hasDocuments || hasTypeSpecificData;
+  });
+
+  if (!validNondhDetails.length) {
+    toast({
+      title: "No data to save",
+      description: "Please enter nondh details before saving",
+      variant: "destructive"
+    });
+    return;
+  }
+
+  setLoading(true);
+  try {
+    // 1. First get all existing nondh IDs to delete
+    const existingNondhIds = nondhs
+      .map(n => n.id)
+      .filter(id => id && id !== "1" && id !== "new");
+
+    if (existingNondhIds.length === 0) {
+      throw new Error("No valid nondh IDs found");
     }
 
-    setLoading(true)
-    try {
-      // Prepare data for batch insert
-      const nondhDetailsToInsert = nondhDetailData.map(detail => ({
+    // 2. Get existing nondh details and their relations to delete
+    const { data: existingDetails, error: fetchError } = await supabase
+      .from('nondh_details')
+      .select('id')
+      .in('nondh_id', existingNondhIds);
+
+    if (fetchError) throw fetchError;
+
+    // 3. Delete existing data in correct order (relations first)
+    if (existingDetails?.length) {
+      // Delete owner relations first
+      const { error: relationsDeleteError } = await supabase
+        .from('nondh_owner_relations')
+        .delete()
+        .in('nondh_detail_id', existingDetails.map(d => d.id));
+
+      if (relationsDeleteError) throw relationsDeleteError;
+
+      // Then delete nondh details
+      const { error: detailsDeleteError } = await supabase
+        .from('nondh_details')
+        .delete()
+        .in('id', existingDetails.map(d => d.id));
+
+      if (detailsDeleteError) throw detailsDeleteError;
+    }
+
+    // 4. Insert new nondh details
+    const { data: insertedDetails, error: insertError } = await supabase
+      .from('nondh_details')
+      .insert(validNondhDetails.map(detail => ({
         nondh_id: detail.nondhId,
-        s_no: detail.sNo,
+        s_no: detail.sNo || nondhs.find(n => n.id === detail.nondhId)?.affectedSNos[0] || '',
         type: detail.type,
         reason: detail.reason || null,
-  date: detail.date || null,
-        vigat: detail.vigat,
+        date: detail.date || null,
+        vigat: detail.vigat || null,
         status: detail.status,
-        invalid_reason: detail.status === 'invalid' ? detail.invalidReason : null,
+        invalid_reason: detail.status === 'invalid' ? (detail.invalidReason || null) : null,
         old_owner: detail.oldOwner || null,
-        show_in_output: detail.showInOutput,
-        has_documents: detail.hasDocuments,
-        doc_upload_url: detail.docUpload
-      }))
+        show_in_output: detail.showInOutput || false,
+        has_documents: detail.hasDocuments || false,
+        doc_upload_url: detail.docUpload || null
+      })))
+      .select();
 
-      // Get existing nondh details to delete
-      const { data: existingDetails, error: fetchError } = await supabase
-        .from('nondh_details')
-        .select('id')
-        .in('nondh_id', nondhs.map(n => n.id).filter(id => id && id !== "1" && id !== "new"))
+    if (insertError) throw insertError;
 
-      if (fetchError) throw fetchError
+    // 5. Prepare owner relations data
+    const ownerRelationsToInsert = validNondhDetails.flatMap(detail => {
+      const insertedDetail = insertedDetails.find(d => 
+        d.nondh_id === detail.nondhId && 
+        d.s_no === detail.sNo
+      );
+      
+      if (!insertedDetail) return [];
 
-      // Delete existing nondh details and relations
-      if (existingDetails?.length) {
-        // Delete owner relations first
-        await supabase
-          .from('nondh_owner_relations')
-          .delete()
-          .in('nondh_detail_id', existingDetails.map(d => d.id))
+      return detail.ownerRelations
+        .filter(relation => relation.ownerName.trim() !== "")
+        .map(relation => {
+          const isAcreGuntha = relation.area.unit === 'acre_guntha';
+          const acres = isAcreGuntha ? Math.floor(relation.area.value || 0) : null;
+          const gunthas = isAcreGuntha ? ((relation.area.value || 0) % 1) * 40 : null;
+          const square_meters = isAcreGuntha ? null : (relation.area.value || 0);
 
-        // Then delete nondh details
-        await supabase
-          .from('nondh_details')
-          .delete()
-          .in('id', existingDetails.map(d => d.id))
+          return {
+            nondh_detail_id: insertedDetail.id,
+            owner_name: relation.ownerName.trim(),
+            s_no: relation.sNo || detail.sNo,
+            acres,
+            gunthas,
+            square_meters,
+            area_unit: relation.area.unit === 'acre_guntha' ? 'acre_guntha' : 'sq_m',
+            tenure: relation.tenure || 'Navi',
+            is_valid: relation.isValid !== false, // Ensure validity is saved
+            ...(relation.hukamType && { hukam_type: relation.hukamType }),
+            ...(relation.hukamDate && { hukam_date: relation.hukamDate }),
+            ...(relation.restrainingOrder && { 
+              restraining_order: relation.restrainingOrder === 'yes' 
+            })
+          };
+        });
+    });
+
+    console.log('Preparing to insert owner relations:', ownerRelationsToInsert);
+
+    // 6. Insert owner relations in batch
+    if (ownerRelationsToInsert.length > 0) {
+      const { data: insertedRelations, error: relationsError } = await supabase
+        .from('nondh_owner_relations')
+        .insert(ownerRelationsToInsert)
+        .select();
+
+      if (relationsError) {
+        console.error('Owner relations insert error:', relationsError);
+        throw relationsError;
       }
 
-      // Insert new nondh details and get their IDs
-      const { data: insertedDetails, error: insertError } = await supabase
-        .from('nondh_details')
-        .insert(nondhDetailsToInsert)
-        .select()
-
-      if (insertError) throw insertError
-
-      // Prepare owner relations data
-      const ownerRelationsToInsert = nondhDetailData.flatMap(detail => {
-  const detailRecord = insertedDetails.find(d => 
-    d.nondh_id === detail.nondhId && 
-    d.s_no === detail.sNo
-  );
-  
-  if (!detailRecord) return [];
-
-  return detail.ownerRelations.map(relation => ({
-    nondh_detail_id: detailRecord.id,
-    owner_name: relation.ownerName,
-    s_no: relation.sNo,
-    area_value: relation.area.value,
-    area_unit: relation.area.unit,
-    tenure: relation.tenure,
-    is_valid: relation.isValid !== false, // Defaults to true if undefined
-    ...(relation.hukamType && { hukam_type: relation.hukamType }),
-    ...(relation.hukamDate && { hukam_date: relation.hukamDate }),
-    ...(relation.restrainingOrder && { 
-      restraining_order: relation.restrainingOrder === 'yes' 
-    })
-  }));
-});
-
-      // Insert owner relations if any
-      if (ownerRelationsToInsert.length > 0) {
-        const { error: relationsError } = await supabase
-          .from('nondh_owner_relations')
-          .insert(ownerRelationsToInsert)
-
-        if (relationsError) throw relationsError
-      }
-
-      // Update local state
-      const updatedDetails = nondhDetailData.map(detail => {
-        const insertedDetail = insertedDetails.find(d => 
-          d.nondh_id === detail.nondhId && d.s_no === detail.sNo
-        )
-        return insertedDetail ? { ...detail, dbId: insertedDetail.id } : detail
-      })
-
-      setNondhDetails(updatedDetails)
-      markAsSaved()
-    toast({ title: "Nondh details saved successfully" })
-    setCurrentStep(6)
-    } catch (error) {
-      console.error('Save error:', error)
-      toast({
-        title: "Error saving nondh details",
-        description: error instanceof Error ? error.message : "Database error",
-        variant: "destructive"
-      })
-    } finally {
-      setLoading(false)
+      console.log('Inserted owner relations:', insertedRelations);
     }
+
+    // 7. Update local state
+    const updatedDetails = validNondhDetails.map(detail => {
+      const insertedDetail = insertedDetails.find(d => 
+        d.nondh_id === detail.nondhId && d.s_no === detail.sNo
+      );
+      return insertedDetail ? { ...detail, dbId: insertedDetail.id } : detail;
+    });
+
+    setNondhDetails(updatedDetails);
+    markAsSaved();
+    
+    toast({ 
+      title: "Success", 
+      description: `Saved ${validNondhDetails.length} nondh detail(s) with ${ownerRelationsToInsert.length} owner relations successfully` 
+    });
+    
+    setCurrentStep(6);
+  } catch (error) {
+    console.error('Save error:', error);
+    toast({
+      title: "Error saving nondh details",
+      description: error instanceof Error ? error.message : "Database error",
+      variant: "destructive"
+    });
+  } finally {
+    setLoading(false);
   }
+};
 
   const groupedDetails = nondhDetailData.reduce(
     (acc, detail) => {
@@ -1321,219 +1505,268 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
         )}
 
         {/* Nondh Details by S.No */}
-        {Object.keys(groupedDetails)
+        {nondhs
+  .map(nondh => {
+    // Find the "primary" S.No for sorting (first one in affectedSNos)
+    const primarySNo = nondh.affectedSNos[0] || '';
+    const sNoTypes = getSNoTypesFromSlabs();
+    const sNoType = sNoTypes.get(primarySNo) || 's_no';
+    
+    return {
+      ...nondh,
+      primarySNo,
+      sNoType
+    };
+  })
   .sort((a, b) => {
-    const aType = getSurveyNumberType(a);
-    const bType = getSurveyNumberType(b);
-    const priorityOrder = ['survey_no', 'block_no', 'resurvey_no'];
-    const aPriority = priorityOrder.indexOf(aType);
-    const bPriority = priorityOrder.indexOf(bType);
+    // First sort by S.No type priority
+    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+    const aPriority = priorityOrder.indexOf(a.sNoType);
+    const bPriority = priorityOrder.indexOf(b.sNoType);
 
-    // First sort by type priority
     if (aPriority !== bPriority) {
       return aPriority - bPriority;
     }
     
     // Then sort numerically within each type
-    return a.localeCompare(b, undefined, { numeric: true });
+    const numericCompare = a.primarySNo.localeCompare(b.primarySNo, undefined, { numeric: true });
+    if (numericCompare !== 0) {
+      return numericCompare;
+    }
+    
+    // Finally sort by nondh number if S.Nos are the same
+    return a.number - b.number;
   })
-  .map((sNo) => {
-    const sNoType = getSurveyNumberType(sNo);
-    const displayLabel = 
-      sNoType === 'block_no' ? 'Block No' :
-      sNoType === 'resurvey_no' ? 'Resurvey No' : 'Survey No';
+  .map((sortedNondh) => {
+    const detail = nondhDetailData.find(d => d.nondhId === sortedNondh.id);
+    if (!detail) return null;
 
     return (
-      <Card key={sNo} className="p-4">
-        <h3 className="text-xl font-semibold mb-4">
-          {sNoType === 'survey_no' ? 'Survey No' : 
- sNoType === 'block_no' ? 'Block No' : 'Resurvey No'}: {sNo}
-        </h3>
-
-              {groupedDetails[sNo]
-                .sort((a, b) => {
-                  const nondhA = nondhs.find((n) => n.id === a.nondhId)
-                  const nondhB = nondhs.find((n) => n.id === b.nondhId)
-                  if (!nondhA || !nondhB) return 0
-                  return sortNondhsBySNoType(a, b, nondhs)
-                })
-                .map((detail) => {
-                  const nondh = nondhs.find((n) => n.id === detail.nondhId)
-                  return (
-                    <Card key={detail.id} className="p-4 mb-4">
-  <div className="flex justify-between items-center">
-    <h4 className="text-lg font-medium">Nondh {nondh?.number}</h4>
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={() => toggleCollapse(detail.id)}
-      className="text-muted-foreground"
-    >
-      {collapsedNondhs.has(detail.id) ? (
-        <>
-          <ChevronDown className="w-4 h-4 mr-2" />
-          Expand
-        </>
-      ) : (
-        <>
-          <ChevronUp className="w-4 h-4 mr-2" />
-          Collapse
-        </>
-      )}
-    </Button>
-  </div>
-
-  {!collapsedNondhs.has(detail.id) && (
-    <>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 mt-4">
-  <div className="space-y-2">
-    <Label>Nondh Type *</Label>
-    <Select
-      value={detail.type}
-      onValueChange={(value) => updateNondhDetail(detail.id, { type: value })}
-    >
-      <SelectTrigger>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {nondhTypes.map((type) => (
-          <SelectItem key={type} value={type}>
-            {type}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
-
-  {/* Add Date Field */}
-  <div className="space-y-2">
-    <Label>Date *</Label>
-    <Input
-      type="date"
-      value={detail.date || ''}
-      onChange={(e) => updateNondhDetail(detail.id, { date: e.target.value })}
-    />
-  </div>
-</div>
-
-{/* Add Reason Field */}
-<div className="space-y-2 mb-4">
-  <Label>Reason</Label>
-  <Textarea
-    value={detail.reason}
-    onChange={(e) => updateNondhDetail(detail.id, { reason: e.target.value })}
-    placeholder="Enter reason for this nondh"
-    rows={3}
-  />
-</div>
-
-      <div className="space-y-4 mb-4">
-        <div className="space-y-2">
-          <Label>Vigat</Label>
-          <Textarea
-            value={detail.vigat}
-            onChange={(e) => updateNondhDetail(detail.id, { vigat: e.target.value })}
-            placeholder="Enter vigat details"
-            rows={3}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>Status</Label>
-          <Select
-  value={detail.status}
-  onValueChange={(value) => handleStatusChange(detail.id, value)}
->
-  <SelectTrigger>
-    <SelectValue />
-  </SelectTrigger>
-  <SelectContent>
-    {statusTypes.map((status) => (
-      <SelectItem key={status.value} value={status.value}>
-        {status.label}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
-{detail.status === "invalid" && (
-  <div className="space-y-2 mt-2">
-    <Label>Invalid Reason *</Label>
-    <Input
-      value={detail.invalidReason}
-      onChange={(e) => updateNondhDetail(detail.id, { invalidReason: e.target.value })}
-      placeholder="Enter reason for invalidation"
-    />
-  </div>
-)}
-        </div>
-      </div>
-
-      <div className="space-y-4 mb-4">
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id={`show_${detail.id}`}
-            checked={detail.showInOutput}
-            onCheckedChange={(checked) =>
-              updateNondhDetail(detail.id, { showInOutput: checked as boolean })
-            }
-          />
-          <Label htmlFor={`show_${detail.id}`}>Show in query list</Label>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id={`docs_${detail.id}`}
-            checked={detail.hasDocuments}
-            onCheckedChange={(checked) =>
-              updateNondhDetail(detail.id, { hasDocuments: checked as boolean })
-            }
-          />
-          <Label htmlFor={`docs_${detail.id}`}>Do you have relevant documents?</Label>
-        </div>
-
-        {detail.hasDocuments && (
-          <div className="space-y-2">
-            <Label>Upload Documents</Label>
-            <div className="flex items-center gap-4">
-              <Input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png"
-                multiple
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) handleFileUpload(file, detail.id)
-                }}
-              />
-              <Upload className="w-5 h-5 text-muted-foreground" />
+      <Card key={sortedNondh.id} className="p-4 mb-6">
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold">
+                Nondh No: {sortedNondh.number}
+              </h3>
+              <span className="text-sm px-2 py-1 bg-blue-100 dark:bg-blue-900 rounded-full">
+                {nondhTypes.find(t => t === detail.type) || 'Nondh'}
+              </span>
             </div>
-            {detail.docUpload && (
-              <div className="flex items-center gap-2 mt-2">
-                <Eye className="w-4 h-4 text-green-600" />
-                <span className="text-sm text-green-600">Document uploaded</span>
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="text-red-600 h-4 p-0"
-                  onClick={() => updateNondhDetail(detail.id, { docUpload: '' })}
-                >
-                  Remove
-                </Button>
+            <div className="mt-2">
+              <h4 className="text-sm font-medium text-muted-foreground">
+                Affected Survey Numbers:
+              </h4>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {sortedNondh.affectedSNos
+                  .map(sNo => {
+                    const sNoTypes = getSNoTypesFromSlabs();
+                    const type = sNoTypes.get(sNo) || 's_no';
+                    return { sNo, type };
+                  })
+                  .sort((a, b) => {
+                    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+                    const aPriority = priorityOrder.indexOf(a.type);
+                    const bPriority = priorityOrder.indexOf(b.type);
+                    if (aPriority !== bPriority) return aPriority - bPriority;
+                    return a.sNo.localeCompare(b.sNo, undefined, { numeric: true });
+                  })
+                  .map(({ sNo, type }) => {
+                    const typeLabel = 
+                      type === 'block_no' ? 'Block No' :
+                      type === 're_survey_no' ? 'Resurvey No' : 'Survey No';
+                    
+                    return (
+                      <span 
+                        key={sNo} 
+                        className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm flex items-center gap-1"
+                      >
+                        <span className="font-medium">{typeLabel}:</span>
+                        <span>{sNo}</span>
+                      </span>
+                    );
+                  })}
               </div>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => toggleCollapse(sortedNondh.id)}
+            className="flex items-center gap-1"
+          >
+            {collapsedNondhs.has(sortedNondh.id) ? (
+              <>
+                <ChevronDown className="w-4 h-4" />
+                <span>Show Details</span>
+              </>
+            ) : (
+              <>
+                <ChevronUp className="w-4 h-4" />
+                <span>Hide Details</span>
+              </>
             )}
+          </Button>
+        </div>
+
+        {!collapsedNondhs.has(sortedNondh.id) && (
+          <div className="mt-4 space-y-4">
+            <div className="border rounded-lg p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium">
+                    Details for Nondh No: {sortedNondh.number}
+                  </h4>
+                  
+                </div>
+                <Badge variant={detail.status === 'invalid' ? 'destructive' : 'default'}>
+                  {statusTypes.find(s => s.value === detail.status)?.label || 'Unknown'}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="space-y-2">
+                  <Label>Nondh Type *</Label>
+                  <Select
+                    value={detail.type}
+                    onValueChange={(value) => updateNondhDetail(detail.id, { type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {nondhTypes.map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {type}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Date *</Label>
+                  <Input
+                    type="date"
+                    value={detail.date || ''}
+                    onChange={(e) => updateNondhDetail(detail.id, { date: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                <Label>Reason</Label>
+                <Textarea
+                  value={detail.reason}
+                  onChange={(e) => updateNondhDetail(detail.id, { reason: e.target.value })}
+                  placeholder="Enter reason for this nondh"
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-4 mb-4">
+                <div className="space-y-2">
+                  <Label>Vigat</Label>
+                  <Textarea
+                    value={detail.vigat}
+                    onChange={(e) => updateNondhDetail(detail.id, { vigat: e.target.value })}
+                    placeholder="Enter vigat details"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={detail.status}
+                    onValueChange={(value) => handleStatusChange(detail.id, value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusTypes.map((status) => (
+                        <SelectItem key={status.value} value={status.value}>
+                          {status.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {detail.status === "invalid" && (
+                    <div className="space-y-2 mt-2">
+                      <Label>Invalid Reason *</Label>
+                      <Input
+                        value={detail.invalidReason}
+                        onChange={(e) => updateNondhDetail(detail.id, { invalidReason: e.target.value })}
+                        placeholder="Enter reason for invalidation"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`show_${detail.id}`}
+                    checked={detail.showInOutput}
+                    onCheckedChange={(checked) =>
+                      updateNondhDetail(detail.id, { showInOutput: checked as boolean })
+                    }
+                  />
+                  <Label htmlFor={`show_${detail.id}`}>Show in query list</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`docs_${detail.id}`}
+                    checked={detail.hasDocuments}
+                    onCheckedChange={(checked) =>
+                      updateNondhDetail(detail.id, { hasDocuments: checked as boolean })
+                    }
+                  />
+                  <Label htmlFor={`docs_${detail.id}`}>Do you have relevant documents?</Label>
+                </div>
+
+                {detail.hasDocuments && (
+                  <div className="space-y-2">
+                    <Label>Upload Documents</Label>
+                    <div className="flex items-center gap-4">
+                      <Input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        multiple
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) handleFileUpload(file, detail.id)
+                        }}
+                      />
+                      <Upload className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    {detail.docUpload && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <Eye className="w-4 h-4 text-green-600" />
+                        <span className="text-sm text-green-600">Document uploaded</span>
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="text-red-600 h-4 p-0"
+                          onClick={() => updateNondhDetail(detail.id, { docUpload: '' })}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {renderTypeSpecificFields(detail)}
+            </div>
           </div>
         )}
-      </div>
-
-      {/* Type-specific fields */}
-      {renderTypeSpecificFields(detail)}
-    </>
-  )}
-</Card>
-                  )
-                })}
-            </Card>
+      </Card>
     );
-})}
+  })}
 
         <div className="flex justify-center pt-6">
           <Button onClick={handleSubmit} disabled={loading}>
