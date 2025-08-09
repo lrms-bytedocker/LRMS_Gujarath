@@ -397,20 +397,15 @@ export default function NondhDetails() {
   
   return sNoTypes;
 };
-const parseNondhNumber = (numberStr: string | undefined): number | null => {
-  if (!numberStr) return null;
-  const parsed = parseInt(numberStr, 10);
-  return isNaN(parsed) ? null : parsed;
+const parseNondhNumber = (nondh: any): number => {
+  if (typeof nondh.number === 'number') return nondh.number;
+  const num = parseInt(nondh.number, 10);
+  return isNaN(num) ? 0 : num;
 };
-const getNondhNumber = (nondhId: string): number | null => {
-  const nondh = nondhs.find(n => n.id === nondhId);
-  if (!nondh?.number) return null;
-  
-  const numberValue = typeof nondh.number === 'string' 
-    ? parseInt(nondh.number, 10) 
-    : nondh.number;
-    
-  return isNaN(numberValue) ? null : numberValue;
+const getNondhNumber = (nondh: any): number => {
+  if (typeof nondh.number === 'number') return nondh.number;
+  const num = parseInt(nondh.number, 10);
+  return isNaN(num) ? 0 : num;
 };
 const safeNondhNumber = (nondh: any): number => {
   const numberValue = typeof nondh.number === 'string' 
@@ -432,10 +427,26 @@ const getSurveyNumberType = (sNo: string): string => {
 };
 
 // Enhanced sorting function for nondhs
-const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]) => {
+const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]): number => {
   const sNoTypes = getSNoTypesFromSlabs();
-  const typeA = sNoTypes.get(a.sNo) || 's_no';
-  const typeB = sNoTypes.get(b.sNo) || 's_no';
+  
+  // Get the nondh objects for the details
+  const nondhA = nondhs.find(n => n.id === a.nondhId);
+  const nondhB = nondhs.find(n => n.id === b.nondhId);
+  
+  // Function to determine primary type considering all affected S.Nos
+  const getPrimaryType = (nondh: any): string => {
+    if (!nondh) return 's_no';
+    const types = nondh.affectedSNos.map((sNo: string) => sNoTypes.get(sNo) || 's_no');
+    
+    // Priority: survey_no appears anywhere > block_no > resurvey_no
+    if (types.includes('s_no')) return 's_no';
+    if (types.includes('block_no')) return 'block_no';
+    return 're_survey_no';
+  };
+
+  const typeA = getPrimaryType(nondhA);
+  const typeB = getPrimaryType(nondhB);
   
   // Priority order: survey_no > block_no > resurvey_no
   const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
@@ -447,8 +458,16 @@ const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]) => {
     return priorityA - priorityB;
   }
   
-  // Then sort numerically within each type
-  return a.sNo.localeCompare(b.sNo, undefined, { numeric: true });
+  // For same type, sort by first affected S.No numerically
+  const aFirstSNo = nondhA?.affectedSNos[0] || '';
+  const bFirstSNo = nondhB?.affectedSNos[0] || '';
+  const sNoCompare = aFirstSNo.localeCompare(bFirstSNo, undefined, { numeric: true });
+  if (sNoCompare !== 0) return sNoCompare;
+  
+  // Finally sort by nondh number if S.Nos are same
+  const aNondhNo = nondhA ? getNondhNumber(nondhA) : 0;
+  const bNondhNo = nondhB ? getNondhNumber(nondhB) : 0;
+  return aNondhNo - bNondhNo;
 };
   // Initialize with saved data if available
   useEffect(() => {
@@ -667,83 +686,155 @@ const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]) => {
     }
   }
 
-const updateValidityChain = (currentDetailId: string) => {
-  const sortedNondhs = [...nondhs].sort((a, b) => {
-    const aType = getSurveyNumberType(a.affectedSNos[0] || '');
-    const bType = getSurveyNumberType(b.affectedSNos[0] || '');
-    const priorityOrder = ['survey_no', 'block_no', 'resurvey_no'];
-    const aPriority = priorityOrder.indexOf(aType);
-    const bPriority = priorityOrder.indexOf(bType);
-    return aPriority !== bPriority ? aPriority - bPriority : a.number - b.number;
-  });
-
-  const currentIndex = sortedNondhs.findIndex(n => 
-    nondhDetailData.some(d => d.id === currentDetailId && d.nondhId === n.id)
-  );
-  if (currentIndex === -1) return;
-
-  // Walk backwards through previous nondhs
-  for (let i = currentIndex - 1; i >= 0; i--) {
-    const nondh = sortedNondhs[i];
-    const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
-    if (!detail) continue;
-
-    if (detail.status === 'invalid') {
-      // Found an invalid - toggle back owners it affected
-      for (let j = 0; j < i; j++) {
-        const prevNondh = sortedNondhs[j];
-        const prevDetail = nondhDetailData.find(d => d.nondhId === prevNondh.id);
-        if (prevDetail && prevDetail.status !== 'invalid') {
-          const updatedRelations = prevDetail.ownerRelations.map(relation => ({
-            ...relation,
-            isValid: true // Toggle back
-          }));
-          updateNondhDetail(prevDetail.id, { ownerRelations: updatedRelations });
-        }
-      }
-      continue;
-    }
-
-    // Mark current nondh's owners as invalid
-    const updatedRelations = detail.ownerRelations.map(relation => ({
-      ...relation,
-      isValid: false
-    }));
-    updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
-  }
-};
-// Updated handleStatusChange
-const handleStatusChange = (detailId: string, newStatus: "valid" | "invalid" | "nullified") => {
-  const detail = nondhDetailData.find(d => d.id === detailId);
-  if (!detail) return;
-
-  const isNowValid = newStatus === 'valid';
-  const wasValid = detail.status === 'valid';
+const getPrimarySNoType = (affectedSNos: string[]): string => {
+  const sNoTypes = getSNoTypesFromSlabs();
   
-  // Update the detail's status
+  // Check all affected S.Nos and determine the primary type
+  const types = affectedSNos.map(sNo => sNoTypes.get(sNo) || 's_no');
+  
+  // Priority: survey_no appears anywhere > block_no > resurvey_no
+  if (types.includes('s_no')) return 's_no';
+  if (types.includes('block_no')) return 'block_no';
+  return 're_survey_no';
+};
+
+// Enhanced sorting function for nondhs
+const sortNondhs = (a: any, b: any): number => {
+  // Get primary types
+  const aType = getPrimarySNoType(a.affectedSNos);
+  const bType = getPrimarySNoType(b.affectedSNos);
+
+  // Priority order
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+  const aPriority = priorityOrder.indexOf(aType);
+  const bPriority = priorityOrder.indexOf(bType);
+
+  // First sort by primary type
+  if (aPriority !== bPriority) return aPriority - bPriority;
+
+  // For same type, sort by first affected S.No numerically
+  const aFirstSNo = a.affectedSNos[0] || '';
+  const bFirstSNo = b.affectedSNos[0] || '';
+  const sNoCompare = aFirstSNo.localeCompare(bFirstSNo, undefined, { numeric: true });
+  if (sNoCompare !== 0) return sNoCompare;
+
+  // Finally sort by nondh number if S.Nos are same
+  return getNondhNumber(a) - getNondhNumber(b);
+};
+// Helper function to sort nondhs by S.No type and number
+const getSNoTypePriority = (type: string | undefined): number => {
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+  return priorityOrder.indexOf(type || 's_no');
+};
+
+
+const handleStatusChange = (detailId: string, newStatus: "valid" | "invalid" | "nullified") => {
+  // First update the status
   updateNondhDetail(detailId, { 
     status: newStatus,
-    invalidReason: newStatus === 'invalid' ? detail.invalidReason : '' 
+    invalidReason: newStatus === 'invalid' ? '' : undefined
   });
 
-  if (!isNowValid) {
-    // If marking invalid, update validity chain
-    updateValidityChain(detailId);
-  } else if (!wasValid) {
-    // If marking valid FROM invalid, reapply all other invalid effects
-    const allInvalidNondhs = nondhs.filter(n => {
-      const d = nondhDetailData.find(d => d.nondhId === n.id && d.id !== detailId);
-      return d?.status === 'invalid';
-    });
+  // Then update the entire validity chain with proper sorting
+  updateValidityChain();
+};
+
+// Update the updateValidityChain function to use the sorted nondhs
+const updateValidityChain = () => {
+  // Get all nondhs sorted by S.No type and number (same as display sorting)
+  const sortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Create a map of nondh ID to its detail
+  const nondhDetailMap = new Map<string, NondhDetail>();
+  nondhDetailData.forEach(detail => {
+    nondhDetailMap.set(detail.nondhId, detail);
+  });
+
+  // First pass: count how many invalid nondhs affect each nondh
+  const affectingCounts = new Map<string, number>();
+  sortedNondhs.forEach((nondh, index) => {
+    let count = 0;
     
-    // Reapply from newest to oldest
-    allInvalidNondhs
-      .sort((a, b) => b.number - a.number)
-      .forEach(nondh => {
-        const d = nondhDetailData.find(d => d.nondhId === nondh.id);
-        if (d) updateValidityChain(d.id);
+    // Count invalid nondhs that come after this one in the sorted list
+    for (let i = index + 1; i < sortedNondhs.length; i++) {
+      const affectingNondh = sortedNondhs[i];
+      const affectingDetail = nondhDetailMap.get(affectingNondh.id);
+      if (affectingDetail?.status === 'invalid') {
+        count++;
+      }
+    }
+    
+    affectingCounts.set(nondh.id, count);
+  });
+
+  // Second pass: update owner validity based on the count
+  sortedNondhs.forEach(nondh => {
+    const detail = nondhDetailMap.get(nondh.id);
+    if (!detail) return;
+
+    const affectingCount = affectingCounts.get(nondh.id) || 0;
+    
+    // If affected by odd number of invalid nondhs, owners should be invalid
+    // If affected by even number (or zero), owners should be valid
+    const shouldBeValid = affectingCount % 2 === 0;
+
+    // Only update if current validity doesn't match
+    const currentValidity = detail.ownerRelations.every(r => r.isValid);
+    if (currentValidity !== shouldBeValid) {
+      const updatedRelations = detail.ownerRelations.map(relation => ({
+        ...relation,
+        isValid: shouldBeValid
+      }));
+      updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+    }
+  });
+};
+
+const handleHukamTypeChange = (detailId: string, hukamType: string) => {
+  // First update the hukam type
+  updateNondhDetail(detailId, { hukamType });
+};
+
+const updateHukamValidityChain = (detailId: string) => {
+  const detail = nondhDetailData.find(d => d.id === detailId);
+  if (!detail || !detail.affectedNondhNo) return;
+
+  const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+  if (!currentNondh) return;
+
+  // Get all nondhs in proper sorted order
+  const allSortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Find affected nondh by number
+  const affectedNondh = allSortedNondhs.find(n => 
+    safeNondhNumber(n).toString() === detail.affectedNondhNo
+  );
+  
+  if (!affectedNondh) return;
+
+  const currentIndex = allSortedNondhs.findIndex(n => n.id === detail.nondhId);
+  const affectedIndex = allSortedNondhs.findIndex(n => n.id === affectedNondh.id);
+
+  // Get all nondhs in the affected range (from affected to current-1)
+  const affectedNondhIds = allSortedNondhs
+    .slice(affectedIndex, currentIndex)
+    .map(n => n.id);
+
+  // Update all affected nondh details based on hukam status
+  const shouldBeValid = detail.hukamStatus === "valid";
+  
+  affectedNondhIds.forEach(nondhId => {
+    const affectedDetail = nondhDetailData.find(d => d.nondhId === nondhId);
+    if (affectedDetail) {
+      const updatedRelations = affectedDetail.ownerRelations.map(relation => ({
+        ...relation,
+        isValid: shouldBeValid
+      }));
+      updateNondhDetail(affectedDetail.id, { 
+        ownerRelations: updatedRelations
       });
-  }
+    }
+  });
 };
   // Get previous owners for dropdown (Varsai, Hakkami, Vechand, Hayati_ma_hakh_dakhal)
 const getPreviousOwners = (sNo: string, currentNondhId: string) => {
@@ -1073,7 +1164,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
       case "Hukam":
   return (
     <div className="space-y-4">
-      {/* Keep existing Hukam-specific fields */}
+      {/* Hukam-specific fields */}
       <div className="space-y-2">
         <Label>Hukam Date *</Label>
         <Input
@@ -1104,168 +1195,202 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
       <div className="space-y-2">
         <Label>Hukam Type</Label>
         <Select
-          value={detail.hukamType || "SSRD"}
-          onValueChange={(value) => updateNondhDetail(detail.id, { hukamType: value })}
+  value={detail.hukamType || "SSRD"}
+  onValueChange={(value) => handleHukamTypeChange(detail.id, value)}
+>
+  <SelectTrigger>
+    <SelectValue />
+  </SelectTrigger>
+  <SelectContent>
+    {hukamTypes.map((type) => (
+      <SelectItem key={type} value={type}>
+        {type}
+      </SelectItem>
+    ))}
+  </SelectContent>
+</Select>
+      </div>
+
+      {/* Improved Affected Nondh Number dropdown */}
+      <div className="space-y-2">
+  <Label>Affected From Nondh Number *</Label>
+  {(() => {
+    const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+    if (!currentNondh) return null;
+
+    const currentNumber = safeNondhNumber(currentNondh);
+
+const allSortedNondhs = [...nondhs].sort(sortNondhs);
+const currentIndex = allSortedNondhs.findIndex(n => n.id === detail.nondhId);
+const sortedOriginalNondhs = allSortedNondhs.slice(0, currentIndex); 
+    if (sortedOriginalNondhs.length === 0) {
+      return (
+        <Select disabled>
+          <SelectTrigger>
+            <SelectValue placeholder="No previous nondhs available" />
+          </SelectTrigger>
+        </Select>
+      );
+    }
+
+    return (
+      <Select
+        value={detail.affectedNondhNo || ''}
+        // In the affected nondh number Select component:
+onValueChange={(value) => {
+  updateNondhDetail(detail.id, { affectedNondhNo: value });
+  
+  // If status is already invalid, update the chain immediately
+  if (detail.hukamStatus === 'invalid') {
+    const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+    if (!currentNondh) return;
+
+    const allSortedNondhs = [...nondhs].sort(sortNondhs);
+    const affectedNondh = allSortedNondhs.find(n => 
+      safeNondhNumber(n).toString() === value
+    );
+    
+    if (affectedNondh) {
+      const currentIndex = allSortedNondhs.findIndex(n => n.id === detail.nondhId);
+      const affectedIndex = allSortedNondhs.findIndex(n => n.id === affectedNondh.id);
+      const affectedRange = allSortedNondhs.slice(affectedIndex, currentIndex);
+
+      affectedRange.forEach(affectedNondhItem => {
+        const affectedDetail = nondhDetailData.find(d => d.nondhId === affectedNondhItem.id);
+        if (affectedDetail) {
+          const updatedRelations = affectedDetail.ownerRelations.map(relation => ({
+            ...relation,
+            isValid: false // Invalid hukam makes owners invalid
+          }));
+          updateNondhDetail(affectedDetail.id, { ownerRelations: updatedRelations });
+        }
+      });
+    }
+  }
+}}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Select affected nondh" />
+        </SelectTrigger>
+        <SelectContent>
+          {sortedOriginalNondhs.map(nondh => {
+            if (!nondh) return null;
+            
+            const nondhDetail = nondhDetailData.find(d => d.nondhId === nondh.id);
+            const type = nondhDetail?.type || 'Nondh';
+            const status = nondhDetail?.status || 'valid';
+            
+            // Get primary S.No type for display
+            const primaryType = getPrimarySNoType(nondh.affectedSNos);
+            const typeLabel = 
+              primaryType === 'block_no' ? 'Block' :
+              primaryType === 're_survey_no' ? 'Resurvey' : 
+              'Survey';
+
+            return (
+              <SelectItem 
+                key={nondh.id} 
+                value={nondh.number.toString()}
+                className="flex items-start gap-2 py-2"
+              >
+                <div className="flex flex-col">
+                  <span className="font-medium">Nondh No: {nondh.number}</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    <span className="text-xs px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 rounded">
+                      {typeLabel} No: {nondh.affectedSNos[0] || ''}
+                    </span>
+                    <span className="text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded">
+                      Type: {type}
+                    </span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                      status === 'valid' ? 'bg-green-100 dark:bg-green-900' :
+                      status === 'invalid' ? 'bg-red-100 dark:bg-red-900' :
+                      'bg-yellow-100 dark:bg-yellow-900'
+                    }`}>
+                      Status: {status}
+                    </span>
+                  </div>
+                </div>
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    );
+  })()}
+</div>
+
+      {/* Hukam Status with improved chain handling */}
+      <div className="space-y-2">
+        <Label>Hukam Status</Label>
+        <Select
+          value={detail.hukamStatus || "valid"}
+          onValueChange={(value) => {
+  const newStatus = value as "valid" | "invalid" | "nullified";
+  
+  updateNondhDetail(detail.id, { 
+    hukamStatus: newStatus,
+    hukamInvalidReason: newStatus === "invalid" ? detail.hukamInvalidReason : ""
+  });
+
+  // Process validity chain immediately with current data
+  if (detail.affectedNondhNo) {
+    const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+    if (!currentNondh) return;
+
+    // Get all nondhs in proper sorted order
+    const allSortedNondhs = [...nondhs].sort(sortNondhs);
+    
+    const affectedNondh = allSortedNondhs.find(n => 
+      safeNondhNumber(n).toString() === detail.affectedNondhNo
+    );
+    
+    if (!affectedNondh) return;
+
+    const currentIndex = allSortedNondhs.findIndex(n => n.id === detail.nondhId);
+    const affectedIndex = allSortedNondhs.findIndex(n => n.id === affectedNondh.id);
+
+    // Get affected range
+    const affectedRange = allSortedNondhs.slice(affectedIndex, currentIndex);
+
+    // Update each affected nondh's owner relations
+    affectedRange.forEach(affectedNondhItem => {
+      const affectedDetail = nondhDetailData.find(d => d.nondhId === affectedNondhItem.id);
+      if (affectedDetail) {
+        const shouldBeValid = newStatus === "valid"; // Use newStatus directly
+        const updatedRelations = affectedDetail.ownerRelations.map(relation => ({
+          ...relation,
+          isValid: shouldBeValid
+        }));
+        updateNondhDetail(affectedDetail.id, { ownerRelations: updatedRelations });
+      }
+    });
+  }
+}}
         >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {hukamTypes.map((type) => (
-              <SelectItem key={type} value={type}>
-                {type}
+            {statusTypes.map((status) => (
+              <SelectItem key={status.value} value={status.value}>
+                {status.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+
+        {detail.hukamStatus === "invalid" && (
+          <div className="space-y-2 mt-2">
+            <Label>Hukam Invalid Reason *</Label>
+            <Input
+              value={detail.hukamInvalidReason || ''}
+              onChange={(e) => updateNondhDetail(detail.id, { hukamInvalidReason: e.target.value })}
+              placeholder="Enter reason for hukam invalidation"
+            />
+          </div>
+        )}
       </div>
-
-      {/* Affected Nondh Number (single selection) */}
-<div className="space-y-2">
-  <Label>Affected From Nondh Number *</Label>
-  <Select
-    value={detail.affectedNondhNo || ''}
-    onValueChange={(value) => {
-      const currentNumber = getNondhNumber(detail.nondhId);
-      const selectedNumber = parseNondhNumber(value);
-      
-      if (!currentNumber || selectedNumber === null) {
-        console.error('Invalid nondh numbers - current:', currentNumber, 'selected:', selectedNumber);
-        return;
-      }
-      
-      if (currentNumber && selectedNumber >= currentNumber) {
-        toast({
-          title: "Invalid Selection",
-          description: "Affected nondh number must be less than current nondh number",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      updateNondhDetail(detail.id, { affectedNondhNo: value });
-    }}
-  >
-    <SelectTrigger>
-      <SelectValue placeholder="Select affected nondh" />
-    </SelectTrigger>
-    <SelectContent>
-      {nondhs
-        .filter(n => {
-          const currentNumber = getNondhNumber(detail.nondhId);
-          const nNumber = safeNondhNumber(n);
-          return currentNumber ? nNumber < currentNumber : false;
-        })
-        .sort((a, b) => safeNondhNumber(a) - safeNondhNumber(b))
-        .map(nondh => (
-          <SelectItem 
-            key={nondh.id} 
-            value={nondh.number.toString()}
-          >
-            Nondh No: {nondh.number}
-          </SelectItem>
-        ))}
-    </SelectContent>
-  </Select>
-</div>
-
-      {/* Hukam Status */}
-      <div className="space-y-2">
-  <Label>Hukam Status</Label>
-  <Select
-    value={detail.hukamStatus || "valid"}
-    onValueChange={(value) => {
-      const newStatus = value as "valid" | "invalid" | "nullified";
-      const updates: Partial<NondhDetail> = { hukamStatus: newStatus };
-      
-      // Clear invalid reason if status is not invalid
-      if (newStatus !== "invalid") {
-        updates.hukamInvalidReason = "";
-      }
-      
-      updateNondhDetail(detail.id, updates);
-      
-      // Find current nondh number
-      const currentNondh = nondhs.find(n => n.id === detail.nondhId);
-      const currentNumber = currentNondh?.number;
-      
-      if (!currentNumber || !detail.affectedNondhNo) return;
-      
-      // Convert affectedNondhNo from string to number
-      const affectedNumber = parseInt(detail.affectedNondhNo);
-      
-      // Validate that affected nondh number is less than current
-      if (affectedNumber >= currentNumber) {
-        toast({
-          title: "Invalid Selection",
-          description: "Affected nondh number must be less than current nondh number",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Find all nondhs between affectedNumber and currentNumber (exclusive of current)
-      const affectedNondhs = nondhs
-        .filter(n => n.number >= affectedNumber && n.number < currentNumber)
-        .sort((a, b) => a.number - b.number);
-      
-      if (newStatus === "invalid") {
-        // Toggle owners to invalid for affected range
-        affectedNondhs.forEach(affectedNondh => {
-          const affectedDetail = nondhDetailData.find(d => d.nondhId === affectedNondh.id);
-          if (affectedDetail && affectedDetail.ownerRelations.length > 0) {
-            const updatedRelations = affectedDetail.ownerRelations.map(relation => ({
-              ...relation,
-              isValid: false
-            }));
-            updateNondhDetail(affectedDetail.id, { ownerRelations: updatedRelations });
-          }
-        });
-        
-        console.log(`Hukam ${currentNumber} marked invalid: Affected nondhs ${affectedNumber} to ${currentNumber - 1} owners set to invalid`);
-      } 
-      else if (detail.hukamStatus === "invalid" && newStatus === "valid") {
-        // Toggle owners back to valid for affected range
-        affectedNondhs.forEach(affectedNondh => {
-          const affectedDetail = nondhDetailData.find(d => d.nondhId === affectedNondh.id);
-          if (affectedDetail && affectedDetail.ownerRelations.length > 0) {
-            const updatedRelations = affectedDetail.ownerRelations.map(relation => ({
-              ...relation,
-              isValid: true
-            }));
-            updateNondhDetail(affectedDetail.id, { ownerRelations: updatedRelations });
-          }
-        });
-        
-        console.log(`Hukam ${currentNumber} marked valid: Affected nondhs ${affectedNumber} to ${currentNumber - 1} owners set to valid`);
-      }
-    }}
-  >
-    <SelectTrigger>
-      <SelectValue />
-    </SelectTrigger>
-    <SelectContent>
-      {statusTypes.map((status) => (
-        <SelectItem key={status.value} value={status.value}>
-          {status.label}
-        </SelectItem>
-      ))}
-    </SelectContent>
-  </Select>
-  
-  {/* Hukam Invalid Reason */}
-  {detail.hukamStatus === "invalid" && (
-    <div className="space-y-2 mt-2">
-      <Label>Hukam Invalid Reason *</Label>
-      <Input
-        value={detail.hukamInvalidReason || ''}
-        onChange={(e) => updateNondhDetail(detail.id, { hukamInvalidReason: e.target.value })}
-        placeholder="Enter reason for hukam invalidation"
-      />
-    </div>
-  )}
-</div>
-
 
       {/* Owner Details Section */}
       <div className="space-y-4">
@@ -1418,6 +1543,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   }
 
   const handleSubmit = async () => {
+    updateValidityChain();
   if (!nondhs.length) {
     toast({
       title: "Error",
@@ -1426,9 +1552,9 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
     });
     return;
   }
-
+  
   // Filter out empty/incomplete nondh details
-  const validNondhDetails = nondhDetailData.filter(detail => {
+   const validNondhDetails = nondhDetailData.filter(detail => {
     // Check if detail has meaningful content
     const hasOwnerNames = detail.ownerRelations.some(rel => rel.ownerName.trim() !== "");
     const hasReason = detail.reason.trim() !== "";
@@ -1505,8 +1631,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
       if (detailsDeleteError) throw detailsDeleteError;
     }
 
-    // 4. Insert new nondh details
-    // 4. Insert new nondh details
+    // 4. Insert new nondh details 
 const { data: insertedDetails, error: insertError } = await supabase
   .from('nondh_details')
   .insert(validNondhDetails.map(detail => ({
@@ -1610,17 +1735,6 @@ const { data: insertedDetails, error: insertError } = await supabase
   }
 };
 
-  const groupedDetails = nondhDetailData.reduce(
-    (acc, detail) => {
-      if (!acc[detail.sNo]) {
-        acc[detail.sNo] = []
-      }
-      acc[detail.sNo].push(detail)
-      return acc
-    },
-    {} as Record<string, NondhDetail[]>,
-  )
-
   const documents712 = get712Documents()
 
   return (
@@ -1667,38 +1781,12 @@ const { data: insertedDetails, error: insertError } = await supabase
 
         {/* Nondh Details by S.No */}
         {nondhs
-  .map(nondh => {
-    // Find the "primary" S.No for sorting (first one in affectedSNos)
-    const primarySNo = nondh.affectedSNos[0] || '';
-    const sNoTypes = getSNoTypesFromSlabs();
-    const sNoType = sNoTypes.get(primarySNo) || 's_no';
-    
-    return {
-      ...nondh,
-      primarySNo,
-      sNoType
-    };
-  })
-  .sort((a, b) => {
-    // First sort by S.No type priority
-    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
-    const aPriority = priorityOrder.indexOf(a.sNoType);
-    const bPriority = priorityOrder.indexOf(b.sNoType);
-
-    if (aPriority !== bPriority) {
-      return aPriority - bPriority;
-    }
-    
-    // Then sort numerically within each type
-    const numericCompare = a.primarySNo.localeCompare(b.primarySNo, undefined, { numeric: true });
-    if (numericCompare !== 0) {
-      return numericCompare;
-    }
-    
-    // Finally sort by nondh number if S.Nos are the same
-    return a.number - b.number;
-  })
-  .map((sortedNondh) => {
+  .map(nondh => ({
+    ...nondh,
+    primarySNoType: getPrimarySNoType(nondh.affectedSNos)
+  }))
+  .sort(sortNondhs)
+  .map(sortedNondh => {
     const detail = nondhDetailData.find(d => d.nondhId === sortedNondh.id);
     if (!detail) return null;
 

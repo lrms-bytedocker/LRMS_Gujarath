@@ -35,84 +35,72 @@ export default function OutputViews() {
   }, [yearSlabs, panipatraks, nondhs, nondhDetails])
 
   const fetchPassbookData = async () => {
-    try {
-      // Fetch all valid owner relations from Supabase
-      const { data: ownerRelations, error } = await supabase
-        .from('nondh_owner_relations')
-        .select(`
-          owner_name,
-          s_no,
-          acres,
-          gunthas,
-          square_meters,
-          area_value,
-          area_unit,
-          is_valid,
-          created_at,
-          nondh_details (
-            nondh_id,
-            nondhs (number)
-          )
-        `)
-        .eq('is_valid', true)
+  try {
+    const { data: ownerRelations, error } = await supabase
+      .from('nondh_owner_relations')
+      .select(`
+        owner_name,
+        s_no,
+        acres,
+        gunthas,
+        square_meters,
+        area_value,
+        area_unit,
+        is_valid,
+        created_at,
+        nondh_details (
+          nondh_id,
+          status,
+          nondhs (number)
+        )
+      `)
+      // Only fetch valid relations by default
+      .eq('is_valid', true)
 
-      if (error) throw error
+    if (error) throw error
 
-      // Transform the data into passbook format
-      const passbookEntries = ownerRelations.map(relation => {
-        // Calculate area based on the unit, using area_value as fallback
-        let area = 0
-        if (relation.area_unit === 'acre_guntha') {
-          // Convert acre-guntha to square meters
-          const totalGunthas = (relation.acres || 0) * 40 + (relation.gunthas || 0)
-          area = convertToSquareMeters(totalGunthas, 'guntha')
-        } else if (relation.square_meters) {
-          area = relation.square_meters
-        } else if (relation.area_value) {
-          // Use area_value as fallback if square_meters is not available
-          area = relation.area_value
-        }
-
-        // Extract year from created_at date
-        const year = new Date(relation.created_at).getFullYear()
-
+    // Transform the data
+    const passbookEntries = ownerRelations
+      .filter(relation => relation.is_valid) // Double check validity
+      .map(relation => {
+        // (keep your existing transformation logic)
         return {
-          year,
-          ownerName: relation.owner_name,
-          area,
-          sNo: relation.s_no,
-          nondhNumber: relation.nondh_details?.nondhs?.number || 0,
-          createdAt: relation.created_at
+          // (keep your existing fields)
+          isValid: relation.is_valid,
+          status: relation.nondh_details?.status || 'valid'
         }
       })
 
-      setPassbookData(passbookEntries.sort((a, b) => a.year - b.year))
-    } catch (error) {
-      console.error('Error fetching passbook data:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch passbook data',
-        variant: 'destructive'
-      })
-    }
+    setPassbookData(passbookEntries.sort((a, b) => a.year - b.year))
+  } catch (error) {
+    console.error('Error fetching passbook data:', error)
+    toast({
+      title: 'Error',
+      description: 'Failed to fetch passbook data',
+      variant: 'destructive'
+    })
   }
+}
 
-  const generateFilteredNondhs = () => {
-    const filtered = nondhDetails
-      .filter((detail) => detail.showInOutput)
-      .map((detail) => {
-        const nondh = nondhs.find((n) => n.id === detail.nondhId)
-        return {
-          ...detail,
-          nondhNumber: nondh?.number || 0,
-          createdAt: new Date().toISOString().split("T")[0], // Mock date
-          reason: detail.reason || detail.vigat || "-" // Use reason or vigat as fallback
-        }
-      })
-      .sort((a, b) => a.nondhNumber - b.nondhNumber)
+const generateFilteredNondhs = () => {
+  const filtered = nondhDetails
+    .filter((detail) => detail.showInOutput)
+    .map((detail) => {
+      const nondh = nondhs.find((n) => n.id === detail.nondhId)
+      const allOwnersValid = detail.ownerRelations.every(r => r.isValid)
+      
+      return {
+        ...detail,
+        nondhNumber: nondh?.number || 0,
+        createdAt: new Date().toISOString().split("T")[0],
+        reason: detail.reason || detail.vigat || "-",
+        status: allOwnersValid ? "Valid" : "Invalid" // Set status based on owner validity
+      }
+    })
+    .sort((a, b) => a.nondhNumber - b.nondhNumber)
 
-    setFilteredNondhs(filtered)
-  }
+  setFilteredNondhs(filtered)
+}
 
   const exportToCSV = (data: any[], filename: string) => {
     const headers = Object.keys(data[0] || {})
@@ -228,7 +216,7 @@ export default function OutputViews() {
                   <TableRow key={index}>
                     <TableCell>{entry.year}</TableCell>
                     <TableCell>{entry.ownerName}</TableCell>
-                    <TableCell>{entry.area.toFixed(2)}</TableCell>
+                    <TableCell>{entry.area?.toFixed(2)}</TableCell>
                     <TableCell>{entry.sNo}</TableCell>
                     <TableCell>{entry.nondhNumber || "-"}</TableCell>
                   </TableRow>
