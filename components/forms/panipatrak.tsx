@@ -647,7 +647,10 @@ useEffect(() => {
                   <h2 className="font-bold text-lg">
                     Slab {Object.keys(slabPanels).indexOf(slabId) + 1}: {slab.startYear} - {slab.endYear}
                   </h2>
-                  <p className="text-sm text-gray-600">Survey No: {slab.sNo}</p>
+                  <p className="text-sm text-gray-600">
+                    {slab.sNoType === 'block_no' ? 'Block No' : 
+                     slab.sNoType === 're_survey_no' ? 'Re-survey No' : 'Survey No'}: {slab.sNo}
+                  </p>
                 </div>
                 <Button
                   variant="ghost"
