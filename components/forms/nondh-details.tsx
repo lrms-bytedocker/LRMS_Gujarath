@@ -729,14 +729,73 @@ const getSNoTypePriority = (type: string | undefined): number => {
 
 
 const handleStatusChange = (detailId: string, newStatus: "valid" | "invalid" | "nullified") => {
-  // First update the status
-  updateNondhDetail(detailId, { 
-    status: newStatus,
-    invalidReason: newStatus === 'invalid' ? '' : undefined
+  // Update the state first
+  setNondhDetailData(prev => {
+    const updatedDetails = prev.map(detail => 
+      detail.id === detailId 
+        ? { 
+            ...detail, 
+            status: newStatus,
+            invalidReason: newStatus === 'invalid' ? detail.invalidReason || '' : ''
+          } 
+        : detail
+    );
+    
+    // Then process the validity chain with the updated state
+    processValidityChain(updatedDetails);
+    
+    return updatedDetails;
+  });
+};
+
+// Separate function to process the validity chain
+const processValidityChain = (details: NondhDetail[]) => {
+  // Get all nondhs sorted by S.No type and number
+  const sortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Create a map of nondh ID to its detail
+  const nondhDetailMap = new Map<string, NondhDetail>();
+  details.forEach(detail => {
+    nondhDetailMap.set(detail.nondhId, detail);
   });
 
-  // Then update the entire validity chain with proper sorting
-  updateValidityChain();
+  // First pass: count how many invalid nondhs affect each nondh
+  const affectingCounts = new Map<string, number>();
+  sortedNondhs.forEach((nondh, index) => {
+    let count = 0;
+    
+    // Count invalid nondhs that come after this one in the sorted list
+    for (let i = index + 1; i < sortedNondhs.length; i++) {
+      const affectingNondh = sortedNondhs[i];
+      const affectingDetail = nondhDetailMap.get(affectingNondh.id);
+      if (affectingDetail?.status === 'invalid') {
+        count++;
+      }
+    }
+    
+    affectingCounts.set(nondh.id, count);
+  });
+
+  // Second pass: update owner validity based on the count
+  const updatedDetails = details.map(detail => {
+    const affectingCount = affectingCounts.get(detail.nondhId) || 0;
+    const shouldBeValid = affectingCount % 2 === 0;
+
+    // Only update if current validity doesn't match
+    const currentValidity = detail.ownerRelations.every(r => r.isValid);
+    if (currentValidity !== shouldBeValid) {
+      return {
+        ...detail,
+        ownerRelations: detail.ownerRelations.map(relation => ({
+          ...relation,
+          isValid: shouldBeValid
+        }))
+      };
+    }
+    return detail;
+  });
+
+  setNondhDetailData(updatedDetails);
 };
 
 // Update the updateValidityChain function to use the sorted nondhs
@@ -1543,7 +1602,15 @@ onValueChange={(value) => {
   }
 
   const handleSubmit = async () => {
-    updateValidityChain();
+    // Update validity chain for all nondhs first
+  nondhDetailData.forEach(detail => {
+    if (detail.status === 'invalid') {
+      updateValidityChain();
+    }
+    if (detail.hukamStatus === 'invalid' && detail.affectedNondhNo) {
+      updateHukamValidityChain(detail.id);
+    }
+  });
   if (!nondhs.length) {
     toast({
       title: "Error",

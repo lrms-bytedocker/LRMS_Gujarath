@@ -12,6 +12,7 @@ import { useLandRecord } from "@/contexts/land-record-context"
 import { convertToSquareMeters } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
+import { useRouter } from "next/navigation"
 
 interface PassbookEntry {
   year: number
@@ -25,6 +26,7 @@ interface PassbookEntry {
 export default function OutputViews() {
   const { yearSlabs, panipatraks, nondhs, nondhDetails, setCurrentStep } = useLandRecord()
   const { toast } = useToast()
+  const router = useRouter()
   const [passbookData, setPassbookData] = useState<PassbookEntry[]>([])
   const [filteredNondhs, setFilteredNondhs] = useState<any[]>([])
   const [dateFilter, setDateFilter] = useState("")
@@ -36,7 +38,24 @@ export default function OutputViews() {
 
   const fetchPassbookData = async () => {
   try {
-    const { data: ownerRelations, error } = await supabase
+    console.log('Starting to fetch passbook data...');
+    
+    // Get all nondh detail IDs from nondhDetails context
+    const nondhDetailIds = nondhDetails.map(detail => detail.id);
+    console.log('nondhDetails IDs from context:', nondhDetailIds);
+
+    if (nondhDetailIds.length === 0) {
+      console.log('No nondh details found in context');
+      setPassbookData([]);
+      return;
+    }
+
+    // First, let's find the nondh_ids from our context nondhDetails
+    const nondhIds = nondhDetails.map(detail => detail.nondhId);
+    console.log('Nondh IDs from context:', nondhIds);
+
+    // Method 1: Try to match using the context IDs directly
+    let { data: ownerRelations, error: relationsError } = await supabase
       .from('nondh_owner_relations')
       .select(`
         owner_name,
@@ -44,63 +63,135 @@ export default function OutputViews() {
         acres,
         gunthas,
         square_meters,
-        area_value,
         area_unit,
         is_valid,
         created_at,
-        nondh_details (
-          nondh_id,
-          status,
-          nondhs (number)
-        )
+        nondh_detail_id
       `)
-      // Only fetch valid relations by default
-      .eq('is_valid', true)
+      .in('nondh_detail_id', nondhDetailIds)
+      .or('is_valid.eq.true,is_valid.eq.TRUE');
 
-    if (error) throw error
+    console.log('Direct match results:', ownerRelations?.length || 0);
 
-    // Transform the data
-    const passbookEntries = ownerRelations
-      .filter(relation => relation.is_valid) // Double check validity
-      .map(relation => {
-        // (keep your existing transformation logic)
-        return {
-          // (keep your existing fields)
-          isValid: relation.is_valid,
-          status: relation.nondh_details?.status || 'valid'
-        }
-      })
+    // Method 2: If no direct match, try to find via nondh_details table
+    if (!ownerRelations || ownerRelations.length === 0) {
+      console.log('No direct match found, trying to find via nondh_details...');
+      
+      // Get all nondh_details that belong to our nondhs
+      const { data: allNondhDetails, error: detailsError } = await supabase
+        .from('nondh_details')
+        .select('id, nondh_id')
+        .in('nondh_id', nondhIds);
 
-    setPassbookData(passbookEntries.sort((a, b) => a.year - b.year))
+      console.log('All nondh_details for our nondhs:', allNondhDetails);
+
+      if (allNondhDetails && allNondhDetails.length > 0) {
+        const allDetailIds = allNondhDetails.map(detail => detail.id);
+        console.log('All detail IDs for our nondhs:', allDetailIds);
+
+        // Now fetch owner relations for all these details
+        const { data: allOwnerRelations, error: allRelationsError } = await supabase
+          .from('nondh_owner_relations')
+          .select(`
+            owner_name,
+            s_no,
+            acres,
+            gunthas,
+            square_meters,
+            area_unit,
+            is_valid,
+            created_at,
+            nondh_detail_id
+          `)
+          .in('nondh_detail_id', allDetailIds)
+          .or('is_valid.eq.true,is_valid.eq.TRUE');
+
+        ownerRelations = allOwnerRelations;
+        relationsError = allRelationsError;
+        console.log('Found owner relations via nondh lookup:', ownerRelations?.length || 0);
+      }
+    }
+
+    if (relationsError) {
+      console.error('Error fetching owner relations:', relationsError);
+      throw relationsError;
+    }
+
+    if (!ownerRelations || ownerRelations.length === 0) {
+      console.log('No owner relations found for any method');
+      setPassbookData([]);
+      return;
+    }
+
+    // Process the data - we need to map back to get nondh numbers
+    const passbookEntries = [];
+
+    for (const relation of ownerRelations) {
+      // Find which nondh this detail belongs to
+      const { data: detailInfo, error: detailError } = await supabase
+        .from('nondh_details')
+        .select('nondh_id')
+        .eq('id', relation.nondh_detail_id)
+        .single();
+
+      if (detailError) {
+        console.warn('Could not find detail info for:', relation.nondh_detail_id);
+        continue;
+      }
+
+      // Find the nondh number from context
+      const nondh = nondhs.find(n => n.id === detailInfo.nondh_id);
+      const nondhNumber = Number(nondh?.number || 0);
+
+      // Calculate area
+      let area = 0;
+      if (relation.area_unit === 'acre_guntha') {
+        const totalGunthas = (relation.acres || 0) * 40 + (relation.gunthas || 0);
+        area = convertToSquareMeters(totalGunthas, 'guntha');
+      } else {
+        area = relation.square_meters || 0;
+      }
+
+      console.log(`Processing: Owner ${relation.owner_name}, Nondh ${nondhNumber}, Area ${area}`);
+
+      passbookEntries.push({
+        year: new Date(relation.created_at).getFullYear(),
+        ownerName: relation.owner_name || '',
+        area,
+        sNo: relation.s_no || '',
+        nondhNumber,
+        createdAt: relation.created_at || ''
+      });
+    }
+
+    console.log('Final passbook entries:', passbookEntries);
+    setPassbookData(passbookEntries.sort((a, b) => a.year - b.year));
+    
   } catch (error) {
-    console.error('Error fetching passbook data:', error)
+    console.error('Error in fetchPassbookData:', error);
     toast({
       title: 'Error',
       description: 'Failed to fetch passbook data',
       variant: 'destructive'
-    })
+    });
   }
-}
+};
+  const generateFilteredNondhs = () => {
+    const filtered = nondhDetails
+      .filter((detail) => detail.showInOutput)
+      .map((detail) => {
+        const nondh = nondhs.find((n) => n.id === detail.nondhId)
+        return {
+          ...detail,
+          nondhNumber: nondh?.number || 0,
+          createdAt: new Date().toISOString().split("T")[0], // Mock date
+          reason: detail.reason || detail.vigat || "-" // Use reason or vigat as fallback
+        }
+      })
+      .sort((a, b) => a.nondhNumber - b.nondhNumber)
 
-const generateFilteredNondhs = () => {
-  const filtered = nondhDetails
-    .filter((detail) => detail.showInOutput)
-    .map((detail) => {
-      const nondh = nondhs.find((n) => n.id === detail.nondhId)
-      const allOwnersValid = detail.ownerRelations.every(r => r.isValid)
-      
-      return {
-        ...detail,
-        nondhNumber: nondh?.number || 0,
-        createdAt: new Date().toISOString().split("T")[0],
-        reason: detail.reason || detail.vigat || "-",
-        status: allOwnersValid ? "Valid" : "Invalid" // Set status based on owner validity
-      }
-    })
-    .sort((a, b) => a.nondhNumber - b.nondhNumber)
-
-  setFilteredNondhs(filtered)
-}
+    setFilteredNondhs(filtered)
+  }
 
   const exportToCSV = (data: any[], filename: string) => {
     const headers = Object.keys(data[0] || {})
@@ -120,6 +211,11 @@ const generateFilteredNondhs = () => {
   const getFilteredByDate = () => {
     if (!dateFilter) return filteredNondhs
     return filteredNondhs.filter((nondh) => nondh.createdAt.includes(dateFilter))
+  }
+
+  const handleCompleteProcess = () => {
+    toast({ title: "Land record process completed successfully!" })
+    router.push('/land-master')
   }
 
   return (
@@ -295,7 +391,7 @@ const generateFilteredNondhs = () => {
         </Tabs>
 
         <div className="flex justify-center mt-6">
-          <Button onClick={() => toast({ title: "Land record process completed successfully!" })}>
+          <Button onClick={handleCompleteProcess}>
             Complete Process
           </Button>
         </div>
