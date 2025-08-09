@@ -80,6 +80,9 @@ export interface NondhDetail {
   hasDocuments: boolean
   docUpload?: string
   date?: string
+  hukamStatus?: "valid" | "invalid" | "nullified";
+  hukamInvalidReason?: string;
+  affectedNondhNo?: string;
   ownerRelations: Array<{
     id: string
     ownerName: string

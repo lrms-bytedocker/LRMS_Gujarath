@@ -94,19 +94,21 @@ CREATE TABLE nondhs (
 
 -- Create nondh details table
 CREATE TABLE nondh_details (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+ id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     nondh_id UUID REFERENCES nondhs(id) ON DELETE CASCADE,
     s_no VARCHAR(255) NOT NULL,
     type VARCHAR(255) NOT NULL,
     sub_type VARCHAR(255),
     vigat TEXT,
-    invalid_reason TEXT,  -- Changed from radd_reason
+    invalid_reason TEXT,
     old_owner VARCHAR(255),
-    status VARCHAR(20) DEFAULT 'valid' CHECK (status IN ('valid', 'invalid', 'nullified')),  -- Updated values
+    status VARCHAR(20) DEFAULT 'valid' CHECK (status IN ('valid', 'invalid', 'nullified')),
+    hukam_status VARCHAR(20) CHECK (hukam_status IN ('valid', 'invalid', 'nullified')),
+    hukam_invalid_reason TEXT,
+    affected_nondh_no VARCHAR(255),
     show_in_output BOOLEAN DEFAULT true,
     has_documents BOOLEAN DEFAULT false,
     doc_upload_url TEXT,
-    owner_relations JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -120,7 +122,6 @@ CREATE TABLE nondh_owner_relations (
     gunthas NUMERIC,
     -- OR square meters
     square_meters NUMERIC,
-    area_unit NUMERIC,
     -- Field to indicate which unit is being used
     area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('acre_guntha', 'sq_m')),
     tenure VARCHAR(50) NOT NULL,
