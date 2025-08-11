@@ -1,5 +1,6 @@
 "use client"
-
+import { useEffect } from "react"
+import { LandRecordService } from "@/lib/supabase"
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
 
 export interface AreaInput {
@@ -109,6 +110,8 @@ export interface LocalFormData {
 
 interface LandRecordContextType {
   currentStep: number
+  mode: 'add' | 'view' | 'edit'
+  recordId?: string
   setCurrentStep: (step: number) => void
   canProceedToStep: (step: number) => boolean
   landBasicInfo: LandBasicInfo | null
@@ -131,7 +134,36 @@ interface LandRecordContextType {
 
 const LandRecordContext = createContext<LandRecordContextType | undefined>(undefined)
 
-export function LandRecordProvider({ children }: { children: ReactNode }) {
+export function LandRecordProvider({ 
+  children,
+  mode = 'add',
+  recordId
+}: { 
+  children: ReactNode;
+  mode?: 'add' | 'view' | 'edit';
+  recordId?: string;
+}) {
+  const [isLoading, setIsLoading] = useState(mode !== 'add');
+  
+  // Add useEffect to load data if in view/edit mode
+  useEffect(() => {
+    if (mode !== 'add' && recordId) {
+      const loadData = async () => {
+        setIsLoading(true);
+        try {
+          const { data, error } = await LandRecordService.getCompleteRecord(recordId);
+          if (error) throw error;
+          // Set the form data with the loaded data
+          // You'll need to transform the data to match your form structure
+        } catch (error) {
+          console.error('Error loading record:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      loadData();
+    }
+  }, [mode, recordId]);
   const [currentStep, setCurrentStep] = useState(1)
   const [landBasicInfo, setLandBasicInfo] = useState<LandBasicInfo | null>(null)
   const [yearSlabs, setYearSlabs] = useState<YearSlab[]>([])
@@ -220,6 +252,8 @@ export function LandRecordProvider({ children }: { children: ReactNode }) {
     <LandRecordContext.Provider
       value={{
         currentStep,
+        mode,
+        recordId,
         setCurrentStep,
         canProceedToStep,
         landBasicInfo,

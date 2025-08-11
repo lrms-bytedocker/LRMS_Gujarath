@@ -2093,7 +2093,7 @@ const { data: insertedDetails, error: insertError } = await supabase
               </>
             ) : (
               <>
-                Save
+                Save & Continue
               </>
             )}
           </Button>

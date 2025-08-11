@@ -187,6 +187,17 @@ export class LandRecordService {
     return { data, error }
   }
 
+  static async updateLandRecord(id: string, updateData: any): Promise<{ data: any, error: any }> {
+  const { data, error } = await supabase
+    .from('land_records')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  return { data, error }
+}
+
   // Save year slabs
  static async saveYearSlabs(
   landRecordId: string,

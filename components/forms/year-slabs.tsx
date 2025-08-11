@@ -1860,7 +1860,7 @@ const toggleCollapse = (id: string) => {
             onClick={handleSaveAndNext}
             disabled={loading}
           >
-            {loading ? "Saving..." : "Save"}{" "}
+            {loading ? "Saving..." : "Save & Continue"}{" "}
           </Button>
         </div>
          </>

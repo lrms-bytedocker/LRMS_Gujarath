@@ -800,7 +800,7 @@ useEffect(() => {
               </>
             ) : (
               <>
-                Save and Continue
+                Save & Continue
               </>
             )}
           </Button>
