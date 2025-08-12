@@ -56,7 +56,7 @@ interface SlabEntryUI {
 }
 interface YearSlabUI {
   id: string;
-  startYear: number;
+    startYear: number | "";  
   endYear: number;
   sNoTypeUI: SNoTypeUI;
   sNo: string;
@@ -402,8 +402,8 @@ useEffect(() => {
         id: "1",
         startYear: "",
         endYear: 2004,
-        sNoTypeUI: "survey_no",
-        sNo: "",
+        sNoTypeUI: "block_no",
+        sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
         areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
           areaType: "acre_guntha", 
           acre: 0, 
@@ -425,8 +425,8 @@ useEffect(() => {
         id: "1",
         startYear: "",
         endYear: 2004,
-        sNoTypeUI: "survey_no",
-        sNo: "",
+        sNoTypeUI: "block_no",
+        sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
         areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
         integrated712: "",
         paiky: false,
@@ -483,34 +483,30 @@ useEffect(() => {
 }, [hasUnsavedChanges, currentStep]);
 
   // --- UI rendering helpers ---
-
 const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) => void }) => {
-  // Provide a default area object if undefined
-  const safeArea = area || { areaType: "acre_guntha", acre: 0, guntha: 0 };
+  // Define workingArea at component level so it's accessible throughout
+  const workingArea = area || { areaType: "acre_guntha", acre: 0, guntha: 0 };
   
-  // Use safeArea instead of area everywhere in the component
   const displayValues = (() => {
-    if (safeArea.areaType === "sq_m") {
-      return {
-        sq_m: safeArea.sq_m,
-        acre: safeArea.sq_m ? convertFromSquareMeters(safeArea.sq_m, "acre") : undefined,
-        guntha: safeArea.sq_m ? convertFromSquareMeters(safeArea.sq_m, "guntha") % 40 : undefined
-      };
-    } else {
-      return {
-        sq_m: (safeArea.acre || 0) * 4046.86 + (safeArea.guntha || 0) * 101.17,
-        acre: safeArea.acre,
-        guntha: safeArea.guntha
-      };
-    }
-  })();
+  if (workingArea.areaType === "sq_m") {
+    return {
+      sq_m: workingArea.sq_m,
+      acre: workingArea.sq_m ? Math.floor(convertFromSquareMeters(workingArea.sq_m, "acre")) : undefined,
+      guntha: workingArea.sq_m ? Math.round(convertFromSquareMeters(workingArea.sq_m, "guntha") % 40) : undefined
+    };
+  } else {
+    return {
+      sq_m: workingArea.sq_m || ((workingArea.acre || 0) * 4046.86 + (workingArea.guntha || 0) * 101.17), // Use stored sq_m or calculate
+      acre: workingArea.acre ? Math.floor(workingArea.acre) : workingArea.acre,
+      guntha: workingArea.guntha ? Math.round(workingArea.guntha) : workingArea.guntha
+    };
+  }
+})();
 
-  // Update all references from area to safeArea in the handlers
   const handleSqmChange = (value: string) => {
     if (value === "") {
       onChange({
-        ...safeArea,
-        areaType: "sq_m",
+        ...workingArea,
         sq_m: undefined,
         acre: undefined,
         guntha: undefined
@@ -520,58 +516,48 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
 
     const num = parseFloat(value);
     if (!isNaN(num)) {
-      if (area.areaType === "acre_guntha") {
-        const totalAcres = convertFromSquareMeters(num, "acre");
-        const acres = Math.floor(totalAcres);
-        const remainingGuntha = (totalAcres - acres) * 40;
-        onChange({
-          ...area,
-          acre: acres,
-          guntha: remainingGuntha,
-          sq_m: num
-        });
-      } else {
-        onChange({
-          ...area,
-          areaType: "sq_m",
-          sq_m: num,
-          acre: convertFromSquareMeters(num, "acre"),
-          guntha: convertFromSquareMeters(num, "guntha") % 40
-        });
-      }
+      const totalAcres = convertFromSquareMeters(num, "acre");
+      const acres = Math.floor(totalAcres);
+      const remainingGuntha = Math.round((totalAcres - acres) * 40);
+      
+      onChange({
+        ...workingArea,
+        sq_m: num,
+        acre: acres,
+        guntha: remainingGuntha
+      });
     }
   };
 
   const handleAcreChange = (value: string) => {
     if (value === "") {
       onChange({
-        ...area,
-        areaType: "acre_guntha",
+        ...workingArea,
         acre: undefined,
-        guntha: area.guntha,
-        sq_m: area.guntha ? convertToSquareMeters(area.guntha, "guntha") : undefined
+        guntha: workingArea.guntha,
+        sq_m: workingArea.guntha ? convertToSquareMeters(workingArea.guntha, "guntha") : undefined
       });
       return;
     }
 
     const num = parseFloat(value);
     if (!isNaN(num)) {
-      if (area.areaType === "sq_m") {
+      if (workingArea.areaType === "sq_m") {
         const newSqm = convertToSquareMeters(num, "acre") + 
                       (displayValues.guntha ? convertToSquareMeters(displayValues.guntha, "guntha") : 0);
         onChange({
-          ...area,
+          ...workingArea,
           sq_m: newSqm,
           acre: num,
           guntha: displayValues.guntha
         });
       } else {
         onChange({
-          ...area,
+          ...workingArea,
           areaType: "acre_guntha",
           acre: num,
           sq_m: convertToSquareMeters(num, "acre") + 
-               (area.guntha ? convertToSquareMeters(area.guntha, "guntha") : 0)
+               (workingArea.guntha ? convertToSquareMeters(workingArea.guntha, "guntha") : 0)
         });
       }
     }
@@ -580,11 +566,10 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
   const handleGunthaChange = (value: string) => {
     if (value === "") {
       onChange({
-        ...area,
-        areaType: "acre_guntha",
+        ...workingArea,
         guntha: undefined,
-        acre: area.acre,
-        sq_m: area.acre ? convertToSquareMeters(area.acre, "acre") : undefined
+        acre: workingArea.acre,
+        sq_m: workingArea.acre ? convertToSquareMeters(workingArea.acre, "acre") : undefined
       });
       return;
     }
@@ -596,21 +581,21 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
         return;
       }
       
-      if (area.areaType === "sq_m") {
+      if (workingArea.areaType === "sq_m") {
         const newSqm = (displayValues.acre ? convertToSquareMeters(displayValues.acre, "acre") : 0) + 
                       convertToSquareMeters(num, "guntha");
         onChange({
-          ...area,
+          ...workingArea,
           sq_m: newSqm,
           acre: displayValues.acre,
           guntha: num
         });
       } else {
         onChange({
-          ...area,
+          ...workingArea,
           areaType: "acre_guntha",
           guntha: num,
-          sq_m: (area.acre ? convertToSquareMeters(area.acre, "acre") : 0) + 
+          sq_m: (workingArea.acre ? convertToSquareMeters(workingArea.acre, "acre") : 0) +
                convertToSquareMeters(num, "guntha")
         });
       }
@@ -628,7 +613,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
         {/* Content commented out */}
       </div>
 
-      {safeArea.areaType === "sq_m" ? (
+      {workingArea.areaType === "sq_m" ? (
         <div className="space-y-2">
           <Label>Square Meters</Label>
           <Input
@@ -677,7 +662,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-        {safeArea.areaType === "sq_m" ? (
+        {workingArea.areaType === "sq_m" ? (
           <>
             <div className="space-y-2">
               <Label>Acres</Label>
@@ -804,8 +789,8 @@ const addSlab = () => {
     id: Date.now().toString(),
     startYear,
     endYear,
-    sNoTypeUI: "survey_no",
-    sNo: "",
+    sNoTypeUI: "block_no",
+    sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
     areaUI: defaultArea,
     integrated712: "",
     paiky: false,
@@ -831,9 +816,9 @@ const addSlab = () => {
     if (slab.id !== slabId) return slab;
     
     const defaultEntry = {
-      sNo: "", // Start with empty field
-      sNoTypeUI: "survey_no" as SNoTypeUI,
-      areaUI: { areaType: "acre_guntha" as AreaTypeUI, acre: 0, guntha: 0 },
+      sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
+      sNoTypeUI: "block_no" as SNoTypeUI,
+      areaUI: { areaType: "sq_m" as AreaTypeUI, sq_m: 0 }, // Changed to sq_m default
       integrated712: ""
     };
 
@@ -853,9 +838,9 @@ const updateEkatrikaranCount = (slabId: string, count: number) => {
     if (slab.id !== slabId) return slab;
     
     const defaultEntry = {
-      sNo: "", // Start with empty field
-      sNoTypeUI: "survey_no" as SNoTypeUI,
-      areaUI: { areaType: "acre_guntha" as AreaTypeUI, acre: 0, guntha: 0 },
+      sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
+      sNoTypeUI: "block_no" as SNoTypeUI,
+      areaUI: { areaType: "sq_m" as AreaTypeUI, sq_m: 0 }, // Changed to sq_m default
       integrated712: ""
     };
 
@@ -915,6 +900,17 @@ const handleSaveAndNext = async () => {
   setLoading(true);
   
   try {
+    // Check for empty start years first
+    const emptyStartYears = slabs.filter(slab => slab.startYear === "" || slab.startYear === undefined);
+    if (emptyStartYears.length > 0) {
+      toast({ 
+        title: "Missing start year", 
+        description: "Please fill in start year for all slabs", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
     // Validate year ordering
     const { valid, message } = validateYearOrder(slabs);
     if (!valid) {
@@ -939,7 +935,7 @@ const handleSaveAndNext = async () => {
       ekatrikaran: slab.ekatrikaran,
       ekatrikaran_count: slab.ekatrikaranCount,
       
-      // FIXED: Properly structure the entries arrays
+      // Properly structuring the entries arrays
       paiky_entries: slab.paikyEntries?.map(entry => ({
         s_no: entry.sNo,
         s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),

@@ -68,6 +68,13 @@ export interface FarmerStrict {
     value: number;
     unit: "acre" | "sq_m";
   };
+  areaType: "acre_guntha" | "sq_m";
+  acre?: number;
+  guntha?: number;
+  sq_m?: number;
+  paikyNumber?: number;
+  ekatrikaranNumber?: number;
+  type: 'regular' | 'paiky' | 'ekatrikaran';
 }
 
 // Area conversion utilities
@@ -555,12 +562,15 @@ static async savePanipatraks(
       const panipatrakId = insertedPanipatraks[index]?.id;
       if (!panipatrakId) return [];
 
-      return panipatrak.farmers.map(farmer => ({
-        panipatrak_id: panipatrakId,
-        name: farmer.name.trim(),
-        area_value: farmer.area.value,
-        area_unit: farmer.area.unit
-      }));
+     return panipatrak.farmers.map(farmer => ({
+  panipatrak_id: panipatrakId,
+  name: farmer.name.trim(),
+  area_value: farmer.area.value,
+  area_unit: farmer.area.unit,
+  paiky_number: farmer.paikyNumber || null,
+  ekatrikaran_number: farmer.ekatrikaranNumber || null,
+  farmer_type: farmer.type
+}));
     });
 
     if (farmersToInsert.length > 0) {
