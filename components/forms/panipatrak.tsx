@@ -52,9 +52,9 @@ function getYearPeriods(slab: YearSlab) {
 }
 
 const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) => {
-  // Calculate display values based on current area
+  // Calculate display values based on current area with rounded sq_m
   const displayValues = {
-    sq_m: farmer.area.value || 0,
+    sq_m: Math.round((farmer.area.value || 0) * 100) / 100, // Round to 2 decimal places
     acre: Math.floor(convertFromSquareMeters(farmer.area.value || 0, "acre")),
     guntha: Math.round(convertFromSquareMeters(farmer.area.value || 0, "guntha") % 40)
   };
@@ -90,13 +90,14 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
 
   const handleAcreChange = (value: string) => {
     if (value === "") {
+      const remainingSqm = farmer.guntha ? Math.round(convertToSquareMeters(farmer.guntha, "guntha") * 100) / 100 : undefined;
       onChange({
         ...farmer,
         acre: undefined,
         guntha: farmer.guntha,
-        sq_m: farmer.guntha ? convertToSquareMeters(farmer.guntha, "guntha") : undefined,
+        sq_m: remainingSqm,
         area: {
-          value: farmer.guntha ? convertToSquareMeters(farmer.guntha, "guntha") : 0,
+          value: remainingSqm || 0,
           unit: "sq_m"
         },
         areaType: farmer.areaType
@@ -107,8 +108,8 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
     const num = parseFloat(value);
     if (!isNaN(num)) {
       const guntha = farmer.guntha || 0;
-      const totalSqm = convertToSquareMeters(num, "acre") + 
-                      convertToSquareMeters(guntha, "guntha");
+      const totalSqm = Math.round((convertToSquareMeters(num, "acre") + 
+                      convertToSquareMeters(guntha, "guntha")) * 100) / 100; // Round to 2 decimal places
       onChange({ 
         ...farmer, 
         acre: num,
@@ -121,13 +122,14 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
 
   const handleGunthaChange = (value: string) => {
     if (value === "") {
+      const remainingSqm = farmer.acre ? Math.round(convertToSquareMeters(farmer.acre, "acre") * 100) / 100 : undefined;
       onChange({
         ...farmer,
         guntha: undefined,
         acre: farmer.acre,
-        sq_m: farmer.acre ? convertToSquareMeters(farmer.acre, "acre") : undefined,
+        sq_m: remainingSqm,
         area: {
-          value: farmer.acre ? convertToSquareMeters(farmer.acre, "acre") : 0,
+          value: remainingSqm || 0,
           unit: "sq_m"
         },
         areaType: farmer.areaType
@@ -143,8 +145,8 @@ const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) =
       }
       
       const acre = farmer.acre || 0;
-      const totalSqm = convertToSquareMeters(acre, "acre") + 
-                      convertToSquareMeters(num, "guntha");
+      const totalSqm = Math.round((convertToSquareMeters(acre, "acre") + 
+                      convertToSquareMeters(num, "guntha")) * 100) / 100; // Round to 2 decimal places
       onChange({ 
         ...farmer, 
         guntha: num,

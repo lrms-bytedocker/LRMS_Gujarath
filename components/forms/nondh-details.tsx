@@ -97,8 +97,9 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
         gunthas: workingArea.value ? Math.round(convertFromSquareMeters(workingArea.value, "guntha") % 40) : undefined
       };
     } else {
+      const calculatedSqm = workingArea.sq_m || ((workingArea.acres || 0) * SQM_PER_ACRE + (workingArea.gunthas || 0) * SQM_PER_GUNTHA);
       return {
-        sq_m: workingArea.sq_m || ((workingArea.acres || 0) * SQM_PER_ACRE + (workingArea.gunthas || 0) * SQM_PER_GUNTHA),
+        sq_m: calculatedSqm ? parseFloat(calculatedSqm.toFixed(2)) : calculatedSqm, // Round to 2 decimal places
         acres: workingArea.acres ? Math.floor(workingArea.acres) : workingArea.acres,
         gunthas: workingArea.gunthas ? Math.round(workingArea.gunthas) : workingArea.gunthas
       };
@@ -138,7 +139,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
           unit: "acre_guntha",
           acres,
           gunthas: remainingGuntha,
-          sq_m: num
+          sq_m: parseFloat(num.toFixed(2)) // Round to 2 decimal places
         });
       }
     }
@@ -172,8 +173,8 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
           ...workingArea,
           unit: "acre_guntha",
           acres: num,
-          sq_m: convertToSquareMeters(num, "acre") + 
-               (workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : 0)
+          sq_m: parseFloat((convertToSquareMeters(num, "acre") + 
+               (workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : 0)).toFixed(2))
         });
       }
     }
@@ -212,8 +213,8 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
           ...workingArea,
           unit: "acre_guntha",
           gunthas: num,
-          sq_m: (workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : 0) +
-               convertToSquareMeters(num, "guntha")
+          sq_m: parseFloat(((workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : 0) +
+               convertToSquareMeters(num, "guntha")).toFixed(2))
         });
       }
     }
