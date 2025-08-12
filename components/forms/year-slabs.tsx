@@ -261,12 +261,11 @@ const extractFilenameFromUrl = (url: string): string => {
   }
 };
 
-  const handleEntryFileUpload = async (
+ const handleEntryFileUpload = async (
   file: File,
   slabId: string,
-  action: 'create' | 'update' = 'create',
-  entryIndex?: number,
-  entryType?: 'paiky' | 'ekatrikaran'
+  entryType?: 'paiky' | 'ekatrikaran',
+  entryIndex?: number
 ) => {
   if (!file) return;
   
@@ -280,29 +279,28 @@ const extractFilenameFromUrl = (url: string): string => {
       .replace(/_{2,}/g, '_')
       .replace(/^_|_$/g, '');
     
-    // Always upload to land-documents bucket
     const path = `land-documents/${timestamp}_${sanitizedFileName}`;
-    
-    // Upload file to specified bucket
     const url = await uploadFile(file, path);
     
     if (!url) throw new Error("Upload failed");
     
-    // Update state based on context
-    if (entryIndex !== undefined && entryType) {
+    if (entryType && entryIndex !== undefined) {
+      // Update specific entry
       updateSlabEntry(slabId, entryType, entryIndex, {
         integrated712: url
       });
-      // Track filename for entries
-      const entryKey = `${slabId}_${entryType}_${entryIndex}`;
+      
+      // Track filename for this specific entry
       setEntryUploadedFileNames(prev => ({
         ...prev,
-        [entryKey]: file.name
+        [`${slabId}_${entryType}_${entryIndex}`]: file.name
       }));
     } else {
+      // Update main slab
       updateSlab(slabId, {
         integrated712: url
       });
+      
       // Track filename for main slab
       setSlabUploadedFileNames(prev => ({
         ...prev,
@@ -327,16 +325,34 @@ const extractFilenameFromUrl = (url: string): string => {
   }
 }
 
-
- // Replace the useEffect with this more robust version
 useEffect(() => {
   const loadData = async () => {
     try {
       setInitialLoading(true);
-      // First try to get saved step data
+      if (!slabs.length) {
+        setSlabs([{
+          id: "1",
+          startYear: "",
+          endYear: 2004,
+          sNoTypeUI: "block_no",
+          sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
+          areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
+            areaType: "acre_guntha", 
+            acre: 0, 
+            guntha: 0 
+          },
+          integrated712: "",
+          paiky: false,
+          paikyCount: 0,
+          paikyEntries: [],
+          ekatrikaran: false,
+          ekatrikaranCount: 0,
+          ekatrikaranEntries: [],
+          collapsed: false
+        }]);
+      }
       const stepData = getStepData();
       
-      // Restore filename states if they exist
       if (stepData?.slabUploadedFileNames) {
         setSlabUploadedFileNames(stepData.slabUploadedFileNames);
       }
@@ -355,19 +371,10 @@ useEffect(() => {
           
           setSlabs(uiSlabs);
           
-          // Extract filenames from database data and update state
-          const newSlabFileNames = {};
+          // Extract filenames from database data
           const newEntryFileNames = {};
           
           uiSlabs.forEach(slab => {
-            // Extract filename from URL for main slab
-            if (slab.integrated712) {
-              const filename = extractFilenameFromUrl(slab.integrated712);
-              if (filename) {
-                newSlabFileNames[slab.id] = filename;
-              }
-            }
-            
             // Extract filenames for paiky entries
             slab.paikyEntries?.forEach((entry, index) => {
               if (entry.integrated712) {
@@ -389,54 +396,10 @@ useEffect(() => {
             });
           });
           
-          // Merge with existing filename states (prioritize step data over extracted)
-          setSlabUploadedFileNames(prev => ({ ...newSlabFileNames, ...prev }));
+          // Merge with existing filename states
           setEntryUploadedFileNames(prev => ({ ...newEntryFileNames, ...prev }));
-          
-          return;
         }
       }
-
-      // Fallback to empty state
-      setSlabs([{
-        id: "1",
-        startYear: "",
-        endYear: 2004,
-        sNoTypeUI: "block_no",
-        sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
-        areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
-          areaType: "acre_guntha", 
-          acre: 0, 
-          guntha: 0 
-        },
-        integrated712: "",
-        paiky: false,
-        paikyCount: 0,
-        paikyEntries: [],
-        ekatrikaran: false,
-        ekatrikaranCount: 0,
-        ekatrikaranEntries: [],
-        collapsed: false
-      }]);
-    } catch (error) {
-      console.error('Error loading slabs:', error);
-      // Fallback with error handling
-      setSlabs([{
-        id: "1",
-        startYear: "",
-        endYear: 2004,
-        sNoTypeUI: "block_no",
-        sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
-        areaUI: { areaType: "acre_guntha", acre: 0, guntha: 0 },
-        integrated712: "",
-        paiky: false,
-        paikyCount: 0,
-        paikyEntries: [],
-        ekatrikaran: false,
-        ekatrikaranCount: 0,
-        ekatrikaranEntries: [],
-        collapsed: false
-      }]);
     } finally {
       setInitialLoading(false);
     }
@@ -495,8 +458,9 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
       guntha: workingArea.sq_m ? Math.round(convertFromSquareMeters(workingArea.sq_m, "guntha") % 40) : undefined
     };
   } else {
+    const calculatedSqm = workingArea.sq_m || ((workingArea.acre || 0) * 4046.86 + (workingArea.guntha || 0) * 101.17);
     return {
-      sq_m: workingArea.sq_m || ((workingArea.acre || 0) * 4046.86 + (workingArea.guntha || 0) * 101.17), // Use stored sq_m or calculate
+      sq_m: calculatedSqm ? Math.round(calculatedSqm * 100) / 100 : calculatedSqm, // Round to 2 decimal places
       acre: workingArea.acre ? Math.floor(workingArea.acre) : workingArea.acre,
       guntha: workingArea.guntha ? Math.round(workingArea.guntha) : workingArea.guntha
     };
@@ -535,7 +499,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
         ...workingArea,
         acre: undefined,
         guntha: workingArea.guntha,
-        sq_m: workingArea.guntha ? convertToSquareMeters(workingArea.guntha, "guntha") : undefined
+        sq_m: workingArea.guntha ? Math.round(convertToSquareMeters(workingArea.guntha, "guntha") * 100) / 100 : undefined
       });
       return;
     }
@@ -547,17 +511,18 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
                       (displayValues.guntha ? convertToSquareMeters(displayValues.guntha, "guntha") : 0);
         onChange({
           ...workingArea,
-          sq_m: newSqm,
+          sq_m: Math.round(newSqm * 100) / 100, // Round to 2 decimal places
           acre: num,
           guntha: displayValues.guntha
         });
       } else {
+        const newSqm = convertToSquareMeters(num, "acre") + 
+                      (workingArea.guntha ? convertToSquareMeters(workingArea.guntha, "guntha") : 0);
         onChange({
           ...workingArea,
           areaType: "acre_guntha",
           acre: num,
-          sq_m: convertToSquareMeters(num, "acre") + 
-               (workingArea.guntha ? convertToSquareMeters(workingArea.guntha, "guntha") : 0)
+          sq_m: Math.round(newSqm * 100) / 100 // Round to 2 decimal places
         });
       }
     }
@@ -569,7 +534,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
         ...workingArea,
         guntha: undefined,
         acre: workingArea.acre,
-        sq_m: workingArea.acre ? convertToSquareMeters(workingArea.acre, "acre") : undefined
+        sq_m: workingArea.acre ? Math.round(convertToSquareMeters(workingArea.acre, "acre") * 100) / 100 : undefined
       });
       return;
     }
@@ -586,17 +551,18 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
                       convertToSquareMeters(num, "guntha");
         onChange({
           ...workingArea,
-          sq_m: newSqm,
+          sq_m: Math.round(newSqm * 100) / 100, // Round to 2 decimal places
           acre: displayValues.acre,
           guntha: num
         });
       } else {
+        const newSqm = (workingArea.acre ? convertToSquareMeters(workingArea.acre, "acre") : 0) +
+                      convertToSquareMeters(num, "guntha");
         onChange({
           ...workingArea,
           areaType: "acre_guntha",
           guntha: num,
-          sq_m: (workingArea.acre ? convertToSquareMeters(workingArea.acre, "acre") : 0) +
-               convertToSquareMeters(num, "guntha")
+          sq_m: Math.round(newSqm * 100) / 100 // Round to 2 decimal places
         });
       }
     }
@@ -776,6 +742,7 @@ const addSlab = () => {
 
   let startYear, endYear;
   
+  // Calculate years based on existing slabs
   if (slabs.length === 0) {
     startYear = "";
     endYear = 2004;
@@ -802,7 +769,7 @@ const addSlab = () => {
     collapsed: false,
   };
 
-  setSlabs([...slabs.map(s => ({ ...s, collapsed: true })), newSlab]);
+  setSlabs([...slabs, newSlab]);
 };
 
   const removeSlab = (id: string) => {
@@ -1503,76 +1470,83 @@ const toggleCollapse = (id: string) => {
 
                             </div>
                            <div className="space-y-2">
-  <Label>7/12 Document</Label>
-  <div className="space-y-2">
-    <div className="relative">
-      <input
-        type="file"
-        accept=".pdf,.jpg,.jpeg,.png"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            handleEntryFileUpload(file, slab.id);
-            e.target.value = '';
-          }
-        }}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        disabled={loading}
-      />
-      <Button 
-        type="button" 
-        variant="outline" 
-        disabled={loading}
-        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
-      >
-        <Upload className="w-4 h-4" />
-        {loading ? "Uploading..." : "Choose File"}
-      </Button>
-    </div>
-    
-    {slabUploadedFileNames[slab.id] && (
-      <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
-        <span className="text-sm text-green-800 truncate flex-1" title={slabUploadedFileNames[slab.id]}>
-          {slabUploadedFileNames[slab.id]}
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            updateSlab(slab.id, { integrated712: "" });
-            setSlabUploadedFileNames(prev => {
-              const newState = { ...prev };
-              delete newState[slab.id];
-              return newState;
-            });
-          }}
-          className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
-          title="Remove file"
-        >
-          ×
-        </button>
-      </div>
-    )}
-    
-    {slab.integrated712 && (
-      <a 
-        href={slab.integrated712} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="inline-block text-sm text-blue-600 hover:underline"
-      >
-        View Document
-      </a>
-    )}
-  </div>
-  <p className="text-xs text-gray-500">
-    Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
-  </p>
-</div>
-                          </div>
-                        </Card>
+            <Label>7/12 Document</Label>
+            <div className="space-y-2">
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleEntryFileUpload(
+                        file, 
+                        slab.id, 
+                        'paiky',
+                        globalIndex // Using the properly calculated index
                       );
-                    })
-                  }
+                      e.target.value = '';
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  disabled={loading}
+                />
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  disabled={loading}
+                  className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
+                >
+                  <Upload className="w-4 h-4" />
+                  {loading ? "Uploading..." : "Choose File"}
+                </Button>
+              </div>
+              
+              {entryUploadedFileNames[`${slab.id}_paiky_${globalIndex}`] && (
+                <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                  <span className="text-sm text-green-800 truncate flex-1">
+                    {entryUploadedFileNames[`${slab.id}_paiky_${globalIndex}`]}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateSlabEntry(slab.id, 'paiky', globalIndex, {
+                        integrated712: ""
+                      });
+                      setEntryUploadedFileNames(prev => {
+                        const newState = {...prev};
+                        delete newState[`${slab.id}_paiky_${globalIndex}`];
+                        return newState;
+                      });
+                    }}
+                    className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
+                    title="Remove file"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              
+              {entry.integrated712 && (
+                <a 
+                  href={entry.integrated712} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-block text-sm text-blue-600 hover:underline"
+                >
+                  View Document
+                </a>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">
+              Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  })
+}
                 </div>
               </div>
             )}
@@ -1694,16 +1668,17 @@ const toggleCollapse = (id: string) => {
 
                   {/* Paginated Entries */}
                   {slab.ekatrikaranEntries
-                    .slice(
-                      (currentEkatrikaranPage[slab.id] || 0) * EKATRIKARAN_PER_PAGE,
-                      ((currentEkatrikaranPage[slab.id] || 0) + 1) * EKATRIKARAN_PER_PAGE
-                    )
-                    .map((entry, entryIndex) => {
-                      const globalIndex = (currentEkatrikaranPage[slab.id] || 0) * EKATRIKARAN_PER_PAGE + entryIndex;
-                      return (
-                        <Card key={globalIndex} className="p-3 mt-2">
-                          <h4 className="text-sm font-medium mb-3">Ekatrikaran Entry {globalIndex + 1}</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+  .slice(
+    (currentEkatrikaranPage[slab.id] || 0) * EKATRIKARAN_PER_PAGE,
+    ((currentEkatrikaranPage[slab.id] || 0) + 1) * EKATRIKARAN_PER_PAGE
+  )
+  .map((entry, entryIndex) => {
+    const globalIndex = (currentEkatrikaranPage[slab.id] || 0) * EKATRIKARAN_PER_PAGE + entryIndex;
+    
+    return (
+      <Card key={globalIndex} className="p-3 mt-2">
+        <h4 className="text-sm font-medium mb-3">Ekatrikaran Entry {globalIndex + 1}</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div>
                               <Label>S.No Type</Label>
                               <Select
@@ -1770,73 +1745,80 @@ const toggleCollapse = (id: string) => {
   })}
                             </div>
                             <div className="space-y-2">
-  <Label>7/12 Document</Label>
-  <div className="space-y-2">
-    <div className="relative">
-      <input
-        type="file"
-        accept=".pdf,.jpg,.jpeg,.png"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            handleEntryFileUpload(file, slab.id);
-            e.target.value = '';
-          }
-        }}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        disabled={loading}
-      />
-      <Button 
-        type="button" 
-        variant="outline" 
-        disabled={loading}
-        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
-      >
-        <Upload className="w-4 h-4" />
-        {loading ? "Uploading..." : "Choose File"}
-      </Button>
-    </div>
-    
-    {slabUploadedFileNames[slab.id] && (
-      <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
-        <span className="text-sm text-green-800 truncate flex-1" title={slabUploadedFileNames[slab.id]}>
-          {slabUploadedFileNames[slab.id]}
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            updateSlab(slab.id, { integrated712: "" });
-            setSlabUploadedFileNames(prev => {
-              const newState = { ...prev };
-              delete newState[slab.id];
-              return newState;
-            });
-          }}
-          className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
-          title="Remove file"
-        >
-          ×
-        </button>
-      </div>
-    )}
-    
-    {slab.integrated712 && (
-      <a 
-        href={slab.integrated712} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="inline-block text-sm text-blue-600 hover:underline"
-      >
-        View Document
-      </a>
-    )}
-  </div>
-  <p className="text-xs text-gray-500">
-    Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
-  </p>
-</div>
-                          </div>
-                        </Card>
+            <Label>7/12 Document</Label>
+            <div className="space-y-2">
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleEntryFileUpload(
+                        file, 
+                        slab.id, 
+                        'ekatrikaran',
+                        globalIndex
+                      );
+                      e.target.value = '';
+                    }
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  disabled={loading}
+                />
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  disabled={loading}
+                  className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
+                >
+                  <Upload className="w-4 h-4" />
+                  {loading ? "Uploading..." : "Choose File"}
+                </Button>
+              </div>
+              
+              {entryUploadedFileNames[`${slab.id}_ekatrikaran_${globalIndex}`] && (
+                <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                  <span className="text-sm text-green-800 truncate flex-1">
+                    {entryUploadedFileNames[`${slab.id}_ekatrikaran_${globalIndex}`]}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateSlabEntry(slab.id, 'ekatrikaran', globalIndex, {
+                        integrated712: ""
+                      });
+                      setEntryUploadedFileNames(prev => {
+                        const newState = {...prev};
+                        delete newState[`${slab.id}_ekatrikaran_${globalIndex}`];
+                        return newState;
+                      });
+                    }}
+                    className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
+                    title="Remove file"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              
+              {entry.integrated712 && (
+                <a 
+                  href={entry.integrated712} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-block text-sm text-blue-600 hover:underline"
+                >
+                  View Document
+                </a>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">
+              Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+            </p>
+          </div>
+        </div>
+      </Card>
                       );
                     })
                   }
