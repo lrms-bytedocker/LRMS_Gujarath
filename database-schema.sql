@@ -27,7 +27,6 @@ CREATE TABLE year_slabs (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     land_record_id UUID REFERENCES land_records(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    
     start_year INTEGER NOT NULL,
     end_year INTEGER NOT NULL,
     s_no VARCHAR(255),
@@ -36,7 +35,9 @@ CREATE TABLE year_slabs (
     area_unit VARCHAR(10) ,  -- 'acre', 'guntha', or 'sq_m'
     integrated_712 VARCHAR(255),
     paiky BOOLEAN DEFAULT false,
-    ekatrikaran BOOLEAN DEFAULT false
+    ekatrikaran BOOLEAN DEFAULT false,
+    paiky_count INTEGER DEFAULT 0,
+    ekatrikaran_count INTEGER DEFAULT 0
 );
 
 -- Create slab entries table
@@ -78,6 +79,9 @@ CREATE TABLE panipatrak_farmers (
     name VARCHAR(255) NOT NULL,
     area_value NUMERIC NOT NULL,
     area_unit VARCHAR(10) NOT NULL,
+    farmer_type VARCHAR(20) NOT NULL CHECK (farmer_type IN ('regular', 'paiky', 'ekatrikaran')),
+    paiky_number INTEGER,
+    ekatrikaran_number INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

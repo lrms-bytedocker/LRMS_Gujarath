@@ -30,6 +30,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import Link from "next/link";
 
 interface LandRecord {
   id: string;
@@ -324,16 +325,16 @@ export default function LandMaster() {
                       <TableCell>
                         <Badge variant="secondary">Active</Badge>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button variant="ghost" size="sm">
-                            View
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            Edit
-                          </Button>
-                        </div>
-                      </TableCell>
+<TableCell>
+  <div className="flex gap-2">
+    <Link href={`/land-master/forms?mode=view&id=${land.id}`}>
+      <Button variant="ghost" size="sm">View</Button>
+    </Link>
+    <Link href={`/land-master/forms?mode=edit&id=${land.id}`}>
+      <Button variant="ghost" size="sm">Edit</Button>
+    </Link>
+  </div>
+</TableCell>
                     </TableRow>
                   ))
                 )}
