@@ -15,6 +15,7 @@ import {
   useLandRecord,
   Farmer,
   YearSlab,
+  SlabEntry,
   Panipatrak,
 } from "@/contexts/land-record-context";
 import { LandRecordService } from "@/lib/supabase"; 
@@ -291,7 +292,8 @@ const FarmerCard = ({
   periodIdx,
   onUpdate,
   onRemove,
-  isSpecialType = false
+  isSpecialType = false,
+  slabEntryData
 }: {
   farmer: FarmerStrict;
   farmerIdx: number;
@@ -300,15 +302,16 @@ const FarmerCard = ({
   onUpdate: (slabId: string, periodIdx: number, farmerId: string, updates: Partial<FarmerStrict>) => void;
   onRemove: (slabId: string, periodIdx: number, farmerId: string) => void;
   isSpecialType?: boolean;
+  slabEntryData?: SlabEntry;
 }) => {
   return (
     <Card key={farmer.id} className="p-4 bg-gray-50">
       <div className="flex justify-between items-center mb-3">
         <h4 className="font-medium text-md">
-  {isSpecialType 
-    ? `${farmer.type === 'paiky' ? 'Paiky' : 'Ekatrikaran'} ${farmer.paikyNumber || farmer.ekatrikaranNumber} - Farmer ${farmerIdx + 1}`
-    : `Farmer ${farmerIdx + 1}`}
-</h4>
+          {isSpecialType 
+            ? `${farmer.type === 'paiky' ? 'Paiky' : 'Ekatrikaran'} ${farmer.paikyNumber || farmer.ekatrikaranNumber} - Farmer ${farmerIdx + 1}`
+            : `Farmer ${farmerIdx + 1}`}
+        </h4>
         <Button
           variant="outline"
           size="sm"
@@ -336,7 +339,7 @@ const FarmerCard = ({
             }
             placeholder={
               isSpecialType 
-                ? `Enter ${farmer.type === 'paiky' ? 'paiky' : 'ekatrikaran'} name`
+                ? `Enter ${farmer.type === 'paiky' ? 'farmer' : 'farmer'} name`
                 : "Enter farmer name"
             }
             className="w-full"
@@ -352,6 +355,7 @@ const FarmerCard = ({
     </Card>
   );
 };
+
 export default function PanipatrakStep() {
   const { yearSlabs, setCurrentStep, currentStep, landBasicInfo } = useLandRecord();
   const { getStepData, updateStepData } = useStepFormData(3);
@@ -370,10 +374,12 @@ export default function PanipatrakStep() {
       paikies: {
         paikyNumber: number;
         farmers: FarmerStrict[];
+        entry?: SlabEntry; // Add this
       }[];
       ekatrikarans: {
         ekatrikaranNumber: number;
         farmers: FarmerStrict[];
+        entry?: SlabEntry; // Add this
       }[];
       sameAsAbove: boolean;
     }[];
@@ -439,74 +445,83 @@ useEffect(() => {
     }]
   : [];
 
-          // Initialize paikies
-          const paikies = slab.paiky 
-            ? Array.from({ length: slab.paikyCount || 0 }, (_, i) => {
-                const paikyNumber = i + 1;
-                const paikyFarmers = savedData?.farmers
-                  ?.filter(f => f.paikyNumber === paikyNumber)
-                  ?.map(f => ({
-                    id: f.id || `paiky-${Date.now()}-${Math.random()}`,
-                    name: f.name || "",
-                    area: f.area || { value: 0, unit: "sq_m" },
-                    areaType: "sq_m",
-                    acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
-                    guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
-                    sq_m: f.area?.unit === "sq_m" ? f.area.value : undefined,
-                    type: 'paiky',
-                    paikyNumber
-                  })) || [{
-                    id: `paiky-${Date.now()}-${Math.random()}`,
-                    name: "",
-                    area: { value: 0, unit: "acre" },
-                    areaType: "acre_guntha",
-                    acre: 0,
-                    guntha: 0,
-                    type: 'paiky',
-                    paikyNumber
-                  }];
-                
-                return {
-                  paikyNumber,
-                  farmers: paikyFarmers
-                };
-              })
-            : [];
+         // Initialize paikies
+const paikies = slab.paiky 
+  ? Array.from({ length: slab.paikyCount || 0 }, (_, i) => {
+      const paikyNumber = i + 1;
+      // Get paiky entries in order and find the one matching this paiky number
+      const paikyEntries = slab.paikyEntries || [];
+      const paikyEntry = paikyEntries[i]; // Get entry by index
+      
+      const paikyFarmers = savedData?.farmers
+        ?.filter(f => f.paikyNumber === paikyNumber)
+        ?.map(f => ({
+          id: f.id || `paiky-${Date.now()}-${Math.random()}`,
+          name: f.name || "",
+          area: f.area || { value: 0, unit: "sq_m" },
+          areaType: "sq_m",
+          acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
+          guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
+          sq_m: f.area?.unit === "sq_m" ? f.area.value : undefined,
+          type: 'paiky',
+          paikyNumber
+        })) || [{
+          id: `paiky-${Date.now()}-${Math.random()}`,
+          name: "",
+          area: { value: 0, unit: "sq_m" },
+          areaType: "sq_m",
+          acre: 0,
+          guntha: 0,
+          type: 'paiky',
+          paikyNumber
+        }];
+      
+      return {
+        paikyNumber,
+        farmers: paikyFarmers,
+        entry: paikyEntry // Add the entry data here
+      };
+    })
+  : [];
 
-          // Initialize ekatrikarans
-          const ekatrikarans = slab.ekatrikaran
-            ? Array.from({ length: slab.ekatrikaranCount || 0 }, (_, i) => {
-                const ekatrikaranNumber = i + 1;
-                const ekatrikaranFarmers = savedData?.farmers
-                  ?.filter(f => f.ekatrikaranNumber === ekatrikaranNumber)
-                  ?.map(f => ({
-                    id: f.id || `ekatrikaran-${Date.now()}-${Math.random()}`,
-                    name: f.name || "",
-                    area: f.area || { value: 0, unit: "sq_m" },
-                    areaType: "sq_m",
-                    acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
-                    guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
-                    sq_m: f.area?.unit === "sq_m" ? f.area.value : undefined,
-                    type: 'ekatrikaran',
-                    ekatrikaranNumber
-                  })) || [{
-                    id: `ekatrikaran-${Date.now()}-${Math.random()}`,
-                    name: "",
-                    area: { value: 0, unit: "acre" },
-                    areaType: "acre_guntha",
-                    acre: 0,
-                    guntha: 0,
-                    type: 'ekatrikaran',
-                    ekatrikaranNumber
-                  }];
-                
-                return {
-                  ekatrikaranNumber,
-                  farmers: ekatrikaranFarmers
-                };
-              })
-            : [];
-
+// Initialize ekatrikarans similarly
+const ekatrikarans = slab.ekatrikaran
+  ? Array.from({ length: slab.ekatrikaranCount || 0 }, (_, i) => {
+      const ekatrikaranNumber = i + 1;
+      // Get ekatrikaran entries in order and find the one matching this number
+      const ekatrikaranEntries = slab.ekatrikaranEntries || [];
+      const ekatrikaranEntry = ekatrikaranEntries[i]; // Get entry by index
+      
+      const ekatrikaranFarmers = savedData?.farmers
+        ?.filter(f => f.ekatrikaranNumber === ekatrikaranNumber)
+        ?.map(f => ({
+            id: f.id || `ekatrikaran-${Date.now()}-${Math.random()}`,
+            name: f.name || "",
+            area: f.area || { value: 0, unit: "sq_m" },
+            areaType: "sq_m",
+            acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
+            guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
+            sq_m: f.area?.unit === "sq_m" ? f.area.value : undefined,
+            type: 'ekatrikaran',
+            ekatrikaranNumber
+          })) || [{
+            id: `ekatrikaran-${Date.now()}-${Math.random()}`,
+            name: "",
+            area: { value: 0, unit: "sq_m" },
+            areaType: "sq_m",
+            acre: 0,
+            guntha: 0,
+            type: 'ekatrikaran',
+            ekatrikaranNumber
+          }];
+        
+        return {
+          ekatrikaranNumber,
+          farmers: ekatrikaranFarmers,
+          entry: ekatrikaranEntry // Add the entry data here
+        };
+      })
+  : [];
           return {
             ...pr,
             regularFarmers,
@@ -996,152 +1011,188 @@ return (
                       </div>
                       
                       {expandedPeriods[`${slabId}-${period.period}`] && (
-                        <div className="p-4 space-y-4">
-                          {showTabs ? (
-                            <Tabs defaultValue="paiky" className="w-full">
-                              <TabsList className="grid grid-cols-2">
-                                <TabsTrigger value="paiky">Paikies</TabsTrigger>
-                                <TabsTrigger value="ekatrikaran">Ekatrikarans</TabsTrigger>
-                              </TabsList>
-                              <TabsContent value="paiky">
-                                {period.paikies.map((paiky) => (
-                                  <div key={`paiky-${paiky.paikyNumber}`} className="space-y-4">
-                                    <h4 className="font-medium text-lg">Paiky {paiky.paikyNumber}</h4>
-                                    {paiky.farmers.map((farmer, farmerIdx) => (
-                                      <FarmerCard
-                                        key={farmer.id}
-                                        farmer={farmer}
-                                        farmerIdx={farmerIdx}
-                                        slabId={slabId}
-                                        periodIdx={periodIdx}
-                                        onUpdate={updateFarmer}
-                                        onRemove={removeFarmer}
-                                        isSpecialType={true}
-                                      />
-                                    ))}
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => addFarmer(slabId, periodIdx, 'paiky', paiky.paikyNumber)}
-                                      className="w-full"
-                                    >
-                                      <Plus className="w-4 h-4 mr-2" />
-                                      Add Farmer to Paiky {paiky.paikyNumber}
-                                    </Button>
-                                  </div>
-                                ))}
-                              </TabsContent>
-                              <TabsContent value="ekatrikaran">
-                                {period.ekatrikarans.map((ekatrikaran) => (
-                                  <div key={`ekatrikaran-${ekatrikaran.ekatrikaranNumber}`} className="space-y-4">
-                                    <h4 className="font-medium text-lg">Ekatrikaran {ekatrikaran.ekatrikaranNumber}</h4>
-                                    {ekatrikaran.farmers.map((farmer, farmerIdx) => (
-                                      <FarmerCard
-                                        key={farmer.id}
-                                        farmer={farmer}
-                                        farmerIdx={farmerIdx}
-                                        slabId={slabId}
-                                        periodIdx={periodIdx}
-                                        onUpdate={updateFarmer}
-                                        onRemove={removeFarmer}
-                                        isSpecialType={true}
-                                      />
-                                    ))}
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => addFarmer(slabId, periodIdx, 'ekatrikaran', ekatrikaran.ekatrikaranNumber)}
-                                      className="w-full"
-                                    >
-                                      <Plus className="w-4 h-4 mr-2" />
-                                      Add Farmer to Ekatrikaran {ekatrikaran.ekatrikaranNumber}
-                                    </Button>
-                                  </div>
-                                ))}
-                              </TabsContent>
-                            </Tabs>
-                          ) : hasPaiky ? (
-                            <div className="space-y-4">
-                              <h3 className="font-medium text-lg">Paikies</h3>
-                              {period.paikies.map((paiky) => (
-                                <div key={`paiky-${paiky.paikyNumber}`} className="space-y-4">
-                                  <h4 className="font-medium">Paiky {paiky.paikyNumber}</h4>
-                                  {paiky.farmers.map((farmer, farmerIdx) => (
-                                    <FarmerCard
-                                      key={farmer.id}
-                                      farmer={farmer}
-                                      farmerIdx={farmerIdx}
-                                      slabId={slabId}
-                                      periodIdx={periodIdx}
-                                      onUpdate={updateFarmer}
-                                      onRemove={removeFarmer}
-                                      isSpecialType={true}
-                                    />
-                                  ))}
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => addFarmer(slabId, periodIdx, 'paiky', paiky.paikyNumber)}
-                                    className="w-full"
-                                  >
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Add Farmer to Paiky {paiky.paikyNumber}
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : hasEkatrikaran ? (
-                            <div className="space-y-4">
-                              <h3 className="font-medium text-lg">Ekatrikarans</h3>
-                              {period.ekatrikarans.map((ekatrikaran) => (
-                                <div key={`ekatrikaran-${ekatrikaran.ekatrikaranNumber}`} className="space-y-4">
-                                  <h4 className="font-medium">Ekatrikaran {ekatrikaran.ekatrikaranNumber}</h4>
-                                  {ekatrikaran.farmers.map((farmer, farmerIdx) => (
-                                    <FarmerCard
-                                      key={farmer.id}
-                                      farmer={farmer}
-                                      farmerIdx={farmerIdx}
-                                      slabId={slabId}
-                                      periodIdx={periodIdx}
-                                      onUpdate={updateFarmer}
-                                      onRemove={removeFarmer}
-                                      isSpecialType={true}
-                                    />
-                                  ))}
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => addFarmer(slabId, periodIdx, 'ekatrikaran', ekatrikaran.ekatrikaranNumber)}
-                                    className="w-full"
-                                  >
-                                    <Plus className="w-4 h-4 mr-2" />
-                                    Add Farmer to Ekatrikaran {ekatrikaran.ekatrikaranNumber}
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="space-y-4">
-                              <h3 className="font-medium text-lg">Farmers</h3>
-                              {period.regularFarmers.map((farmer, farmerIdx) => (
-                                <FarmerCard
-                                  key={farmer.id}
-                                  farmer={farmer}
-                                  farmerIdx={farmerIdx}
-                                  slabId={slabId}
-                                  periodIdx={periodIdx}
-                                  onUpdate={updateFarmer}
-                                  onRemove={removeFarmer}
-                                />
-                              ))}
-                              <Button
-                                variant="outline"
-                                onClick={() => addFarmer(slabId, periodIdx, 'regular')}
-                                className="w-full"
-                              >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Add Farmer
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
+  <div className="p-4 space-y-4">
+    {showTabs ? (
+      <Tabs defaultValue="paiky" className="w-full">
+        <TabsList className="grid grid-cols-2">
+          <TabsTrigger value="paiky">Paikies</TabsTrigger>
+          <TabsTrigger value="ekatrikaran">Ekatrikarans</TabsTrigger>
+        </TabsList>
+        <TabsContent value="paiky">
+          {period.paikies.map((paiky) => (
+  <div key={`paiky-${paiky.paikyNumber}`} className="space-y-4">
+    <h4 className="font-medium text-lg">
+      Paiky {paiky.paikyNumber}
+      {paiky.entry && (
+        <span className="text-sm text-gray-500 ml-2">
+          ({paiky.entry.sNoType === 'block_no' ? 'Block' : 
+            paiky.entry.sNoType === 're_survey_no' ? 'Re-survey' : 'Survey'} No: {paiky.entry.sNo})
+        </span>
+      )}
+    </h4>
+                {paiky.farmers.map((farmer, farmerIdx) => (
+                  <FarmerCard
+                    key={farmer.id}
+                    farmer={farmer}
+                    farmerIdx={farmerIdx}
+                    slabId={slabId}
+                    periodIdx={periodIdx}
+                    onUpdate={updateFarmer}
+                    onRemove={removeFarmer}
+                    isSpecialType={true}
+                    slabEntryData={paiky.entry}
+                  />
+                ))}
+                <Button
+                  variant="outline"
+                  onClick={() => addFarmer(slabId, periodIdx, 'paiky', paiky.paikyNumber)}
+                  className="w-full"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Farmer to Paiky {paiky.paikyNumber}
+                </Button>
+              </div>
+                ))}
+        </TabsContent>
+        <TabsContent value="ekatrikaran">
+          {period.ekatrikarans.map((ekatrikaran) => (
+  <div key={`ekatrikaran-${ekatrikaran.ekatrikaranNumber}`} className="space-y-4">
+    <h4 className="font-medium text-lg">
+      Ekatrikaran {ekatrikaran.ekatrikaranNumber}
+      {ekatrikaran.entry && (
+        <span className="text-sm text-gray-500 ml-2">
+          ({ekatrikaran.entry.sNoType === 'block_no' ? 'Block' : 
+            ekatrikaran.entry.sNoType === 're_survey_no' ? 'Re-survey' : 'Survey'} No: {ekatrikaran.entry.sNo})
+        </span>
+      )}
+    </h4>
+                {ekatrikaran.farmers.map((farmer, farmerIdx) => (
+                  <FarmerCard
+                    key={farmer.id}
+                    farmer={farmer}
+                    farmerIdx={farmerIdx}
+                    slabId={slabId}
+                    periodIdx={periodIdx}
+                    onUpdate={updateFarmer}
+                    onRemove={removeFarmer}
+                    isSpecialType={true}
+                    slabEntryData={ekatrikaran.entry}
+                  />
+                ))}
+                <Button
+                  variant="outline"
+                  onClick={() => addFarmer(slabId, periodIdx, 'ekatrikaran', ekatrikaran.ekatrikaranNumber)}
+                  className="w-full"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Farmer to Ekatrikaran {ekatrikaran.ekatrikaranNumber}
+                </Button>
+              </div>
+                ))}
+        </TabsContent>
+      </Tabs>
+    ) : hasPaiky ? (
+      <div className="space-y-4">
+        <h3 className="font-medium text-lg">Paikies</h3>
+        {period.paikies.map((paiky) => (
+  <div key={`paiky-${paiky.paikyNumber}`} className="space-y-4">
+    <h4 className="font-medium text-lg">
+      Paiky {paiky.paikyNumber}
+      {paiky.entry && (
+        <span className="text-sm text-gray-500 ml-2">
+          ({paiky.entry.sNoType === 'block_no' ? 'Block' : 
+            paiky.entry.sNoType === 're_survey_no' ? 'Re-survey' : 'Survey'} No: {paiky.entry.sNo})
+        </span>
+      )}
+    </h4>
+              {paiky.farmers.map((farmer, farmerIdx) => (
+                <FarmerCard
+                  key={farmer.id}
+                  farmer={farmer}
+                  farmerIdx={farmerIdx}
+                  slabId={slabId}
+                  periodIdx={periodIdx}
+                  onUpdate={updateFarmer}
+                  onRemove={removeFarmer}
+                  isSpecialType={true}
+                  slabEntryData={paiky.entry}
+                />
+              ))}
+              <Button
+                variant="outline"
+                onClick={() => addFarmer(slabId, periodIdx, 'paiky', paiky.paikyNumber)}
+                className="w-full"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Farmer to Paiky {paiky.paikyNumber}
+              </Button>
+            </div>
+                ))}
+      </div>
+    ) : hasEkatrikaran ? (
+      <div className="space-y-4">
+        <h3 className="font-medium text-lg">Ekatrikarans</h3>
+        {period.ekatrikarans.map((ekatrikaran) => (
+  <div key={`ekatrikaran-${ekatrikaran.ekatrikaranNumber}`} className="space-y-4">
+    <h4 className="font-medium text-lg">
+      Ekatrikaran {ekatrikaran.ekatrikaranNumber}
+      {ekatrikaran.entry && (
+        <span className="text-sm text-gray-500 ml-2">
+          ({ekatrikaran.entry.sNoType === 'block_no' ? 'Block' : 
+            ekatrikaran.entry.sNoType === 're_survey_no' ? 'Re-survey' : 'Survey'} No: {ekatrikaran.entry.sNo})
+        </span>
+      )}
+    </h4>
+              {ekatrikaran.farmers.map((farmer, farmerIdx) => (
+                <FarmerCard
+                  key={farmer.id}
+                  farmer={farmer}
+                  farmerIdx={farmerIdx}
+                  slabId={slabId}
+                  periodIdx={periodIdx}
+                  onUpdate={updateFarmer}
+                  onRemove={removeFarmer}
+                  isSpecialType={true}
+                  slabEntryData={ekatrikaran.entry}
+                />
+              ))}
+              <Button
+                variant="outline"
+                onClick={() => addFarmer(slabId, periodIdx, 'ekatrikaran', ekatrikaran.ekatrikaranNumber)}
+                className="w-full"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Farmer to Ekatrikaran {ekatrikaran.ekatrikaranNumber}
+              </Button>
+            </div>
+                ))}
+      </div>
+    ) : (
+      <div className="space-y-4">
+        <h3 className="font-medium text-lg">Farmers</h3>
+        {period.regularFarmers.map((farmer, farmerIdx) => (
+          <FarmerCard
+            key={farmer.id}
+            farmer={farmer}
+            farmerIdx={farmerIdx}
+            slabId={slabId}
+            periodIdx={periodIdx}
+            onUpdate={updateFarmer}
+            onRemove={removeFarmer}
+          />
+        ))}
+        <Button
+          variant="outline"
+          onClick={() => addFarmer(slabId, periodIdx, 'regular')}
+          className="w-full"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Add Farmer
+        </Button>
+      </div>
+    )}
+  </div>
+)}
                     </Card>
                   );
                 })}
