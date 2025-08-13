@@ -183,6 +183,28 @@ export class LandRecordService {
   }
   }
 
+static async getLandRecordBasicInfo(landRecordId: string): Promise<{ 
+  sNo?: string, 
+  blockNo?: string, 
+  reSurveyNo?: string 
+}> {
+  const { data, error } = await supabase
+    .from('land_records')
+    .select('s_no, block_no, re_survey_no')
+    .eq('id', landRecordId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching land record:', error);
+    return {};
+  }
+
+  return {
+    sNo: data.s_no,
+    blockNo: data.block_no,
+    reSurveyNo: data.re_survey_no
+  };
+}
   // Get land record by ID
   static async getLandRecord(id: string): Promise<{ data: any, error: any }> {
     const { data, error } = await supabase
@@ -339,6 +361,128 @@ export class LandRecordService {
     return { data: null, error };
   }
 }
+
+static async updateYearSlabs(
+  landRecordId: string,
+  yearSlabs: YearSlabData[]
+): Promise<{ data: any, error: any }> {
+  try {
+    // 1. Update main slab records
+    const { error: slabError } = await supabase
+      .from('year_slabs')
+      .upsert(yearSlabs.map(slab => ({
+        id: slab.id,
+        land_record_id: landRecordId,
+        start_year: slab.start_year,
+        end_year: slab.end_year,
+        s_no: slab.s_no,
+        s_no_type: slab.s_no_type,
+        area_value: slab.area_value,
+        area_unit: slab.area_unit,
+        integrated_712: slab.integrated_712,
+        paiky: slab.paiky,
+        paiky_count: slab.paiky_count,
+        ekatrikaran: slab.ekatrikaran,
+        ekatrikaran_count: slab.ekatrikaran_count
+      })));
+
+    if (slabError) throw slabError;
+
+    // 2. Process all slabs and their entries
+    for (const slab of yearSlabs) {
+      // Get existing entries for this slab from database
+      const { data: existingEntries, error: fetchError } = await supabase
+        .from('slab_entries')
+        .select('*')
+        .eq('year_slab_id', slab.id);
+
+      if (fetchError) throw fetchError;
+
+      // Process PAIKY entries
+      if (slab.paiky) {
+        await this.processEntries(
+          slab.id,
+          'paiky',
+          existingEntries?.filter(e => e.entry_type === 'paiky') || [],
+          slab.paiky_entries || []
+        );
+      }
+
+      // Process EKATRIKARAN entries
+      if (slab.ekatrikaran) {
+        await this.processEntries(
+          slab.id,
+          'ekatrikaran',
+          existingEntries?.filter(e => e.entry_type === 'ekatrikaran') || [],
+          slab.ekatrikaran_entries || []
+        );
+      }
+    }
+
+    return { data: { success: true }, error: null };
+  } catch (error) {
+    console.error('Error updating year slabs:', error);
+    return { data: null, error };
+  }
+}
+
+private static async processEntries(
+  slabId: string,
+  entryType: 'paiky' | 'ekatrikaran',
+  existingEntries: any[],
+  currentEntries: any[]
+) {
+  // 1. Identify entries to delete (exist in DB but not in current entries)
+  const currentEntryIds = currentEntries.map(e => e.id).filter(Boolean);
+  const entriesToDelete = existingEntries
+    .filter(dbEntry => !currentEntryIds.includes(dbEntry.id))
+    .map(e => e.id);
+
+  // 2. Delete removed entries
+  if (entriesToDelete.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('slab_entries')
+      .delete()
+      .in('id', entriesToDelete);
+    if (deleteError) throw deleteError;
+  }
+
+  // 3. Upsert current entries (only those with IDs - new entries without IDs will be handled separately)
+  const entriesToUpsert = currentEntries.filter(entry => entry.id);
+  if (entriesToUpsert.length > 0) {
+    const { error: upsertError } = await supabase
+      .from('slab_entries')
+      .upsert(entriesToUpsert.map(entry => ({
+        id: entry.id,
+        year_slab_id: slabId,
+        entry_type: entryType,
+        s_no: entry.s_no,
+        s_no_type: entry.s_no_type,
+        area_value: entry.area_value,
+        area_unit: entry.area_unit,
+        integrated_712: entry.integrated_712
+      })));
+    if (upsertError) throw upsertError;
+  }
+
+  // 4. Insert new entries (those without IDs)
+  const newEntries = currentEntries.filter(entry => !entry.id);
+  if (newEntries.length > 0) {
+    const { error: insertError } = await supabase
+      .from('slab_entries')
+      .insert(newEntries.map(entry => ({
+        year_slab_id: slabId,
+        entry_type: entryType,
+        s_no: entry.s_no,
+        s_no_type: entry.s_no_type,
+        area_value: entry.area_value,
+        area_unit: entry.area_unit,
+        integrated_712: entry.integrated_712
+      })));
+    if (insertError) throw insertError;
+  }
+}
+
   // Save nondhs
   static async saveNondhs(landRecordId: string, nondhs: any[]): Promise<{ data: any, error: any }> {
     try {
@@ -404,7 +548,7 @@ export class LandRecordService {
   }
  
   // Update getYearSlabs to properly transform entries
-static async getYearSlabs(landRecordId: string): Promise<{ data: YearSlab[] | null, error: any }> {
+static async getYearSlabs(landRecordId: string): Promise<{ data: YearSlabData[] | null, error: any }> {
   try {
     const { data: slabs, error: slabError } = await supabase
       .from('year_slabs')
