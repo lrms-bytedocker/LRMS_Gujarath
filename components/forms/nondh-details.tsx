@@ -1626,8 +1626,9 @@ onValueChange={(value) => {
                 </Button>
               )}
             </div>
-
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Owner Name */}
               <div className="space-y-2">
                 <Label>Owner Name</Label>
                 <Input
@@ -1641,6 +1642,7 @@ onValueChange={(value) => {
                 />
               </div>
 
+              {/* Area */}
               <div className="space-y-2">
                 <Label>Area</Label>
                 {areaFields({
@@ -1651,6 +1653,30 @@ onValueChange={(value) => {
                     { area: newArea }
                   )
                 })}
+              </div>
+
+              {/* Tenure - Make sure this is included */}
+              <div className="space-y-2">
+                <Label>Tenure</Label>
+                <Select
+                  value={relation.tenure || "Navi"}
+                  onValueChange={(value) => updateOwnerRelation(
+                    detail.id, 
+                    relation.id, 
+                    { tenure: value }
+                  )}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenureTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </Card>

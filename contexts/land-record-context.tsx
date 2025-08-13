@@ -24,6 +24,7 @@ export interface LandBasicInfo {
 
 export interface SlabEntry {
   sNo: string
+  yearSlabId: string
   sNoType: "s_no" | "block_no" | "re_survey_no"
   area: { value: number; unit: "acre" | "guntha" | "sq_m" }
   integrated712?: string
