@@ -77,6 +77,17 @@ export interface FarmerStrict {
   type: 'regular' | 'paiky' | 'ekatrikaran';
 }
 
+export interface Nondh {
+  id?: string;
+  number: string;
+  affectedSNos: {
+    number: string;
+    type: "s_no" | "block_no" | "re_survey_no";
+  }[];
+  nondhDoc: string;
+  nondhDocFileName: string;
+}
+
 // Area conversion utilities
 export function convertToSquareMeters(value: number, unit: "acre" | "guntha" | "sq_m"): number {
   switch (unit) {
@@ -137,6 +148,18 @@ export async function uploadFile(file: File, bucket: string = "land-documents", 
     console.error('Upload error:', error)
     return null
   }
+}
+// Helper function to check UUID validity
+function isValidUUID(uuid: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
+}
+// UUID generation helper
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0,
+      v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 }
 // Database operations
 export class LandRecordService {
@@ -483,71 +506,245 @@ private static async processEntries(
   }
 }
 
-  // Save nondhs
-  static async saveNondhs(landRecordId: string, nondhs: any[]): Promise<{ data: any, error: any }> {
-    try {
-      // First, delete existing nondhs for this land record
-      await supabase
-        .from('nondhs')
-        .delete()
-        .eq('land_record_id', landRecordId)
+static async getNondhs(landRecordId: string): Promise<{ data: Nondh[] | null, error: any }> {
+  console.log(`[getNondhs] Starting fetch for landRecordId: ${landRecordId}`);
+  
+  try {
+    const { data, error } = await supabase
+      .from('nondhs')
+      .select(`
+        id,
+        number,
+        s_no_type,
+        affected_s_nos,
+        nondh_doc_url,
+        nondh_doc_filename,
+        created_at
+      `)
+      .eq('land_record_id', landRecordId)
+      .order('created_at', { ascending: true });
 
-      // Insert new nondhs
-      const nondhsToInsert = nondhs.map(nondh => ({
-        land_record_id: landRecordId,
-        number: nondh.number,
-        s_no_type: nondh.sNoType,
-        affected_s_nos: nondh.affectedSNos,
-        nondh_doc_url: nondh.nondhDoc,
-        nondh_doc_filename: nondh.nondhDocFileName || null // Add this line
-      }))
+    console.log('[getNondhs] Supabase query completed', { data, error });
 
-      const { data, error } = await supabase
-        .from('nondhs')
-        .insert(nondhsToInsert)
-        .select()
-
-      return { data, error }
-    } catch (error) {
-      return { data: null, error }
+    if (error) {
+      console.error('[getNondhs] Supabase error:', error);
+      throw error;
     }
-  }
 
-  // Get all data for a land record
-  static async getCompleteRecord(landRecordId: string): Promise<{ data: any, error: any }> {
-    try {
-      const { data: landRecord, error: landError } = await supabase
-        .from('land_records')
-        .select('*')
-        .eq('id', landRecordId)
-        .single()
+    if (!data) {
+      console.log('[getNondhs] No data returned from query');
+      return { data: [], error: null };
+    }
 
-      if (landError) return { data: null, error: landError }
+    console.log('[getNondhs] Raw data from database:', data);
 
-      const { data: yearSlabs, error: slabsError } = await supabase
-        .from('year_slabs')
-        .select('*')
-        .eq('land_record_id', landRecordId)
+    const mappedData = data.map(nondh => {
+      console.log('[getNondhs] Processing nondh:', nondh.id, {
+        rawAffectedSNos: nondh.affected_s_nos,
+        type: typeof nondh.affected_s_nos
+      });
 
-      const { data: nondhs, error: nondhsError } = await supabase
-        .from('nondhs')
-        .select('*')
-        .eq('land_record_id', landRecordId)
+      // Handle array data
+      let affectedSNos: string[] = [];
+      if (nondh.affected_s_nos) {
+        if (Array.isArray(nondh.affected_s_nos)) {
+          affectedSNos = nondh.affected_s_nos;
+        } else {
+          console.log('[getNondhs] affected_s_nos is not an array, attempting parse');
+          try {
+            affectedSNos = JSON.parse(nondh.affected_s_nos);
+          } catch (parseError) {
+            console.error('[getNondhs] Failed to parse affected_s_nos:', parseError);
+            affectedSNos = [];
+          }
+        }
+      }
+
+      console.log('[getNondhs] Processed affectedSNos:', affectedSNos);
 
       return {
-        data: {
-          landRecord,
-          yearSlabs: yearSlabs || [],
-          nondhs: nondhs || []
-        },
-        error: null
+        id: nondh.id,
+        number: nondh.number.toString(),
+        sNoType: nondh.s_no_type || 'S.No.',
+        affectedSNos: affectedSNos,
+        nondhDoc: nondh.nondh_doc_url || "",
+        nondhDocFileName: nondh.nondh_doc_filename || ""
+      };
+    });
+
+    console.log('[getNondhs] Final mapped data:', mappedData);
+    return { data: mappedData, error: null };
+  } catch (error) {
+    console.error('[getNondhs] Error in getNondhs:', {
+      error,
+      message: error instanceof Error ? error.message : String(error)
+    });
+    return { 
+      data: null, 
+      error: {
+        message: 'Failed to load nondh data',
+        details: error instanceof Error ? error.message : String(error)
       }
-    } catch (error) {
-      return { data: null, error }
-    }
+    };
   }
+}
+
+  // Create or update multiple nondhs (upsert)
+static async upsertNondhs(nondhs: any[]): Promise<{ data: any, error: any }> {
+  try {
+
+    // Normalize the input data
+    const preparedData = nondhs.map(nondh => {
+      // Handle both property naming cases (affectedSNos and affected_s_nos)
+      const affectedSNos = nondh.affectedSNos || nondh.affected_s_nos || [];
+
+      return {
+        id: nondh.id || undefined,
+        land_record_id: nondh.land_record_id,
+        number: String(nondh.number),
+        s_no_type: nondh.sNoType || nondh.s_no_type || 's_no',
+        affected_s_nos: Array.isArray(affectedSNos) 
+          ? affectedSNos.map(s => typeof s === 'object' ? s.number : s).filter(Boolean)
+          : [],
+        nondh_doc_url: nondh.nondhDoc || nondh.nondh_doc_url || null,
+        nondh_doc_filename: nondh.nondhDocFileName || nondh.nondh_doc_filename || null
+      };
+    });
+
+
+    const { data, error } = await supabase
+      .from('nondhs')
+      .upsert(preparedData)
+      .select();
+
+    if (error) {
+      console.error('[upsertNondhs] Supabase error:', error);
+      throw error;
+    }
+
+    return { 
+      data: data?.map(d => ({
+        id: d.id,
+        number: d.number,
+        sNoType: d.s_no_type,
+        affectedSNos: d.affected_s_nos || [],
+        nondhDoc: d.nondh_doc_url || "",
+        nondhDocFileName: d.nondh_doc_filename || ""
+      })), 
+      error: null 
+    };
+  } catch (error) {
+    console.error('[upsertNondhs] Error:', error);
+    return { 
+      data: null, 
+      error: {
+        message: 'Failed to save nondh data',
+        details: error instanceof Error ? error.message : String(error)
+      }
+    };
+  }
+}
+  // Delete multiple nondhs
+  static async deleteNondhs(nondhIds: string[]): Promise<{ data: any, error: any }> {
+  try {
+    if (!Array.isArray(nondhIds)) {
+      throw new Error('Input must be an array of nondh IDs');
+    }
+
+    if (nondhIds.length === 0) {
+      return { data: null, error: null }; // Nothing to delete
+    }
+
+    const { data, error } = await supabase
+      .from('nondhs')
+      .delete()
+      .in('id', nondhIds);
+
+    if (error) throw error;
+
+    return { data: { count: data?.length || 0 }, error: null };
+  } catch (error) {
+    console.error('Error in deleteNondhs:', error);
+    return { 
+      data: null, 
+      error: {
+        message: 'Failed to delete nondhs',
+        details: error instanceof Error ? error.message : String(error)
+      }
+    };
+  }
+}
+  // Save nondhs
+  static async saveNondhs(landRecordId: string, nondhs: Nondh[]): Promise<{ data: any, error: any }> {
+  try {
+    // First, delete existing nondhs for this land record
+    await supabase
+      .from('nondhs')
+      .delete()
+      .eq('land_record_id', landRecordId)
+
+    // Prepare data for insertion
+    const nondhsToInsert = nondhs.map(nondh => ({
+      land_record_id: landRecordId,
+      number: nondh.number,
+      affected_s_nos: nondh.affectedSNos.map(s => s.number), // Just the numbers as text[]
+      affected_s_no_types: nondh.affectedSNos.map(s => s.type), // Just the types as text[]
+      nondh_doc_url: nondh.nondhDoc,
+      nondh_doc_filename: nondh.nondhDocFileName || null
+    }))
+
+    // Insert new nondhs
+    const { data, error } = await supabase
+      .from('nondhs')
+      .insert(nondhsToInsert)
+      .select()
+
+    return { data, error }
+  } catch (error) {
+    return { data: null, error }
+  }
+}
+
+  // Get all data for a land record
+static async getCompleteRecord(landRecordId: string) {
+  try {
+    console.log('getCompleteRecord called for:', landRecordId);
+    
+    const { data: landRecord, error: landError } = await supabase
+      .from('land_records')
+      .select('*')
+      .eq('id', landRecordId)
+      .single();
+
+    if (landError) throw landError;
+
+    const { data: yearSlabs, error: slabsError } = await this.getYearSlabs(landRecordId);
+    if (slabsError) throw slabsError;
+
+    // Get panipatraks with their farmers
+    console.log('About to call getPanipatraks...');
+    const { data: panipatraks, error: paniError } = await this.getPanipatraks(landRecordId);
+    console.log('getPanipatraks returned:', panipatraks);
+    if (paniError) throw paniError;
+
+    const result = {
+      data: {
+        landRecord,
+        yearSlabs,
+        panipatraks: panipatraks || [] // Ensure we always return an array
+      },
+      error: null
+    };
+    
+    console.log('getCompleteRecord final result:', result);
+    return result;
+  } catch (error) {
+    console.error('Error fetching complete record:', error);
+    return { data: null, error };
+  }
+}
  
-  // Update getYearSlabs to properly transform entries
+  // getYearSlabs
 static async getYearSlabs(landRecordId: string): Promise<{ data: YearSlabData[] | null, error: any }> {
   try {
     const { data: slabs, error: slabError } = await supabase
@@ -615,58 +812,24 @@ static async getYearSlabs(landRecordId: string): Promise<{ data: YearSlabData[] 
 static async savePanipatraks(
   landRecordId: string,
   panipatraks: Panipatrak[]
-): Promise<{ data: any, error: any }> {
+) {
   try {
-    // Validate input
-    if (!landRecordId || !panipatraks?.length) {
-      throw new Error('Invalid input: landRecordId and panipatraks are required');
-    }
-
-    console.log('Saving panipatraks:', JSON.stringify(panipatraks, null, 2));
-
-    // Validate each panipatrak
-    for (const panipatrak of panipatraks) {
-      if (!panipatrak.slabId || !panipatrak.sNo || panipatrak.year === undefined) {
-        throw new Error(`Invalid panipatrak data: missing required fields. SlabId: ${panipatrak.slabId}, sNo: ${panipatrak.sNo}, year: ${panipatrak.year}`);
-      }
-      
-      // Validate slabId is a proper UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(panipatrak.slabId)) {
-        throw new Error(`Invalid slabId format: "${panipatrak.slabId}". Expected UUID format`);
-      }
-      
-      if (!panipatrak.farmers || panipatrak.farmers.length === 0) {
-        throw new Error('Each panipatrak must have at least one farmer');
-      }
-
-      for (const farmer of panipatrak.farmers) {
-        if (!farmer.name?.trim()) {
-          throw new Error('All farmers must have a name');
-        }
-        if (farmer.area.value < 0) {
-          throw new Error('Area value cannot be negative');
-        }
-        if (!['acre', 'sq_m'].includes(farmer.area.unit)) {
-          throw new Error('Invalid area unit');
-        }
-      }
-    }
-
-    // First delete existing panipatraks and farmers for this land record
-    const { data: existingPanipatraks, error: fetchError } = await supabase
+    console.log("Received panipatraks:", panipatraks.length);
+    
+    // First delete existing records
+    const { data: existing, error: fetchError } = await supabase
       .from('panipatraks')
       .select('id')
       .eq('land_record_id', landRecordId);
 
     if (fetchError) throw fetchError;
 
-    if (existingPanipatraks?.length) {
-      // Delete associated farmers first
+    if (existing?.length) {
+      // Delete farmers first
       const { error: deleteFarmersError } = await supabase
         .from('panipatrak_farmers')
         .delete()
-        .in('panipatrak_id', existingPanipatraks.map(p => p.id));
+        .in('panipatrak_id', existing.map(p => p.id));
 
       if (deleteFarmersError) throw deleteFarmersError;
 
@@ -679,45 +842,33 @@ static async savePanipatraks(
       if (deletePanipatraksError) throw deletePanipatraksError;
     }
 
-    // Insert new panipatraks
-    const panipatraksToInsert = panipatraks.map(panipatrak => ({
-      land_record_id: landRecordId,
-      year_slab_id: panipatrak.slabId,
-      s_no: panipatrak.sNo,
-      year: panipatrak.year
-    }));
-
+    // Insert ALL new panipatraks
     const { data: insertedPanipatraks, error: insertError } = await supabase
       .from('panipatraks')
-      .insert(panipatraksToInsert)
+      .insert(panipatraks.map(p => ({
+        land_record_id: landRecordId,
+        year_slab_id: p.slabId,
+        s_no: p.sNo,
+        year: p.year
+      })))
       .select('id');
 
-    if (insertError) {
-      console.error('Insert error:', insertError);
-      throw insertError;
-    }
+    if (insertError) throw insertError;
 
-    if (!insertedPanipatraks?.length) {
-      throw new Error('Failed to insert panipatraks');
-    }
+    // Insert ALL farmers
+    const farmersToInsert = panipatraks.flatMap((p, i) => 
+      p.farmers.map(f => ({
+        panipatrak_id: insertedPanipatraks[i]?.id,
+        name: f.name,
+        area_value: f.area.value,
+        area_unit: f.area.unit,
+        paiky_number: f.paikyNumber,
+        ekatrikaran_number: f.ekatrikaranNumber,
+        farmer_type: f.type
+      }))
+    );
 
-    // Now insert the farmers for each panipatrak
-    const farmersToInsert = panipatraks.flatMap((panipatrak, index) => {
-      const panipatrakId = insertedPanipatraks[index]?.id;
-      if (!panipatrakId) return [];
-
-     return panipatrak.farmers.map(farmer => ({
-  panipatrak_id: panipatrakId,
-  name: farmer.name.trim(),
-  area_value: farmer.area.value,
-  area_unit: farmer.area.unit,
-  paiky_number: farmer.paikyNumber || null,
-  ekatrikaran_number: farmer.ekatrikaranNumber || null,
-  farmer_type: farmer.type
-}));
-    });
-
-    if (farmersToInsert.length > 0) {
+    if (farmersToInsert.length) {
       const { error: farmerError } = await supabase
         .from('panipatrak_farmers')
         .insert(farmersToInsert);
@@ -727,55 +878,140 @@ static async savePanipatraks(
 
     return { data: insertedPanipatraks, error: null };
   } catch (error) {
-    console.error('Error saving panipatraks:', error);
+    console.error("Full save error:", error);
     return { data: null, error };
   }
-} 
+}
 
-static async getPanipatraks(landRecordId: string): Promise<{ data: Panipatrak[] | null, error: any }> {
+static async getPanipatraks(landRecordId: string) {
   try {
-    if (!landRecordId) {
-      throw new Error('landRecordId is required');
-    }
-
-    const { data, error } = await supabase
+    console.log('[DEBUG] Starting getPanipatraks for:', landRecordId);
+    
+    const { data: panipatraks, error: paniError } = await supabase
       .from('panipatraks')
-      .select(`
-        id,
-        year_slab_id,
-        s_no,
-        year,
-        farmers:panipatrak_farmers(
-          id,
-          name,
-          area_value,
-          area_unit
-        )
-      `)
+      .select('id, year_slab_id, s_no, year')
       .eq('land_record_id', landRecordId)
       .order('year', { ascending: true });
 
-    if (error) throw error;
+    console.log('[DEBUG] Panipatraks query result:', { data: panipatraks, error: paniError });
+    
+    if (paniError) throw paniError;
+    if (!panipatraks) return { data: [], error: null };
 
-    if (!data) return { data: null, error: null };
+    const { data: farmers, error: farmersError } = await supabase
+      .from('panipatrak_farmers')
+      .select('*')
+      .in('panipatrak_id', panipatraks.map(p => p.id));
 
-    const result = data.map(item => ({
-      slabId: item.year_slab_id,
-      sNo: item.s_no,
-      year: item.year,
-      farmers: (item.farmers || []).map((f: any) => ({
-        id: f.id || `farmer-${Date.now()}-${Math.random()}`,
-        name: f.name || '',
-        area: {
-          value: f.area_value || 0,
-          unit: f.area_unit || 'acre'
-        }
-      }))
-    }));
+    console.log('[DEBUG] Farmers query result:', { data: farmers, error: farmersError });
+    
+    if (farmersError) throw farmersError;
+    
+    console.log('Found farmers:', farmers);
 
+    // Group farmers by their panipatrak_id
+    const farmersByPanipatrak = (farmers || []).reduce((acc, farmer) => {
+      if (!acc[farmer.panipatrak_id]) {
+        acc[farmer.panipatrak_id] = [];
+      }
+      acc[farmer.panipatrak_id].push(farmer);
+      return acc;
+    }, {} as Record<string, any[]>);
+
+    console.log('Farmers grouped by panipatrak:', farmersByPanipatrak);
+
+    // Map panipatraks with their farmers
+    const result = panipatraks.map(panipatrak => {
+      const panipatrakFarmers = farmersByPanipatrak[panipatrak.id] || [];
+      
+      console.log(`Processing panipatrak ${panipatrak.id}, found ${panipatrakFarmers.length} farmers`);
+      
+      return {
+        slabId: panipatrak.year_slab_id,
+        sNo: panipatrak.s_no,
+        year: panipatrak.year,
+        farmers: panipatrakFarmers.map(f => {
+          // Deduce farmer type based on numbers
+          let type: 'regular' | 'paiky' | 'ekatrikaran' = 'regular';
+          if (f.paiky_number && f.paiky_number > 0) {
+            type = 'paiky';
+          } else if (f.ekatrikaran_number && f.ekatrikaran_number > 0) {
+            type = 'ekatrikaran';
+          }
+          
+          console.log(`Farmer ${f.name}: paiky_number=${f.paiky_number}, ekatrikaran_number=${f.ekatrikaran_number}, deduced type=${type}`);
+          
+          return {
+            id: f.id,
+            name: f.name,
+            area: {
+              value: f.area_value,
+              unit: f.area_unit as 'acre' | 'sq_m'
+            },
+            type,
+            paikyNumber: f.paiky_number,
+            ekatrikaranNumber: f.ekatrikaran_number
+          };
+        })
+      };
+    });
+
+    console.log('Final result:', result);
+    
     return { data: result, error: null };
   } catch (error) {
     console.error('Error fetching panipatraks:', error);
+    return { data: null, error };
+  }
+}
+
+static async updatePanipatraks(
+  landRecordId: string,
+  panipatraks: Panipatrak[]
+): Promise<{ data: any, error: any }> {
+  try {
+    console.log('[DEBUG] updatePanipatraks called with:', {
+      landRecordId,
+      panipatraks: JSON.stringify(panipatraks, null, 2)
+    });
+
+    if (!landRecordId || !panipatraks?.length) {
+      throw new Error('Invalid input: landRecordId and panipatraks are required');
+    }
+
+    // Convert to JSON format for the procedure
+    const panipatraksJson = panipatraks.map(pani => ({
+      slabId: pani.slabId,
+      sNo: pani.sNo,
+      year: pani.year,
+      farmers: pani.farmers.map(farmer => ({
+        name: farmer.name,
+        area: {
+          value: farmer.area.value,
+          unit: farmer.area.unit
+        },
+        type: farmer.type,
+        paikyNumber: farmer.paikyNumber,
+        ekatrikaranNumber: farmer.ekatrikaranNumber
+      }))
+    }));
+
+    console.log('[DEBUG] Calling stored procedure with:', panipatraksJson);
+
+    const { data, error } = await supabase.rpc('update_panipatraks', {
+  p_land_record_id: landRecordId,
+  panipatraks_data: panipatraksJson
+});
+
+console.log('[DEBUG] Raw Supabase response:', { data, error });
+
+// Check if the procedure returned an error in the data
+if (data?.error) {
+  throw new Error(data.error);
+}
+    return { data, error: null };
+  } catch (error) {
+    console.error('[ERROR] updatePanipatraks failed:', error);
     return { data: null, error };
   }
 }

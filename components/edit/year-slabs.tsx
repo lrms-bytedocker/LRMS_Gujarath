@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import {
   Card,
@@ -165,7 +165,7 @@ function toAreaUI(area?: { value: number; unit: "sq_m" | "acre" | "guntha" }): A
   if (area.unit === "sq_m") {
     return {
       areaType: "sq_m",
-      sq_m: area.value,
+      sq_m: parseFloat(area.value.toFixed(2)),
       acre: convertFromSquareMeters(area.value, "acre"),
       guntha: convertFromSquareMeters(area.value, "guntha") % 40
     };
@@ -257,6 +257,7 @@ const [slabUploadedFileNames, setSlabUploadedFileNames] = useState<Record<string
 const [entryUploadedFileNames, setEntryUploadedFileNames] = useState<Record<string, string>>({});
 const [initialLoading, setInitialLoading] = useState(true);
 const [modified, setModified] = useState(false);
+const initialSlabsRef = useRef<YearSlabUI[]>([]);
 
 // Add this function at the top of your component
 const extractFilenameFromUrl = (url: string): string => {
@@ -323,7 +324,7 @@ const extractFilenameFromUrl = (url: string): string => {
       title: "File uploaded successfully",
       description: "Document saved to land-documents bucket"
     });
-    
+    setModified(true);
   } catch (error) {
     console.error('File upload error:', error);
     toast({ 
@@ -336,79 +337,68 @@ const extractFilenameFromUrl = (url: string): string => {
   }
 }
 
+const hasChanges = (currentSlabs: YearSlabUI[]) => {
+  return JSON.stringify(currentSlabs) !== JSON.stringify(initialSlabsRef.current);
+};
+
 useEffect(() => {
-    const loadData = async () => {
-      if (!recordId) return;
+  const loadData = async () => {
+    if (!recordId) return;
+    
+    try {
+      setInitialLoading(true);
+      const { data: dbSlabs, error } = await LandRecordService.getYearSlabs(recordId);
       
-      try {
-        setInitialLoading(true);
-        const { data: dbSlabs, error } = await LandRecordService.getYearSlabs(recordId);
+      if (error) throw error;
+
+      if (dbSlabs && dbSlabs.length > 0) {
+        const uiSlabs = dbSlabs.map(slab => ({
+          ...toYearSlabUI(slab),
+          collapsed: false
+        }));
         
-        if (error) throw error;
-
-        if (dbSlabs && dbSlabs.length > 0) {
-          // Transform database data to UI format
-          const uiSlabs = dbSlabs.map(slab => ({
-            ...toYearSlabUI(slab),
-            collapsed: false
-          }));
-          
-          setSlabs(uiSlabs);
-
-          // Extract filenames from database data
-          const newSlabFileNames: Record<string, string> = {};
-          const newEntryFileNames: Record<string, string> = {};
-          
-          uiSlabs.forEach(slab => {
-            if (slab.integrated712) {
-              const filename = extractFilenameFromUrl(slab.integrated712);
-              if (filename) {
-                newSlabFileNames[slab.id] = filename;
-              }
-            }
-
-            // Extract filenames for paiky entries
-            slab.paikyEntries?.forEach((entry, index) => {
-              if (entry.integrated712) {
-                const filename = extractFilenameFromUrl(entry.integrated712);
-                if (filename) {
-                  newEntryFileNames[`${slab.id}_paiky_${index}`] = filename;
-                }
-              }
-            });
-            
-            // Extract filenames for ekatrikaran entries
-            slab.ekatrikaranEntries?.forEach((entry, index) => {
-              if (entry.integrated712) {
-                const filename = extractFilenameFromUrl(entry.integrated712);
-                if (filename) {
-                  newEntryFileNames[`${slab.id}_ekatrikaran_${index}`] = filename;
-                }
-              }
-            });
-          });
-
-          setSlabUploadedFileNames(newSlabFileNames);
-          setEntryUploadedFileNames(newEntryFileNames);
-        } else {
-          // Create initial slab if none exist
-          const defaultSlab = await createDefaultSlab();
+        setSlabs(uiSlabs);
+        initialSlabsRef.current = JSON.parse(JSON.stringify(uiSlabs)); // Deep copy
+      } else {
+        const defaultSlab = await createDefaultSlab();
         setSlabs([defaultSlab]);
-        }
-      } catch (error) {
-        console.error('Error loading year slabs:', error);
-        toast({
-          title: "Error loading data",
-          description: "Could not load year slabs",
-          variant: "destructive"
-        });
-      } finally {
-        setInitialLoading(false);
+        initialSlabsRef.current = JSON.parse(JSON.stringify([defaultSlab]));
       }
-    };
+    } catch (error) {
+      console.error('Error loading year slabs:', error);
+      toast({ title: "Error loading data", variant: "destructive" });
+    } finally {
+      setInitialLoading(false);
+      setModified(false); // Reset modified flag after load
+    }
+  };
 
-    loadData();
-  }, [recordId, toast]);
+  loadData();
+}, [recordId, toast]);
+
+// Add this useEffect after the loadData useEffect
+useEffect(() => {
+  if (slabs.length > 0) {
+    setActiveTab(prev => {
+      const newActiveTab = { ...prev };
+      slabs.forEach(slab => {
+        // Only set if not already set
+        if (!newActiveTab[slab.id]) {
+          if (slab.paiky && slab.ekatrikaran) {
+            newActiveTab[slab.id] = 'paiky'; // Default to paiky when both exist
+          } else if (slab.paiky) {
+            newActiveTab[slab.id] = 'paiky';
+          } else if (slab.ekatrikaran) {
+            newActiveTab[slab.id] = 'ekatrikaran';
+          } else {
+            newActiveTab[slab.id] = 'main';
+          }
+        }
+      });
+      return newActiveTab;
+    });
+  }
+}, [slabs]); // Run when slabs change
 
   const createDefaultSlab = async (): Promise<YearSlabUI> => {
     const blockNo = await getAutoPopulatedSNoData(recordId, "block_no");
@@ -433,13 +423,6 @@ useEffect(() => {
     };
   };
 
-  // Track modifications
-  useEffect(() => {
-    if (!initialLoading) {
-      setModified(true);
-      setHasUnsavedChanges(currentStep, true);
-    }
-  }, [slabs, initialLoading, currentStep, setHasUnsavedChanges]);
 
 useEffect(() => {
   if (slabs.length > 0) {
@@ -501,30 +484,30 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
 })();
 
   const handleSqmChange = (value: string) => {
-    if (value === "") {
-      onChange({
-        ...workingArea,
-        sq_m: undefined,
-        acre: undefined,
-        guntha: undefined
-      });
-      return;
-    }
+  if (value === "") {
+    onChange({
+      ...workingArea,
+      sq_m: undefined,
+      acre: undefined,
+      guntha: undefined
+    });
+    return;
+  }
 
-    const num = parseFloat(value);
-    if (!isNaN(num)) {
-      const totalAcres = convertFromSquareMeters(num, "acre");
-      const acres = Math.floor(totalAcres);
-      const remainingGuntha = Math.round((totalAcres - acres) * 40);
-      
-      onChange({
-        ...workingArea,
-        sq_m: num,
-        acre: acres,
-        guntha: remainingGuntha
-      });
-    }
-  };
+  const num = parseFloat(value);
+  if (!isNaN(num)) {
+    const totalAcres = convertFromSquareMeters(num, "acre");
+    const acres = parseFloat(Math.floor(totalAcres).toFixed(2));
+    const remainingGuntha = parseFloat(Math.round((totalAcres - acres) * 40).toFixed(2));
+    
+    onChange({
+      ...workingArea,
+      sq_m: parseFloat(num.toFixed(2)),
+      acre: acres,
+      guntha: remainingGuntha
+    });
+  }
+};
 
   const handleAcreChange = (value: string) => {
     if (value === "") {
@@ -738,15 +721,6 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
 };
 
 const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
-  // Handle S.No type changes
-  if (updates.sNoTypeUI && updates.sNoTypeUI !== slabs.find(s => s.id === id)?.sNoTypeUI) {
-    const autoPopulatedSNo = await getAutoPopulatedSNoData(recordId, updates.sNoTypeUI);
-    updates = {
-      ...updates,
-      sNo: autoPopulatedSNo || ""
-    };
-  }
-
   setSlabs(prev => {
     const newSlabs = [...prev];
     const index = newSlabs.findIndex(s => s.id === id);
@@ -764,6 +738,9 @@ const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
       };
     }
 
+    // Update modified state
+    setModified(JSON.stringify(newSlabs) !== JSON.stringify(initialSlabsRef.current));
+    
     return newSlabs;
   });
 };
@@ -777,6 +754,7 @@ const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
   };
 
 const addSlab = async () => {
+  setModified(true);
   const defaultArea = { areaType: "sq_m" as AreaTypeUI, sq_m: 0 };
 
   let startYear, endYear;
@@ -995,9 +973,10 @@ const handleSave = async () => {
       recordId,
       dbSlabs
     );
-    
+
     if (error) throw error;
 
+    initialSlabsRef.current = JSON.parse(JSON.stringify(slabs));
     setModified(false);
     setHasUnsavedChanges(currentStep, false);
     toast({ title: "Year slabs saved successfully" });
@@ -1328,7 +1307,7 @@ const toggleCollapse = (id: string) => {
 )}
 
             {/* Paiky Section Content */}
-            {slab.paiky && (activeTab[slab.id] === 'paiky' || (!slab.ekatrikaran && slab.paiky)) && (
+            {slab.paiky && (activeTab[slab.id] === 'paiky' || (activeTab[slab.id] === undefined && !slab.ekatrikaran)) && (
               <div className="space-y-4 pt-4 relative">
                 <div className="space-y-4 pl-6 pr-16"> {/* Added right padding for floating controls */}
                   <div className="space-y-2">
@@ -1605,7 +1584,7 @@ const toggleCollapse = (id: string) => {
 
 
             {/* Ekatrikaran Section Content */}
-            {slab.ekatrikaran && (activeTab[slab.id] === 'ekatrikaran' || (!slab.paiky && slab.ekatrikaran)) && (
+            {slab.ekatrikaran && (activeTab[slab.id] === 'ekatrikaran' || (activeTab[slab.id] === undefined && !slab.paiky)) && (
               <div className="space-y-4 pt-4 relative">
                 <div className="space-y-4 pl-6 pr-16"> {/* Added right padding for floating controls */}
                   <div className="space-y-2">
