@@ -25,11 +25,11 @@ import NondhDetails from "./nondh-details";
 import OutputViews from "./output-views";
 import { AuthProvider } from "@/components/auth-provider"
 
-
 interface FormStep {
   id: number;
   title: string;
   description: string;
+  shortTitle?: string; // For mobile display
 }
 
 export function LandFormsContainer() {
@@ -53,27 +53,37 @@ export function LandFormsContainer() {
     {
       id: 1,
       title: "Land Basic Info",
+      shortTitle: "Basic Info",
       description: "District, Taluka, Village & Area details",
     },
-    { id: 2, title: "Year Slabs", description: "Add year-wise land slabs" },
+    { 
+      id: 2, 
+      title: "Year Slabs", 
+      shortTitle: "Slabs",
+      description: "Add year-wise land slabs" 
+    },
     {
       id: 3,
       title: "Panipatrak",
+      shortTitle: "Panipatrak",
       description: "Add farmer details for each slab",
     },
     {
       id: 4,
       title: "Nondh Add",
+      shortTitle: "Nondh Add",
       description: "Add Nondh numbers and affected S.no",
     },
     {
       id: 5,
       title: "Nondh Details",
+      shortTitle: "Details",
       description: "Complete Nondh information",
     },
     {
       id: 6,
       title: "Output",
+      shortTitle: "Output",
       description: "View results and generate reports",
     },
   ];
@@ -167,78 +177,147 @@ export function LandFormsContainer() {
 
   return (
     <AuthProvider>
-    <div className="space-y-6">
-      {/* Progress Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl font-bold text-center">
-            Land Record Management System (LRMS)
-          </CardTitle>
-          <div className="mt-4">
-            <Progress value={progress} className="w-full" />
-            <p className="text-sm text-muted-foreground text-center mt-2">
-              Step {activeStep} of {steps.length}
-            </p>
+      <div className="min-h-screen bg-gray-50/50 p-2 sm:p-4 lg:p-6">
+        <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
+          {/* Progress Header */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold text-center">
+                Land Record Management System (LRMS)
+              </CardTitle>
+              <div className="mt-4">
+                <Progress value={progress} className="w-full" />
+                <p className="text-sm text-muted-foreground text-center mt-2">
+                  Step {activeStep} of {steps.length}
+                </p>
+              </div>
+            </CardHeader>
+          </Card>
+
+          {/* Responsive Step Navigation */}
+          <Card className="shadow-sm">
+            <CardContent className="p-3 sm:p-4">
+              {/* Mobile Step Navigation - Horizontal Scroll */}
+              <div className="sm:hidden">
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                  {steps.map((step) => (
+                    <Button
+                      key={step.id}
+                      variant={activeStep === step.id ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleStepChange(step.id)}
+                      className="flex items-center gap-1 whitespace-nowrap flex-shrink-0 min-w-fit"
+                    >
+                      {activeStep > step.id ? (
+                        <CheckCircle className="w-3 h-3" />
+                      ) : (
+                        <Circle className="w-3 h-3" />
+                      )}
+                      <span className="text-xs">{step.id}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tablet and Desktop Step Navigation */}
+              <div className="hidden sm:block">
+                {/* Tablet - 2 rows */}
+                <div className="sm:grid sm:grid-cols-3 lg:hidden gap-2">
+                  {steps.map((step) => (
+                    <Button
+                      key={step.id}
+                      variant={activeStep === step.id ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleStepChange(step.id)}
+                      className="flex items-center gap-2 w-full"
+                    >
+                      {activeStep > step.id ? (
+                        <CheckCircle className="w-4 h-4" />
+                      ) : (
+                        <Circle className="w-4 h-4" />
+                      )}
+                      <span className="text-sm truncate">{step.shortTitle || step.title}</span>
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Desktop - Single row */}
+                <div className="hidden lg:flex lg:flex-wrap lg:gap-2 lg:justify-center">
+                  {steps.map((step) => (
+                    <Button
+                      key={step.id}
+                      variant={activeStep === step.id ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handleStepChange(step.id)}
+                      className="flex items-center gap-2 px-3 py-2"
+                    >
+                      {activeStep > step.id ? (
+                        <CheckCircle className="w-4 h-4" />
+                      ) : (
+                        <Circle className="w-4 h-4" />
+                      )}
+                      <span>{step.title}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Current Step Content - Responsive Container */}
+          <div className="w-full">
+            <div className="bg-white rounded-lg shadow-sm p-3 sm:p-4 lg:p-6">
+              {renderStep()}
+            </div>
           </div>
-        </CardHeader>
-      </Card>
 
-      {/* Step Navigation */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-wrap gap-2 justify-center">
-            {steps.map((step) => (
-              <Button
-                key={step.id}
-                variant={activeStep === step.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => handleStepChange(step.id)}
-                className="flex items-center gap-2"
-              >
-                {activeStep > step.id ? (
-                  <CheckCircle className="w-4 h-4" />
-                ) : (
-                  <Circle className="w-4 h-4" />
-                )}
-                <span className="hidden sm:inline">{step.title}</span>
-                <span className="sm:hidden">{step.id}</span>
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+          {/* Responsive Navigation Buttons */}
+          <Card className="shadow-sm">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 sm:gap-0">
+                <Button
+                  variant="outline"
+                  onClick={handlePrevious}
+                  disabled={isFirstStep || isSaving}
+                  className="order-2 sm:order-1"
+                >
+                  Previous
+                </Button>
 
-      {/* Current Step Content */}
-      <div className="mb-6">{renderStep()}</div>
-
-      {/* Navigation Buttons */}
-      <div className="flex justify-between pt-6 border-t">
-        <Button
-          variant="outline"
-          onClick={handlePrevious}
-          disabled={isFirstStep || isSaving}
-        >
-          Previous
-        </Button>
-
-        <div className="flex gap-2">
-          {isLastStep ? (
-            <Button
-              onClick={handleSubmitAll}
-              disabled={isSaving}
-              className="gap-2"
-            >
-              <CheckCircle className="h-4 w-4" />
-              {isSaving ? "Submitting..." : "Submit All Forms"}
-            </Button>
-          ) : (
-            <Button onClick={handleNext} disabled={isSaving}>
-              Next
-            </Button>
-          )}
+                <div className="flex gap-2 order-1 sm:order-2">
+                  {isLastStep ? (
+                    <Button
+                      onClick={handleSubmitAll}
+                      disabled={isSaving}
+                      className="flex items-center gap-2 w-full sm:w-auto"
+                    >
+                      {isSaving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          Submit All Forms
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={handleNext} 
+                      disabled={isSaving}
+                      className="w-full sm:w-auto"
+                    >
+                      Next
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
-    </div>
     </AuthProvider>
   );
 }

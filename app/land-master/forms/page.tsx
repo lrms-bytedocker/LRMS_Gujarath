@@ -34,16 +34,16 @@ export default function LandFormsPage() {
         <div className="border-b">
           <div className="container mx-auto px-6 py-4">
             <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.back()}
-                className="gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Land Master
-              </Button>
-              <div>
+  <Button
+    variant="ghost"
+    size="sm"
+    onClick={() => router.back()}
+    className="gap-2"
+  >
+    <ArrowLeft className="h-4 w-4" />
+    <span className="hidden sm:inline">Back to Land Master</span>
+  </Button>
+  <div>
                 <h1 className="text-2xl font-bold">
                   {mode === 'add' && 'Add New Land'}
                   {mode === 'view' && 'View Land Record'}
