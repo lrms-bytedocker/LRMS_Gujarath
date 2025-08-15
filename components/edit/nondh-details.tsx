@@ -489,7 +489,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
 };
 
 export default function NondhDetailsEdit() {
-  const { landBasicInfo, yearSlabs, nondhs: contextNondhs, setNondhs, recordId } = useLandRecord()
+  const { landBasicInfo, yearSlabs, nondhs: contextNondhs, setNondhs, recordId, setCurrentStep } = useLandRecord()
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1107,6 +1107,7 @@ const sortNondhs = (a: any, b: any): number => {
       setHasChanges(false)
       
       toast({ title: "Changes saved successfully" })
+      setCurrentStep(6);
     } catch (error) {
       console.error('Error saving changes:', error)
       toast({
@@ -1822,21 +1823,7 @@ const sortNondhs = (a: any, b: any): number => {
       <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle>Nondh Details</CardTitle>
-          {hasChanges && (
-            <Button onClick={saveChanges} disabled={saving}>
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
-                </>
-              )}
-            </Button>
-          )}
+          
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -2078,11 +2065,28 @@ const sortNondhs = (a: any, b: any): number => {
 
                       {renderTypeSpecificFields(detail)}
                     </div>
+                    
                   </div>
                 )}
+                
               </Card>
             );
           })}
+          {hasChanges && (
+  <div className="flex justify-center mt-4">
+    <Button onClick={saveChanges} disabled={saving}>
+      {saving ? (
+        <>
+          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          Saving...
+        </>
+      ) : (
+        <>Save & Continue</>
+      )}
+    </Button>
+  </div>
+)}
+
       </CardContent>
     </Card>
   )

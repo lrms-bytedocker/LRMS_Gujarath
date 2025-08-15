@@ -10,9 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Download, Eye, Filter, Calendar } from "lucide-react"
 import { useLandRecord } from "@/contexts/land-record-context"
-import { convertToSquareMeters } from "@/lib/supabase"
+import { convertToSquareMeters, LandRecordService } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
-import { supabase } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 
 interface PassbookEntry {
@@ -24,175 +23,192 @@ interface PassbookEntry {
   createdAt: string
 }
 
+interface NondhDetail {
+  id: string
+  nondhId: string
+  nondhNumber: number
+  sNo: string
+  type: string
+  reason: string
+  status: string
+  vigat: string
+  hasDocuments: boolean
+  showInOutput: boolean
+  createdAt: string
+}
+
 export default function OutputViews() {
-  const { yearSlabs, panipatraks, nondhs, nondhDetails, setCurrentStep } = useLandRecord()
+  const { recordId, setCurrentStep } = useLandRecord()
   const { toast } = useToast()
   const router = useRouter()
   const [passbookData, setPassbookData] = useState<PassbookEntry[]>([])
-  const [filteredNondhs, setFilteredNondhs] = useState<any[]>([])
+  const [nondhDetails, setNondhDetails] = useState<NondhDetail[]>([])
+  const [filteredNondhs, setFilteredNondhs] = useState<NondhDetail[]>([])
   const [dateFilter, setDateFilter] = useState("")
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchPassbookData()
-    generateFilteredNondhs()
-  }, [yearSlabs, panipatraks, nondhs, nondhDetails])
+    if (recordId) {
+      fetchAllData()
+    }
+  }, [recordId])
+
+  const fetchAllData = async () => {
+    if (!recordId) {
+      toast({
+        title: 'Error',
+        description: 'No land record ID found',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    setLoading(true)
+    try {
+      await Promise.all([
+        fetchPassbookData(),
+        fetchNondhDetails()
+      ])
+    } catch (error) {
+      console.error('Error fetching data:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch output data',
+        variant: 'destructive'
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const fetchPassbookData = async () => {
-  try {
-    console.log('Starting to fetch passbook data...');
-    
-    // Get all nondh detail IDs from nondhDetails context
-    const nondhDetailIds = nondhDetails.map(detail => detail.id);
-    console.log('nondhDetails IDs from context:', nondhDetailIds);
-
-    if (nondhDetailIds.length === 0) {
-      console.log('No nondh details found in context');
-      setPassbookData([]);
-      return;
-    }
-
-    // First, let's find the nondh_ids from our context nondhDetails
-    const nondhIds = nondhDetails.map(detail => detail.nondhId);
-    console.log('Nondh IDs from context:', nondhIds);
-
-    // Method 1: Try to match using the context IDs directly
-    let { data: ownerRelations, error: relationsError } = await supabase
-      .from('nondh_owner_relations')
-      .select(`
-        owner_name,
-        s_no,
-        acres,
-        gunthas,
-        square_meters,
-        area_unit,
-        is_valid,
-        created_at,
-        nondh_detail_id
-      `)
-      .in('nondh_detail_id', nondhDetailIds)
-      .or('is_valid.eq.true,is_valid.eq.TRUE');
-
-    console.log('Direct match results:', ownerRelations?.length || 0);
-
-    // Method 2: If no direct match, try to find via nondh_details table
-    if (!ownerRelations || ownerRelations.length === 0) {
-      console.log('No direct match found, trying to find via nondh_details...');
+    try {
+      console.log('Fetching passbook data for recordId:', recordId)
       
-      // Get all nondh_details that belong to our nondhs
-      const { data: allNondhDetails, error: detailsError } = await supabase
-        .from('nondh_details')
-        .select('id, nondh_id')
-        .in('nondh_id', nondhIds);
+      // Get nondhs first
+      const { data: nondhs, error: nondhError } = await LandRecordService.getNondhs(recordId)
+      if (nondhError) throw nondhError
 
-      console.log('All nondh_details for our nondhs:', allNondhDetails);
-
-      if (allNondhDetails && allNondhDetails.length > 0) {
-        const allDetailIds = allNondhDetails.map(detail => detail.id);
-        console.log('All detail IDs for our nondhs:', allDetailIds);
-
-        // Now fetch owner relations for all these details
-        const { data: allOwnerRelations, error: allRelationsError } = await supabase
-          .from('nondh_owner_relations')
-          .select(`
-            owner_name,
-            s_no,
-            acres,
-            gunthas,
-            square_meters,
-            area_unit,
-            is_valid,
-            created_at,
-            nondh_detail_id
-          `)
-          .in('nondh_detail_id', allDetailIds)
-          .or('is_valid.eq.true,is_valid.eq.TRUE');
-
-        ownerRelations = allOwnerRelations;
-        relationsError = allRelationsError;
-        console.log('Found owner relations via nondh lookup:', ownerRelations?.length || 0);
-      }
-    }
-
-    if (relationsError) {
-      console.error('Error fetching owner relations:', relationsError);
-      throw relationsError;
-    }
-
-    if (!ownerRelations || ownerRelations.length === 0) {
-      console.log('No owner relations found for any method');
-      setPassbookData([]);
-      return;
-    }
-
-    // Process the data - we need to map back to get nondh numbers
-    const passbookEntries = [];
-
-    for (const relation of ownerRelations) {
-      // Find which nondh this detail belongs to
-      const { data: detailInfo, error: detailError } = await supabase
-        .from('nondh_details')
-        .select('nondh_id')
-        .eq('id', relation.nondh_detail_id)
-        .single();
-
-      if (detailError) {
-        console.warn('Could not find detail info for:', relation.nondh_detail_id);
-        continue;
+      if (!nondhs || nondhs.length === 0) {
+        console.log('No nondhs found')
+        setPassbookData([])
+        return
       }
 
-      // Find the nondh number from context
-      const nondh = nondhs.find(n => n.id === detailInfo.nondh_id);
-      const nondhNumber = Number(nondh?.number || 0);
+      // Get nondh details with owner relations
+      const { data: nondhDetailsWithRelations, error: detailsError } = 
+        await LandRecordService.getNondhDetailsWithRelations(recordId)
+      
+      if (detailsError) throw detailsError
 
-      // Calculate area
-      let area = 0;
-      if (relation.area_unit === 'acre_guntha') {
-        const totalGunthas = (relation.acres || 0) * 40 + (relation.gunthas || 0);
-        area = convertToSquareMeters(totalGunthas, 'guntha');
-      } else {
-        area = relation.square_meters || 0;
-      }
+      const passbookEntries: PassbookEntry[] = []
 
-      console.log(`Processing: Owner ${relation.owner_name}, Nondh ${nondhNumber}, Area ${area}`);
+      // Process each nondh detail and its owner relations
+      nondhDetailsWithRelations?.forEach(detail => {
+        const nondh = nondhs.find(n => n.id === detail.nondh_id)
+        const nondhNumber = Number(nondh?.number || 0)
 
-      passbookEntries.push({
-        year: new Date(relation.created_at).getFullYear(),
-        ownerName: relation.owner_name || '',
-        area,
-        sNo: relation.s_no || '',
-        nondhNumber,
-        createdAt: relation.created_at || ''
-      });
-    }
+        // Process owner relations for this detail - filter only valid relations
+        detail.owner_relations?.forEach(relation => {
+          // Only include relations where is_valid is true
+          if (!relation.is_valid) {
+            return // Skip invalid relations
+          }
 
-    console.log('Final passbook entries:', passbookEntries);
-    setPassbookData(passbookEntries.sort((a, b) => a.year - b.year));
-    
-  } catch (error) {
-    console.error('Error in fetchPassbookData:', error);
-    toast({
-      title: 'Error',
-      description: 'Failed to fetch passbook data',
-      variant: 'destructive'
-    });
-  }
-};
+          let area = 0
+          
+          // Calculate area based on unit
+          if (relation.area_unit === 'acre_guntha') {
+            const totalGunthas = (relation.acres || 0) * 40 + (relation.gunthas || 0)
+            area = convertToSquareMeters(totalGunthas, 'guntha')
+          } else {
+            area = relation.square_meters || 0
+          }
 
-  const generateFilteredNondhs = () => {
-    const filtered = nondhDetails
-      .filter((detail) => detail.showInOutput)
-      .map((detail) => {
-        const nondh = nondhs.find((n) => n.id === detail.nondhId)
-        return {
-          ...detail,
-          nondhNumber: nondh?.number || 0,
-          createdAt: new Date().toISOString().split("T")[0], // Mock date
-          reason: detail.reason || detail.vigat || "-" // Use reason or vigat as fallback
-        }
+          passbookEntries.push({
+            year: new Date(relation.created_at || new Date()).getFullYear(),
+            ownerName: relation.owner_name || '',
+            area,
+            sNo: relation.s_no || '',
+            nondhNumber,
+            createdAt: relation.created_at || new Date().toISOString()
+          })
+        })
       })
-      .sort((a, b) => a.nondhNumber - b.nondhNumber)
 
-    setFilteredNondhs(filtered)
+      console.log('Processed passbook entries:', passbookEntries)
+      setPassbookData(passbookEntries.sort((a, b) => a.year - b.year))
+      
+    } catch (error) {
+      console.error('Error in fetchPassbookData:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch passbook data',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  const fetchNondhDetails = async () => {
+    try {
+      console.log('Fetching nondh details for recordId:', recordId)
+      
+      // Get nondhs first
+      const { data: nondhs, error: nondhError } = await LandRecordService.getNondhs(recordId)
+      if (nondhError) throw nondhError
+
+      if (!nondhs || nondhs.length === 0) {
+        console.log('No nondhs found')
+        setNondhDetails([])
+        setFilteredNondhs([])
+        return
+      }
+
+      // Get nondh details with relations
+      const { data: nondhDetailsWithRelations, error: detailsError } = 
+        await LandRecordService.getNondhDetailsWithRelations(recordId)
+      
+      if (detailsError) throw detailsError
+
+      const processedDetails: NondhDetail[] = []
+
+      // Process each nondh detail
+      nondhDetailsWithRelations?.forEach(detail => {
+        const nondh = nondhs.find(n => n.id === detail.nondh_id)
+        
+        processedDetails.push({
+          id: detail.id,
+          nondhId: detail.nondh_id,
+          nondhNumber: Number(nondh?.number || 0),
+          sNo: detail.s_no || '',
+          type: detail.type || 'Standard',
+          reason: detail.reason || detail.vigat || '-',
+          status: detail.status || 'Pending',
+          vigat: detail.vigat || '',
+          hasDocuments: Boolean(detail.document_url),
+          showInOutput: Boolean(detail.show_in_output),
+          createdAt: detail.created_at || new Date().toISOString()
+        })
+      })
+
+      console.log('Processed nondh details:', processedDetails)
+      setNondhDetails(processedDetails)
+      
+      // Filter for output display
+      const filtered = processedDetails
+        .filter(detail => detail.showInOutput)
+        .sort((a, b) => a.nondhNumber - b.nondhNumber)
+      
+      setFilteredNondhs(filtered)
+      
+    } catch (error) {
+      console.error('Error in fetchNondhDetails:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch nondh details',
+        variant: 'destructive'
+      })
+    }
   }
 
   const exportToCSV = (data: any[], filename: string) => {
@@ -234,17 +250,18 @@ export default function OutputViews() {
   }
 
   const getFilteredByDate = () => {
-    if (!dateFilter) return filteredNondhs
-    return filteredNondhs.filter((nondh) => nondh.createdAt.includes(dateFilter))
+    if (!dateFilter) return nondhDetails
+    return nondhDetails.filter((nondh) => 
+      nondh.createdAt.includes(dateFilter)
+    )
   }
 
-  const handleCompleteProcess = () => {
-    toast({ title: "Land record process completed successfully!" })
+  const handleBackToLandMaster = () => {
     router.push('/land-master')
   }
 
-  const renderQueryListCard = (nondh: any, index: number) => (
-    <Card key={index} className="p-4">
+  const renderQueryListCard = (nondh: NondhDetail, index: number) => (
+    <Card key={nondh.id || index} className="p-4">
       <div className="space-y-3">
         <div className="flex justify-between items-start">
           <div className="space-y-1">
@@ -288,7 +305,7 @@ export default function OutputViews() {
           <div className="text-sm font-medium">{nondh.reason}</div>
         </div>
         
-        {nondh.vigat && nondh.vigat !== '-' && (
+        {nondh.vigat && (
           <div className="space-y-1">
             <span className="text-muted-foreground text-sm">Vigat:</span>
             <div className="text-sm font-medium truncate">{nondh.vigat}</div>
@@ -325,15 +342,14 @@ export default function OutputViews() {
     </Card>
   )
 
-  const renderDateWiseCard = (nondh: any, index: number) => (
-    <Card key={index} className="p-4">
+  const renderDateWiseCard = (nondh: NondhDetail, index: number) => (
+    <Card key={nondh.id || index} className="p-4">
       <div className="space-y-3">
         <div className="flex justify-between items-start">
           <div className="space-y-1">
             <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
-            <div className="text-muted-foreground text-xs flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {nondh.createdAt}
+            <div className="text-muted-foreground text-xs">
+              {new Date(nondh.createdAt).toLocaleDateString()}
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -367,6 +383,24 @@ export default function OutputViews() {
       </div>
     </Card>
   )
+
+  if (loading) {
+    return (
+      <Card className="w-full max-w-none">
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl">Step 6: Output Views & Reports</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+              <p className="mt-2 text-gray-600">Loading output data...</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="w-full max-w-none">
@@ -419,7 +453,7 @@ export default function OutputViews() {
                     </TableHeader>
                     <TableBody>
                       {filteredNondhs.map((nondh, index) => (
-                        <TableRow key={index}>
+                        <TableRow key={nondh.id || index}>
                           <TableCell>{nondh.nondhNumber}</TableCell>
                           <TableCell>{nondh.sNo}</TableCell>
                           <TableCell>{nondh.type}</TableCell>
@@ -437,7 +471,9 @@ export default function OutputViews() {
                               {nondh.status}
                             </span>
                           </TableCell>
-                          <TableCell className="max-w-xs truncate">{nondh.vigat || "-"}</TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {nondh.vigat || "-"}
+                          </TableCell>
                           <TableCell>
                             {nondh.hasDocuments ? (
                               <Button size="sm" variant="outline">
@@ -572,8 +608,10 @@ export default function OutputViews() {
                     </TableHeader>
                     <TableBody>
                       {getFilteredByDate().map((nondh, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{nondh.createdAt}</TableCell>
+                        <TableRow key={nondh.id || index}>
+                          <TableCell>
+                            {new Date(nondh.createdAt).toLocaleDateString()}
+                          </TableCell>
                           <TableCell>{nondh.nondhNumber}</TableCell>
                           <TableCell>{nondh.sNo}</TableCell>
                           <TableCell>{nondh.type}</TableCell>
@@ -612,13 +650,23 @@ export default function OutputViews() {
           </TabsContent>
         </Tabs>
 
-        <div className="flex flex-col sm:flex-row sm:justify-center items-stretch sm:items-center gap-4 mt-6 pt-4 border-t">
+        <div className="flex flex-col sm:flex-row sm:justify-between items-stretch sm:items-center gap-4 mt-6 pt-4 border-t">
           <Button 
-            onClick={handleCompleteProcess}
+            variant="outline" 
+            onClick={() => setCurrentStep(5)}
+            className="flex items-center justify-center gap-2 w-full sm:w-auto"
+            size="sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Step 5
+          </Button>
+          
+          <Button 
+            onClick={handleBackToLandMaster}
             className="w-full sm:w-auto"
             size="sm"
           >
-            Complete Process
+            Back to Land Master
           </Button>
         </div>
       </CardContent>

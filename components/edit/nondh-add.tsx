@@ -27,7 +27,7 @@ function isEqual(obj1: any, obj2: any) {
 }
 
 export default function NondhAdd() {
-  const { recordId, yearSlabs, landBasicInfo, setHasUnsavedChanges, currentStep } = useLandRecord()
+  const { recordId, yearSlabs, landBasicInfo, setHasUnsavedChanges, currentStep, setCurrentStep } = useLandRecord()
   const { toast } = useToast()
 
   const [loading, setLoading] = useState(false)
@@ -304,6 +304,7 @@ useEffect(() => {
       // Update original data
       setOriginalNondhs(validNondhs)
       toast({ title: "Nondh data saved successfully" })
+      setCurrentStep(5);
     } catch (error) {
       console.error('Error saving nondhs:', error)
       toast({ 
@@ -339,16 +340,7 @@ useEffect(() => {
       <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle>Nondh Information</CardTitle>
-          {hasChanges && (
-            <Button onClick={handleSave} disabled={loading} size="sm" className="flex items-center gap-2">
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {loading ? "Saving..." : "Save Changes"}
-            </Button>
-          )}
+          
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -476,16 +468,29 @@ useEffect(() => {
         ))}
 
         {/* Add Nondh Button */}
-        <div className="flex justify-center">
-          <Button 
-            onClick={addNondh} 
-            variant="outline" 
-            className="flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Another Nondh
-          </Button>
-        </div>
+      <div className="flex flex-col items-center gap-4">
+  <Button 
+    onClick={addNondh} 
+    variant="outline" 
+    className="flex items-center gap-2"
+  >
+    <Plus className="w-4 h-4" />
+    Add Another Nondh
+  </Button>
+
+  {hasChanges && (
+    <Button 
+      onClick={handleSave} 
+      disabled={loading} 
+      size="sm" 
+      className="flex items-center gap-2"
+    >
+      {loading ? "Saving..." : "Save & Continue"}
+    </Button>
+  )}
+</div>
+
+
       </CardContent>
     </Card>
   )

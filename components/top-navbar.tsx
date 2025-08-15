@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, ChevronDown, User } from "lucide-react"
+import { Bell, ChevronDown } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,38 +12,40 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Breadcrumbs } from "@/components/breadcrumbs"
+import { UserButton } from "@clerk/nextjs"
+import { SignedIn, SignedOut } from "@clerk/nextjs"
+import Link from "next/link"
 
 export function TopNavbar() {
   return (
-    <header className="flex h-16 items-center justify-between border-b bg-white px-6">
-      <div className="flex items-center gap-4">
-        <SidebarTrigger />
-        <Breadcrumbs />
+    <header className="flex h-12 sm:h-16 items-center justify-between border-b bg-white px-4 sm:px-6">
+      <div className="flex items-center gap-2 sm:gap-4">
+        <SidebarTrigger className="h-8 w-8 sm:h-auto sm:w-auto" />
+        <div className="hidden sm:block">
+          <Breadcrumbs />
+        </div>
+        {/* Mobile breadcrumbs - simplified */}
+        <div className="sm:hidden">
+          <Breadcrumbs />
+        </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-4 w-4" />
-          <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 text-xs flex justify-center items-center">3</Badge>
-        </Button>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
-                <User className="h-4 w-4 text-blue-600" />
-              </div>
-              <span className="hidden md:inline">Admin User</span>
-              <ChevronDown className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>Logout</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex items-center gap-2 sm:gap-4">
+        <SignedIn>
+          <UserButton 
+            afterSignOutUrl="/" 
+            appearance={{
+              elements: {
+                avatarBox: "h-8 w-8 sm:h-10 sm:w-10"
+              }
+            }}
+          />
+        </SignedIn>
+        <SignedOut>
+          <Button asChild variant="outline" size="sm" className="text-sm">
+            <Link href="/sign-in">Sign In</Link>
+          </Button>
+        </SignedOut>
       </div>
     </header>
   )

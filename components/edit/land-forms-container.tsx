@@ -22,7 +22,8 @@ import YearSlabs from "./year-slabs";
 import Panipatrak from "./panipatrak";
 import NondhAdd from "./nondh-add";
 import NondhDetails from "./nondh-details";
-// import OutputViews from "./output-views";
+import OutputViews from "./output-views";
+import { AuthProvider } from "../auth-provider";
 
 interface FormStep {
   id: number;
@@ -170,11 +171,12 @@ export function EditFormsContainer() {
   const progress = (activeStep / steps.length) * 100;
 
   return (
-    <div className="space-y-6">
-      {/* Progress Header */}
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
+    <AuthProvider>
+      <div className="space-y-6">
+        {/* Progress Header */}
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
     <CardTitle className="text-2xl font-bold text-center">
       Land Record Management System (LRMS)
     </CardTitle>
@@ -230,22 +232,14 @@ export function EditFormsContainer() {
         </Button>
 
         <div className="flex gap-2">
-          {isLastStep ? (
-            <Button
-              onClick={handleSubmitAll}
-              disabled={isSaving}
-              className="gap-2"
-            >
-              <CheckCircle className="h-4 w-4" />
-              {isSaving ? "Submitting..." : "Submit All Forms"}
-            </Button>
-          ) : (
-            <Button onClick={handleNext} disabled={isSaving}>
-              Next
-            </Button>
-          )}
-        </div>
+  {!isLastStep && (
+    <Button onClick={handleNext} disabled={isSaving}>
+      Next
+    </Button>
+  )}
+</div>
       </div>
     </div>
+    </AuthProvider>
   );
 }

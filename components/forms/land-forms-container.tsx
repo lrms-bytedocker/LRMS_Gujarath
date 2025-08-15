@@ -23,6 +23,8 @@ import Panipatrak from "./panipatrak";
 import NondhAdd from "./nondh-add";
 import NondhDetails from "./nondh-details";
 import OutputViews from "./output-views";
+import { AuthProvider } from "@/components/auth-provider"
+
 
 interface FormStep {
   id: number;
@@ -164,6 +166,7 @@ export function LandFormsContainer() {
   const progress = (activeStep / steps.length) * 100;
 
   return (
+    <AuthProvider>
     <div className="space-y-6">
       {/* Progress Header */}
       <Card>
@@ -236,5 +239,6 @@ export function LandFormsContainer() {
         </div>
       </div>
     </div>
+    </AuthProvider>
   );
 }
