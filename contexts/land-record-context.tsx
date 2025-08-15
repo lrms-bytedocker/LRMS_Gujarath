@@ -50,6 +50,9 @@ export interface Farmer {
   id: string
   name: string
   area: AreaInput
+  type: 'regular' | 'paiky' | 'ekatrikaran'
+  paikyNumber?: number
+  ekatrikaranNumber?: number
 }
 
 export interface Panipatrak {
@@ -147,24 +150,51 @@ export function LandRecordProvider({
   const [isLoading, setIsLoading] = useState(mode !== 'add');
   
   // Add useEffect to load data if in view/edit mode
-  useEffect(() => {
-    if (mode !== 'add' && recordId) {
-      const loadData = async () => {
-        setIsLoading(true);
-        try {
-          const { data, error } = await LandRecordService.getCompleteRecord(recordId);
-          if (error) throw error;
-          // Set the form data with the loaded data
-          // You'll need to transform the data to match your form structure
-        } catch (error) {
-          console.error('Error loading record:', error);
-        } finally {
-          setIsLoading(false);
+ // In LandRecordProvider component
+useEffect(() => {
+  if (mode !== 'add' && recordId) {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const { data, error } = await LandRecordService.getCompleteRecord(recordId);
+        if (error) throw error;
+        
+        // Set all data
+        if (data.landRecord) {
+          setLandBasicInfo({
+            district: data.landRecord.district,
+            taluka: data.landRecord.taluka,
+            village: data.landRecord.village,
+            area: {
+              value: data.landRecord.area_value,
+              unit: data.landRecord.area_unit as "acre" | "guntha" | "sq_m"
+            },
+            sNoType: data.landRecord.s_no_type as "s_no" | "block_no" | "re_survey_no",
+            sNo: data.landRecord.s_no,
+            isPromulgation: data.landRecord.is_promulgation,
+            blockNo: data.landRecord.block_no,
+            reSurveyNo: data.landRecord.re_survey_no,
+            integrated712: data.landRecord.integrated_712,
+            integrated712FileName: data.landRecord.integrated712FileName
+          });
         }
-      };
-      loadData();
-    }
-  }, [mode, recordId]);
+        
+        if (data.yearSlabs) {
+          setYearSlabs(data.yearSlabs);
+        }
+        
+        if (data.panipatraks) {
+          setPanipatraks(data.panipatraks);
+        }
+      } catch (error) {
+        console.error('Error loading record:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }
+}, [mode, recordId]);
   const [currentStep, setCurrentStep] = useState(1)
   const [landBasicInfo, setLandBasicInfo] = useState<LandBasicInfo | null>(null)
   const [yearSlabs, setYearSlabs] = useState<YearSlab[]>([])

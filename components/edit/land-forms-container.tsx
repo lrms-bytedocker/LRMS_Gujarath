@@ -18,10 +18,10 @@ import { useStepFormData } from "@/hooks/use-step-form-data";
 
 // Import your form components
 import LandBasicInfoComponent from "./land-basic-info";
-// import YearSlabs from "./year-slabs";
-// import Panipatrak from "./panipatrak";
-// import NondhAdd from "./nondh-add";
-// import NondhDetails from "./nondh-details";
+import YearSlabs from "./year-slabs";
+import Panipatrak from "./panipatrak";
+import NondhAdd from "./nondh-add";
+import NondhDetails from "./nondh-details";
 // import OutputViews from "./output-views";
 
 interface FormStep {

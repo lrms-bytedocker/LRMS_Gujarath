@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import {
   Card,
@@ -112,21 +112,25 @@ function mapSNoTypeContextToUI(s: "s_no" | "block_no" | "re_survey_no"): SNoType
 }
 
 // Helper to determine which field to use from landBasicInfo
-function getAutoPopulatedSNoData(landBasicInfo: any, selectedType: SNoTypeUI): string {
-  if (!landBasicInfo) return "";
+async function getAutoPopulatedSNoData(landRecordId: string, selectedType: SNoTypeUI): Promise<string> {
+  if (!landRecordId) return "";
   
-  switch(selectedType) {
-    case "survey_no":
-      // Only return sNo for survey_no, no fallback to blockNo
-      return landBasicInfo.sNo || "";
-    case "block_no":
-      // Only return blockNo for block_no
-      return landBasicInfo.blockNo || "";
-    case "re_survey_no":
-      // Only return reSurveyNo for re_survey_no
-      return landBasicInfo.reSurveyNo || "";
-    default:
-      return "";
+  try {
+    const { sNo, blockNo, reSurveyNo } = await LandRecordService.getLandRecordBasicInfo(landRecordId);
+    
+    switch(selectedType) {
+      case "survey_no":
+        return "";
+      case "block_no":
+        return blockNo || "";
+      case "re_survey_no":
+        return reSurveyNo || "";
+      default:
+        return "";
+    }
+  } catch (error) {
+    console.error('Error fetching land record data:', error);
+    return "";
   }
 }
 // Convert from UI-area to context-area
@@ -161,7 +165,7 @@ function toAreaUI(area?: { value: number; unit: "sq_m" | "acre" | "guntha" }): A
   if (area.unit === "sq_m") {
     return {
       areaType: "sq_m",
-      sq_m: area.value,
+      sq_m: parseFloat(area.value.toFixed(2)),
       acre: convertFromSquareMeters(area.value, "acre"),
       guntha: convertFromSquareMeters(area.value, "guntha") % 40
     };
@@ -224,11 +228,11 @@ export default function YearSlabs() {
     setYearSlabs, 
     setCurrentStep, 
     landBasicInfo, 
-    currentStep 
-  } = useLandRecord();
+    currentStep,
+    recordId,
+setHasUnsavedChanges,  } = useLandRecord();
   const { toast } = useToast();
   
-  // Add this hook
   const { 
     getStepData, 
     updateStepData, 
@@ -242,12 +246,20 @@ const PAIKY_PER_PAGE = 5;
    const [uploadedFileName, setUploadedFileName] = useState<string>("");
    const [currentEkatrikaranPage, setCurrentEkatrikaranPage] = useState<Record<string, number>>({});
 const EKATRIKARAN_PER_PAGE = 5;
-const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ekatrikaran'>>({});
+const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ekatrikaran'>>(
+  slabs.reduce((acc, slab) => {
+    if (slab.paiky) return { ...acc, [slab.id]: 'paiky' };
+    if (slab.ekatrikaran) return { ...acc, [slab.id]: 'ekatrikaran' };
+    return { ...acc, [slab.id]: 'main' };
+  }, {})
+);
 const [slabUploadedFileNames, setSlabUploadedFileNames] = useState<Record<string, string>>({});
 const [entryUploadedFileNames, setEntryUploadedFileNames] = useState<Record<string, string>>({});
 const [initialLoading, setInitialLoading] = useState(true);
+const [modified, setModified] = useState(false);
+const initialSlabsRef = useRef<YearSlabUI[]>([]);
 
-// Helper function
+// Add this function at the top of your component
 const extractFilenameFromUrl = (url: string): string => {
   if (!url) return '';
   try {
@@ -312,7 +324,7 @@ const extractFilenameFromUrl = (url: string): string => {
       title: "File uploaded successfully",
       description: "Document saved to land-documents bucket"
     });
-    
+    setModified(true);
   } catch (error) {
     console.error('File upload error:', error);
     toast({ 
@@ -325,93 +337,97 @@ const extractFilenameFromUrl = (url: string): string => {
   }
 }
 
+const hasChanges = (currentSlabs: YearSlabUI[]) => {
+  return JSON.stringify(currentSlabs) !== JSON.stringify(initialSlabsRef.current);
+};
+
 useEffect(() => {
   const loadData = async () => {
+    if (!recordId) return;
+    
     try {
       setInitialLoading(true);
-      if (!slabs.length) {
-        setSlabs([{
-          id: "1",
-          startYear: "",
-          endYear: 2004,
-          sNoTypeUI: "block_no",
-          sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
-          areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
-            areaType: "acre_guntha", 
-            acre: 0, 
-            guntha: 0 
-          },
-          integrated712: "",
-          paiky: false,
-          paikyCount: 0,
-          paikyEntries: [],
-          ekatrikaran: false,
-          ekatrikaranCount: 0,
-          ekatrikaranEntries: [],
+      const { data: dbSlabs, error } = await LandRecordService.getYearSlabs(recordId);
+      
+      if (error) throw error;
+
+      if (dbSlabs && dbSlabs.length > 0) {
+        const uiSlabs = dbSlabs.map(slab => ({
+          ...toYearSlabUI(slab),
           collapsed: false
-        }]);
-      }
-      const stepData = getStepData();
-      
-      if (stepData?.slabUploadedFileNames) {
-        setSlabUploadedFileNames(stepData.slabUploadedFileNames);
-      }
-      if (stepData?.entryUploadedFileNames) {
-        setEntryUploadedFileNames(stepData.entryUploadedFileNames);
-      }
-      
-      if (landBasicInfo?.id) {
-        const { data: dbSlabs, error } = await LandRecordService.getYearSlabs(landBasicInfo.id);
+        }));
         
-        if (!error && dbSlabs) {
-          const uiSlabs = dbSlabs.map(s => ({
-            ...toYearSlabUI(s),
-            collapsed: false
-          }));
-          
-          setSlabs(uiSlabs);
-          
-          // Extract filenames from database data
-          const newEntryFileNames = {};
-          
-          uiSlabs.forEach(slab => {
-            // Extract filenames for paiky entries
-            slab.paikyEntries?.forEach((entry, index) => {
-              if (entry.integrated712) {
-                const filename = extractFilenameFromUrl(entry.integrated712);
-                if (filename) {
-                  newEntryFileNames[`${slab.id}_paiky_${index}`] = filename;
-                }
-              }
-            });
-            
-            // Extract filenames for ekatrikaran entries
-            slab.ekatrikaranEntries?.forEach((entry, index) => {
-              if (entry.integrated712) {
-                const filename = extractFilenameFromUrl(entry.integrated712);
-                if (filename) {
-                  newEntryFileNames[`${slab.id}_ekatrikaran_${index}`] = filename;
-                }
-              }
-            });
-          });
-          
-          // Merge with existing filename states
-          setEntryUploadedFileNames(prev => ({ ...newEntryFileNames, ...prev }));
-        }
+        setSlabs(uiSlabs);
+        initialSlabsRef.current = JSON.parse(JSON.stringify(uiSlabs)); // Deep copy
+      } else {
+        const defaultSlab = await createDefaultSlab();
+        setSlabs([defaultSlab]);
+        initialSlabsRef.current = JSON.parse(JSON.stringify([defaultSlab]));
       }
+    } catch (error) {
+      console.error('Error loading year slabs:', error);
+      toast({ title: "Error loading data", variant: "destructive" });
     } finally {
       setInitialLoading(false);
+      setModified(false); // Reset modified flag after load
     }
   };
 
   loadData();
-}, [landBasicInfo]);
+}, [recordId, toast]);
+
+// Add this useEffect after the loadData useEffect
+useEffect(() => {
+  if (slabs.length > 0) {
+    setActiveTab(prev => {
+      const newActiveTab = { ...prev };
+      slabs.forEach(slab => {
+        // Only set if not already set
+        if (!newActiveTab[slab.id]) {
+          if (slab.paiky && slab.ekatrikaran) {
+            newActiveTab[slab.id] = 'paiky'; // Default to paiky when both exist
+          } else if (slab.paiky) {
+            newActiveTab[slab.id] = 'paiky';
+          } else if (slab.ekatrikaran) {
+            newActiveTab[slab.id] = 'ekatrikaran';
+          } else {
+            newActiveTab[slab.id] = 'main';
+          }
+        }
+      });
+      return newActiveTab;
+    });
+  }
+}, [slabs]); // Run when slabs change
+
+  const createDefaultSlab = async (): Promise<YearSlabUI> => {
+    const blockNo = await getAutoPopulatedSNoData(recordId, "block_no");
+    return {
+      id: Date.now().toString(),
+      startYear: "",
+      endYear: 2004,
+      sNoTypeUI: "block_no",
+      sNo: blockNo || "",
+      areaUI: landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { 
+      areaType: "sq_m",
+      sq_m: 0
+    },
+      integrated712: "",
+      paiky: false,
+      paikyCount: 0,
+      paikyEntries: [],
+      ekatrikaran: false,
+      ekatrikaranCount: 0,
+      ekatrikaranEntries: [],
+      collapsed: false
+    };
+  };
+
 
 useEffect(() => {
   if (slabs.length > 0) {
     const hasContent = slabs.some(slab => 
-      (slab.sNo && slab.sNo.trim() !== "") || 
+      (slab.sNo && slab.sNo !== "") || 
       slab.startYear !== "" ||
       slab.paikyEntries.length > 0 ||
       slab.ekatrikaranEntries.length > 0
@@ -468,30 +484,30 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
 })();
 
   const handleSqmChange = (value: string) => {
-    if (value === "") {
-      onChange({
-        ...workingArea,
-        sq_m: undefined,
-        acre: undefined,
-        guntha: undefined
-      });
-      return;
-    }
+  if (value === "") {
+    onChange({
+      ...workingArea,
+      sq_m: undefined,
+      acre: undefined,
+      guntha: undefined
+    });
+    return;
+  }
 
-    const num = parseFloat(value);
-    if (!isNaN(num)) {
-      const totalAcres = convertFromSquareMeters(num, "acre");
-      const acres = Math.floor(totalAcres);
-      const remainingGuntha = Math.round((totalAcres - acres) * 40);
-      
-      onChange({
-        ...workingArea,
-        sq_m: num,
-        acre: acres,
-        guntha: remainingGuntha
-      });
-    }
-  };
+  const num = parseFloat(value);
+  if (!isNaN(num)) {
+    const totalAcres = convertFromSquareMeters(num, "acre");
+    const acres = parseFloat(Math.floor(totalAcres).toFixed(2));
+    const remainingGuntha = parseFloat(Math.round((totalAcres - acres) * 40).toFixed(2));
+    
+    onChange({
+      ...workingArea,
+      sq_m: parseFloat(num.toFixed(2)),
+      acre: acres,
+      guntha: remainingGuntha
+    });
+  }
+};
 
   const handleAcreChange = (value: string) => {
     if (value === "") {
@@ -704,21 +720,12 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
   return { valid: true };
 };
 
-const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
+const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
   setSlabs(prev => {
     const newSlabs = [...prev];
     const index = newSlabs.findIndex(s => s.id === id);
     
     if (index === -1) return newSlabs;
-
-    // Handle S.No type changes
-    if (updates.sNoTypeUI && updates.sNoTypeUI !== newSlabs[index].sNoTypeUI) {
-      const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
-      updates = {
-        ...updates,
-        sNo: autoPopulatedSNo
-      };
-    }
 
     // Update current slab
     newSlabs[index] = { ...newSlabs[index], ...updates };
@@ -731,18 +738,27 @@ const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
       };
     }
 
+    // Update modified state
+    setModified(JSON.stringify(newSlabs) !== JSON.stringify(initialSlabsRef.current));
+    
     return newSlabs;
   });
 };
 
-const addSlab = () => {
-  const defaultArea = landBasicInfo?.area 
-    ? toAreaUI(landBasicInfo.area) 
-    : { areaType: "acre_guntha", acre: 0, guntha: 0 };
+ // Generate a proper UUID v4 for new slabs
+  const generateUUID = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
+const addSlab = async () => {
+  setModified(true);
+  const defaultArea = { areaType: "sq_m" as AreaTypeUI, sq_m: 0 };
 
   let startYear, endYear;
   
-  // Calculate years based on existing slabs
   if (slabs.length === 0) {
     startYear = "";
     endYear = 2004;
@@ -752,12 +768,15 @@ const addSlab = () => {
     startYear = "";
   }
 
+  // Get the default S.No based on block_no type
+  const defaultSNo = await getAutoPopulatedSNoData(recordId, "block_no");
+
   const newSlab: YearSlabUI = {
     id: Date.now().toString(),
     startYear,
     endYear,
     sNoTypeUI: "block_no",
-    sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
+    sNo: defaultSNo,
     areaUI: defaultArea,
     integrated712: "",
     paiky: false,
@@ -778,73 +797,95 @@ const addSlab = () => {
   };
 
   // "Count" updating helpers
-  const updatePaikyCount = (slabId: string, count: number) => {
+const updatePaikyCount = async (slabId: string, newCount: number) => {
+  // First fetch the default block_no from the database
+  const defaultBlockNo = await getAutoPopulatedSNoData(recordId, "block_no");
+
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    const defaultEntry = {
-      sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
-      sNoTypeUI: "block_no" as SNoTypeUI,
-      areaUI: { areaType: "sq_m" as AreaTypeUI, sq_m: 0 }, // Changed to sq_m default
+    const currentCount = slab.paikyEntries?.length || 0;
+    
+    if (newCount < currentCount) {
+      return {
+        ...slab,
+        paikyCount: newCount,
+        paikyEntries: slab.paikyEntries?.slice(0, newCount) || []
+      };
+    }
+    
+    const newEntries = Array.from({ length: newCount - currentCount }, () => ({
+      id: generateUUID(),
+      sNo: defaultBlockNo, // Use the fetched block_no
+      sNoTypeUI: "block_no",
+      areaUI: { areaType: "sq_m", sq_m: 0 },
       integrated712: ""
-    };
-
+    }));
+    
     return {
       ...slab,
-      paikyCount: count,
-      paiky: slab.paiky,
-      paikyEntries: Array.from({ length: count }, (_, i) => {
-        return slab.paikyEntries?.[i] || { ...defaultEntry };
-      })
+      paikyCount: newCount,
+      paikyEntries: [...(slab.paikyEntries || []), ...newEntries]
     };
   }));
 };
 
-const updateEkatrikaranCount = (slabId: string, count: number) => {
+const updateEkatrikaranCount = async (slabId: string, newCount: number) => {
+  // First fetch the default block_no from the database
+  const defaultBlockNo = await getAutoPopulatedSNoData(recordId, "block_no");
+
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    const defaultEntry = {
-      sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
-      sNoTypeUI: "block_no" as SNoTypeUI,
-      areaUI: { areaType: "sq_m" as AreaTypeUI, sq_m: 0 }, // Changed to sq_m default
+    const currentCount = slab.ekatrikaranEntries?.length || 0;
+    
+    if (newCount < currentCount) {
+      return {
+        ...slab,
+        ekatrikaranCount: newCount,
+        ekatrikaranEntries: slab.ekatrikaranEntries?.slice(0, newCount) || []
+      };
+    }
+    
+    const newEntries = Array.from({ length: newCount - currentCount }, () => ({
+      id: generateUUID(),
+      sNo: defaultBlockNo, // Use the fetched block_no
+      sNoTypeUI: "block_no",
+      areaUI: { areaType: "sq_m", sq_m: 0 },
       integrated712: ""
-    };
-
+    }));
+    
     return {
       ...slab,
-      ekatrikaranCount: count,
-      ekatrikaran: slab.ekatrikaran,
-      ekatrikaranEntries: Array.from({ length: count }, (_, i) => {
-        return slab.ekatrikaranEntries?.[i] || { ...defaultEntry };
-      })
+      ekatrikaranCount: newCount,
+      ekatrikaranEntries: [...(slab.ekatrikaranEntries || []), ...newEntries]
     };
   }));
 };
   
-const updateSlabEntry = (
+const updateSlabEntry = async (
   slabId: string,
   type: "paiky" | "ekatrikaran",
   index: number,
   updates: Partial<SlabEntryUI>
 ) => {
+  // Handle S.No type changes
+  if (updates.sNoTypeUI) {
+    const currentSlab = slabs.find(s => s.id === slabId);
+    const currentEntry = currentSlab?.[type === 'paiky' ? 'paikyEntries' : 'ekatrikaranEntries']?.[index];
+    
+    if (currentEntry && updates.sNoTypeUI !== currentEntry.sNoTypeUI) {
+      const autoPopulatedSNo = await getAutoPopulatedSNoData(recordId, updates.sNoTypeUI);
+      updates = {
+        ...updates,
+        sNo: autoPopulatedSNo || currentEntry.sNo || ""
+      };
+    }
+  }
+
   setSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
-    // Handle S.No type change for entries
-    if (updates.sNoTypeUI) {
-      const entries = type === 'paiky' ? slab.paikyEntries : slab.ekatrikaranEntries;
-      const currentEntry = entries[index] || {};
-      
-      if (updates.sNoTypeUI !== currentEntry.sNoTypeUI) {
-        const autoPopulatedSNo = getAutoPopulatedSNoData(landBasicInfo, updates.sNoTypeUI);
-        updates = {
-          ...updates,
-          sNo: autoPopulatedSNo
-        };
-      }
-    }
-
     if (type === "paiky") {
       const updatedEntries = [...(slab.paikyEntries || [])];
       updatedEntries[index] = { 
@@ -863,11 +904,13 @@ const updateSlabEntry = (
   }));
 };
 
-const handleSaveAndNext = async () => {
-  setLoading(true);
+const handleSave = async () => {
+  if (!recordId) return;
   
   try {
-    // Check for empty start years first
+    setLoading(true);
+    
+    // Validate data
     const emptyStartYears = slabs.filter(slab => slab.startYear === "" || slab.startYear === undefined);
     if (emptyStartYears.length > 0) {
       toast({ 
@@ -878,16 +921,16 @@ const handleSaveAndNext = async () => {
       return;
     }
 
-    // Validate year ordering
     const { valid, message } = validateYearOrder(slabs);
     if (!valid) {
       toast({ title: "Invalid year sequence", description: message, variant: "destructive" });
       return;
     }
 
-    // Convert to database format - Fixed version
+    // Convert to database format
     const dbSlabs = slabs.map(slab => ({
-      start_year: slab.startYear,
+      id: slab.id,
+      start_year: slab.startYear as number,
       end_year: slab.endYear,
       s_no: slab.sNo,
       s_no_type: mapSNoTypeUIToContext(slab.sNoTypeUI),
@@ -901,9 +944,8 @@ const handleSaveAndNext = async () => {
       paiky_count: slab.paikyCount,
       ekatrikaran: slab.ekatrikaran,
       ekatrikaran_count: slab.ekatrikaranCount,
-      
-      // Properly structuring the entries arrays
       paiky_entries: slab.paikyEntries?.map(entry => ({
+        id: entry.id, // Keep existing ID if present
         s_no: entry.sNo,
         s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
         area_value: entry.areaUI.areaType === "sq_m"
@@ -912,9 +954,9 @@ const handleSaveAndNext = async () => {
             convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
         area_unit: "sq_m",
         integrated_712: entry.integrated712
-      })) || [], // Ensure it's always an array
-      
+      })) || [],
       ekatrikaran_entries: slab.ekatrikaranEntries?.map(entry => ({
+        id: entry.id, // Keep existing ID if present
         s_no: entry.sNo,
         s_no_type: mapSNoTypeUIToContext(entry.sNoTypeUI),
         area_value: entry.areaUI.areaType === "sq_m"
@@ -923,33 +965,22 @@ const handleSaveAndNext = async () => {
             convertToSquareMeters(entry.areaUI.guntha || 0, "guntha"),
         area_unit: "sq_m",
         integrated_712: entry.integrated712
-      })) || [] // Ensure it's always an array
+      })) || []
     }));
 
-    if (!landBasicInfo?.id) {
-      toast({ title: "Land record not found", variant: "destructive" });
-      return;
-    }
-
-    // Save to database
-    const { data: savedData, error } = await LandRecordService.saveYearSlabs(
-      landBasicInfo.id,
+    // Save to database - this will now properly handle updates
+    const { error } = await LandRecordService.updateYearSlabs(
+      recordId,
       dbSlabs
     );
-    
-    if (error) {
-      console.error('Save error details:', error);
-      throw error;
-    }
 
-    // Update context
-    const { data: fetchedSlabs } = await LandRecordService.getYearSlabs(landBasicInfo.id);
-    if (fetchedSlabs) {
-      setYearSlabs(fetchedSlabs);
-    }
+    if (error) throw error;
 
-    setCurrentStep(3);
+    initialSlabsRef.current = JSON.parse(JSON.stringify(slabs));
+    setModified(false);
+    setHasUnsavedChanges(currentStep, false);
     toast({ title: "Year slabs saved successfully" });
+    setCurrentStep(3);
     
   } catch (error) {
     console.error('Save error:', error);
@@ -973,10 +1004,10 @@ const toggleCollapse = (id: string) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Step 2: Add Year Slabs</CardTitle>
+        <CardTitle>Step 2: Year Slabs</CardTitle>
         {landBasicInfo && (
           <div className="text-sm text-muted-foreground">
-            Auto-populated from Step 1: {landBasicInfo.district}, {landBasicInfo.taluka}, {landBasicInfo.village}
+            {landBasicInfo.district}, {landBasicInfo.taluka}, {landBasicInfo.village}
           </div>
         )}
       </CardHeader>
@@ -988,7 +1019,7 @@ const toggleCollapse = (id: string) => {
       ) : (
         <>
           {slabs.map((slab, slabIndex) => (
-            <Card key={slab.id} className="p-4">
+              <Card key={slab.id} className="p-4">
               <div className="flex justify-between items-center mb-4">
   <div className="flex items-center space-x-4">
     <h3 className="text-lg font-semibold">Slab {slabIndex + 1}</h3>
@@ -1276,7 +1307,7 @@ const toggleCollapse = (id: string) => {
 )}
 
             {/* Paiky Section Content */}
-            {slab.paiky && (activeTab[slab.id] === 'paiky' || (!slab.ekatrikaran && slab.paiky)) && (
+            {slab.paiky && (activeTab[slab.id] === 'paiky' || (activeTab[slab.id] === undefined && !slab.ekatrikaran)) && (
               <div className="space-y-4 pt-4 relative">
                 <div className="space-y-4 pl-6 pr-16"> {/* Added right padding for floating controls */}
                   <div className="space-y-2">
@@ -1553,7 +1584,7 @@ const toggleCollapse = (id: string) => {
 
 
             {/* Ekatrikaran Section Content */}
-            {slab.ekatrikaran && (activeTab[slab.id] === 'ekatrikaran' || (!slab.paiky && slab.ekatrikaran)) && (
+            {slab.ekatrikaran && (activeTab[slab.id] === 'ekatrikaran' || (activeTab[slab.id] === undefined && !slab.paiky)) && (
               <div className="space-y-4 pt-4 relative">
                 <div className="space-y-4 pl-6 pr-16"> {/* Added right padding for floating controls */}
                   <div className="space-y-2">
@@ -1667,7 +1698,7 @@ const toggleCollapse = (id: string) => {
                   )}
 
                   {/* Paginated Entries */}
-                  {slab.ekatrikaranEntries
+                 {slab.ekatrikaranEntries
   .slice(
     (currentEkatrikaranPage[slab.id] || 0) * EKATRIKARAN_PER_PAGE,
     ((currentEkatrikaranPage[slab.id] || 0) + 1) * EKATRIKARAN_PER_PAGE
@@ -1679,72 +1710,72 @@ const toggleCollapse = (id: string) => {
       <Card key={globalIndex} className="p-3 mt-2">
         <h4 className="text-sm font-medium mb-3">Ekatrikaran Entry {globalIndex + 1}</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div>
-                              <Label>S.No Type</Label>
-                              <Select
-                                value={entry.sNoTypeUI}
-                                onValueChange={(val) =>
-                                  updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
-                                    sNoTypeUI: val as SNoTypeUI,
-                                  })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {SNO_TYPES.map((item) => (
-                                    <SelectItem key={item.key} value={item.key}>
-                                      {item.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <Label>Number</Label>
-                              <Input
-                                value={entry.sNo}
-                                onChange={(e) =>
-                                  updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
-                                    sNo: e.target.value,
-                                  })
-                                }
-                                placeholder="Enter number"
-                              />
-                            </div>
-                            <div>
-                              <Label>Area Type</Label>
-                              <Select
-                                value={entry.areaUI.areaType}
-                                onValueChange={(val) =>
-                                  updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
-                                    areaUI: { ...entry.areaUI, areaType: val as AreaTypeUI },
-                                  })
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {AREA_TYPES.map((a) => (
-                                    <SelectItem key={a.key} value={a.key}>
-                                      {a.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="md:col-span-2">
-                              <Label>Area</Label>
-                              {areaFields({ 
-    area: entry.areaUI, 
-    onChange: (area) => updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
-      areaUI: area
-    })
-  })}
-                            </div>
-                            <div className="space-y-2">
+          <div>
+            <Label>S.No Type</Label>
+            <Select
+              value={entry.sNoTypeUI}
+              onValueChange={(val) =>
+                updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                  sNoTypeUI: val as SNoTypeUI,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Type" />
+              </SelectTrigger>
+              <SelectContent>
+                {SNO_TYPES.map((item) => (
+                  <SelectItem key={item.key} value={item.key}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Number</Label>
+            <Input
+              value={entry.sNo}
+              onChange={(e) =>
+                updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                  sNo: e.target.value,
+                })
+              }
+              placeholder="Enter number"
+            />
+          </div>
+          <div>
+            <Label>Area Type</Label>
+            <Select
+              value={entry.areaUI.areaType}
+              onValueChange={(val) =>
+                updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                  areaUI: { ...entry.areaUI, areaType: val as AreaTypeUI },
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AREA_TYPES.map((a) => (
+                  <SelectItem key={a.key} value={a.key}>
+                    {a.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="md:col-span-2">
+            <Label>Area</Label>
+            {areaFields({ 
+              area: entry.areaUI, 
+              onChange: (area) => updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+                areaUI: area
+              })
+            })}
+          </div>
+          <div className="space-y-2">
             <Label>7/12 Document</Label>
             <div className="space-y-2">
               <div className="relative">
@@ -1819,30 +1850,29 @@ const toggleCollapse = (id: string) => {
           </div>
         </div>
       </Card>
-                      );
-                    })
-                  }
-                </div>
-              </div>
-            )}
-            </>
-    )}
-          </Card>
-        ))}
-        <Button onClick={addSlab} variant="outline" className="w-full bg-transparent">
-          <Plus className="w-4 h-4 mr-2" /> Add Another Slab
+    );
+  })} {/* End of ekatrikaranEntries.map() */}
+                </div> {/* End of space-y-4 pl-6 pr-16 div */}
+              </div> 
+            )} {/* End of ekatrikaran conditional */}
+          </> 
+        )} {/* End of !slab.collapsed conditional */}
+      </Card> 
+    ))} {/* End of slabs.map() */}
+    
+    <div className="flex justify-between pt-6">
+      <Button onClick={addSlab} variant="outline">
+        <Plus className="w-4 h-4 mr-2" /> Add Another Slab
+      </Button>
+      
+      {modified && (
+        <Button onClick={handleSave} disabled={loading}>
+          {loading ? "Saving..." : "Save & Continue"}
         </Button>
-        <div className="flex justify-center pt-6">
-         
-          <Button
-            onClick={handleSaveAndNext}
-            disabled={loading}
-          >
-            {loading ? "Saving..." : "Save & Continue"}{" "}
-          </Button>
-        </div>
-         </>
       )}
+    </div>
+  </> 
+)} {/* End of initialLoading conditional */}
       </CardContent>
     </Card>
   );

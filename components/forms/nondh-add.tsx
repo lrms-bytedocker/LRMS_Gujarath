@@ -140,20 +140,20 @@ export default function NondhAdd() {
     setNondhData(nondhData.map((nondh) => (nondh.id === id ? { ...nondh, ...updates } : nondh)))
   }
 
-  const handleSNoSelection = (nondhId: string, sNo: string, checked: boolean) => {
-    const nondh = nondhData.find((n) => n.id === nondhId)
-    if (nondh) {
-      let updatedSNos = [...nondh.affectedSNos]
-      if (checked) {
-        if (!updatedSNos.includes(sNo)) {
-          updatedSNos.push(sNo)
-        }
-      } else {
-        updatedSNos = updatedSNos.filter((s) => s !== sNo)
+  const handleSNoSelection = (nondhId: string, sNo: string, sNoType: "s_no" | "block_no" | "re_survey_no", checked: boolean) => {
+  const nondh = nondhData.find((n) => n.id === nondhId)
+  if (nondh) {
+    let updatedSNos = [...nondh.affectedSNos]
+    if (checked) {
+      if (!updatedSNos.some(s => s.number === sNo)) {
+        updatedSNos.push({ number: sNo, type: sNoType })
       }
-      updateNondh(nondhId, { affectedSNos: updatedSNos })
+    } else {
+      updatedSNos = updatedSNos.filter((s) => s.number !== sNo)
     }
+    updateNondh(nondhId, { affectedSNos: updatedSNos })
   }
+}
 
   const handleFileUpload = async (file: File, nondhId: string) => {
     if (!file) return;
