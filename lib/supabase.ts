@@ -674,6 +674,34 @@ static async upsertNondhs(nondhs: any[]): Promise<{ data: any, error: any }> {
     };
   }
 }
+
+static async getNondhsforDetails(landRecordId: string) {
+  console.log(`[SERVICE] getNondhsforDetails called with landRecordId: ${landRecordId}`);
+  
+  try {
+    const result = await supabase
+      .from('nondhs')
+      .select('*')
+      .eq('land_record_id', landRecordId)
+      .order('number');
+    
+    console.log(`[SERVICE] getNondhsforDetails result:`, {
+      data: result.data,
+      error: result.error,
+      count: result.data?.length || 0
+    });
+    
+    if (result.error) {
+      console.error(`[SERVICE] getNondhsforDetails error:`, result.error);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error(`[SERVICE] getNondhsforDetails exception:`, error);
+    throw error;
+  }
+}
+
   // Save nondhs
   static async saveNondhs(landRecordId: string, nondhs: Nondh[]): Promise<{ data: any, error: any }> {
   try {
@@ -1015,4 +1043,123 @@ if (data?.error) {
     return { data: null, error };
   }
 }
+
+  // Get nondh details with owner relations
+static async getNondhDetailsWithRelations(landRecordId: string) {
+  console.log(`[SERVICE] getNondhDetailsWithRelations called with landRecordId: ${landRecordId}`);
+  
+  try {
+    // First get all nondhs for this land record
+    const { data: nondhs, error: nondhError } = await supabase
+      .from('nondhs')
+      .select('id')
+      .eq('land_record_id', landRecordId);
+
+    if (nondhError) throw nondhError;
+    if (!nondhs || nondhs.length === 0) return { data: [], error: null };
+
+    // Extract valid UUIDs
+    const nondhIds = nondhs.map(n => n.id).filter(id => 
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    );
+
+    // Then get details for these nondh IDs
+    const { data, error } = await supabase
+      .from('nondh_details')
+      .select(`
+        *,
+        owner_relations: nondh_owner_relations!nondh_detail_id(*)
+      `)
+      .in('nondh_id', nondhIds);
+
+    return { data, error };
+  } catch (error) {
+    console.error('[SERVICE] Error in getNondhDetailsWithRelations:', error);
+    return { data: null, error };
+  }
+}
+static async get712Documents(landRecordId: string) {
+  console.log(`[SERVICE] Fetching 7/12 docs for land record: ${landRecordId}`);
+  
+  try {
+    // First check if basic record has documents
+    const { data: recordData } = await supabase
+      .from('land_records')
+      .select('integrated_712')
+      .eq('id', landRecordId)
+      .single();
+
+    const docs = [];
+    
+    // Add main document if exists
+    if (recordData?.integrated_712) {
+      docs.push({
+        type: 'main',
+        url: recordData.integrated_712,
+        year: 'All',
+        s_no: 'Primary'
+      });
+    }
+
+    // Get year slab documents
+    const { data: slabs } = await supabase
+      .from('year_slabs')
+      .select('id, integrated_712, start_year, end_year')
+      .eq('land_record_id', landRecordId)
+      .not('integrated_712', 'is', null);
+
+    slabs?.forEach(slab => {
+      docs.push({
+        type: 'year_slab',
+        url: slab.integrated_712,
+        year: `${slab.start_year}-${slab.end_year}`,
+        s_no: `Slab ${slab.id.slice(0, 4)}`
+      });
+    });
+
+    console.log(`[SERVICE] Found ${docs.length} documents`);
+    return { data: docs, error: null };
+  } catch (error) {
+    console.error('[SERVICE] Error fetching documents:', error);
+    return { data: null, error };
+  }
+}
+
+  // Create a new nondh detail
+  static async createNondhDetail(data: any) {
+    return await supabase
+      .from('nondh_details')
+      .insert(data)
+      .select()
+      .single();
+  }
+
+  // Update a nondh detail
+  static async updateNondhDetail(id: string, updates: any) {
+    return await supabase
+      .from('nondh_details')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+  }
+
+  // Create a new owner relation
+  static async createNondhOwnerRelation(data: any) {
+    return await supabase
+      .from('nondh_owner_relations')
+      .insert(data)
+      .select()
+      .single();
+  }
+
+  // Update an owner relation
+  static async updateNondhOwnerRelation(id: string, updates: any) {
+    return await supabase
+      .from('nondh_owner_relations')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+  }
 }
