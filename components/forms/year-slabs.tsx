@@ -246,6 +246,17 @@ const [activeTab, setActiveTab] = useState<Record<string, 'main' | 'paiky' | 'ek
 const [slabUploadedFileNames, setSlabUploadedFileNames] = useState<Record<string, string>>({});
 const [entryUploadedFileNames, setEntryUploadedFileNames] = useState<Record<string, string>>({});
 const [initialLoading, setInitialLoading] = useState(true);
+interface ValidationErrors {
+  [slabId: string]: {
+    startYear?: string
+    sNo?: string
+    integrated712?: string
+    paikyEntries?: { [index: number]: { sNo?: string; integrated712?: string } }
+    ekatrikaranEntries?: { [index: number]: { sNo?: string; integrated712?: string } }
+  }
+}
+
+const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
 // Helper function
 const extractFilenameFromUrl = (url: string): string => {
@@ -341,7 +352,7 @@ useEffect(() => {
             acre: 0, 
             guntha: 0 
           },
-          integrated712: "",
+          integrated712: landBasicInfo?.integrated712 || "", // Auto-populate URL
           paiky: false,
           paikyCount: 0,
           paikyEntries: [],
@@ -350,6 +361,18 @@ useEffect(() => {
           ekatrikaranEntries: [],
           collapsed: false
         }]);
+        
+        // Auto-populate filename if file exists from step 1
+        if (landBasicInfo?.integrated712) {
+          const filename = landBasicInfo?.integrated712FileName || 
+                          extractFilenameFromUrl(landBasicInfo.integrated712);
+          if (filename) {
+            setSlabUploadedFileNames(prev => ({
+              ...prev,
+              "1": filename
+            }));
+          }
+        }
       }
       const stepData = getStepData();
       
@@ -683,6 +706,82 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
   );
 };
 
+const validateForm = (): boolean => {
+  const errors: ValidationErrors = {};
+  let isValid = true;
+
+  slabs.forEach(slab => {
+    const slabErrors: any = {};
+
+    if (slab.startYear === "" || slab.startYear === undefined) {
+      slabErrors.startYear = "Please enter start year";
+      isValid = false;
+    }
+
+    if (!slab.sNo.trim()) {
+      slabErrors.sNo = "Please enter S.No/Block No/Re-Survey No";
+      isValid = false;
+    }
+
+    // Validate main slab document upload
+    if (!slab.integrated712) {
+      slabErrors.integrated712 = "Please upload 7/12 document for this slab";
+      isValid = false;
+    }
+
+    // Validate paiky entries
+    if (slab.paiky && slab.paikyEntries.length > 0) {
+      const paikyErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+      slab.paikyEntries.forEach((entry, index) => {
+        const entryErrors: any = {};
+        if (!entry.sNo.trim()) {
+          entryErrors.sNo = "Please enter S.No";
+          isValid = false;
+        }
+        if (!entry.integrated712) {
+          entryErrors.integrated712 = "Please upload 7/12 document";
+          isValid = false;
+        }
+        if (Object.keys(entryErrors).length > 0) {
+          paikyErrors[index] = entryErrors;
+        }
+      });
+      if (Object.keys(paikyErrors).length > 0) {
+        slabErrors.paikyEntries = paikyErrors;
+      }
+    }
+
+    // Validate ekatrikaran entries
+    if (slab.ekatrikaran && slab.ekatrikaranEntries.length > 0) {
+      const ekatrikaranErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+      slab.ekatrikaranEntries.forEach((entry, index) => {
+        const entryErrors: any = {};
+        if (!entry.sNo.trim()) {
+          entryErrors.sNo = "Please enter S.No";
+          isValid = false;
+        }
+        if (!entry.integrated712) {
+          entryErrors.integrated712 = "Please upload 7/12 document";
+          isValid = false;
+        }
+        if (Object.keys(entryErrors).length > 0) {
+          ekatrikaranErrors[index] = entryErrors;
+        }
+      });
+      if (Object.keys(ekatrikaranErrors).length > 0) {
+        slabErrors.ekatrikaranEntries = ekatrikaranErrors;
+      }
+    }
+
+    if (Object.keys(slabErrors).length > 0) {
+      errors[slab.id] = slabErrors;
+    }
+  });
+
+  setValidationErrors(errors);
+  return isValid;
+};
+
 const validateYearOrder = (slabs: YearSlabUI[]) => {
   for (let i = 1; i < slabs.length; i++) {
     // Current slab's end year must be ≤ previous slab's start year
@@ -723,7 +822,20 @@ const updateSlab = (id: string, updates: Partial<YearSlabUI>) => {
     // Update current slab
     newSlabs[index] = { ...newSlabs[index], ...updates };
 
-    // If start year changed, update NEXT slab's end year (not previous)
+// Clear validation errors for updated fields
+if (updates.startYear !== undefined || updates.sNo !== undefined || updates.integrated712 !== undefined) {
+  setValidationErrors(prev => {
+    const newErrors = { ...prev };
+    if (newErrors[id]) {
+      if (updates.startYear !== undefined) delete newErrors[id].startYear;
+      if (updates.sNo !== undefined) delete newErrors[id].sNo;
+      if (updates.integrated712 !== undefined) delete newErrors[id].integrated712;
+    }
+    return newErrors;
+  });
+}
+
+    // If start year changed, update NEXT slab's end year
     if (updates.startYear !== undefined && index < newSlabs.length - 1) {
       newSlabs[index + 1] = {
         ...newSlabs[index + 1],
@@ -752,14 +864,15 @@ const addSlab = () => {
     startYear = "";
   }
 
+   const newSlabId = Date.now().toString();
   const newSlab: YearSlabUI = {
-    id: Date.now().toString(),
+    id: newSlabId,
     startYear,
     endYear,
     sNoTypeUI: "block_no",
     sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
     areaUI: defaultArea,
-    integrated712: "",
+    integrated712: landBasicInfo?.integrated712 || "", // Auto-populate URL
     paiky: false,
     paikyCount: 0,
     paikyEntries: [],
@@ -770,6 +883,18 @@ const addSlab = () => {
   };
 
   setSlabs([...slabs, newSlab]);
+  
+  // Auto-populate filename if available
+  if (landBasicInfo?.integrated712) {
+    const filename = landBasicInfo?.integrated712FileName || 
+                    extractFilenameFromUrl(landBasicInfo.integrated712);
+    if (filename) {
+      setSlabUploadedFileNames(prev => ({
+        ...prev,
+        [newSlabId]: filename
+      }));
+    }
+  }
 };
 
   const removeSlab = (id: string) => {
@@ -845,6 +970,29 @@ const updateSlabEntry = (
       }
     }
 
+   // Clear validation errors for updated entry fields
+if (updates.sNo !== undefined || updates.integrated712 !== undefined) {
+  setValidationErrors(prev => {
+    const newErrors = { ...prev };
+    if (newErrors[slabId]?.[`${type}Entries`]?.[index]) {
+      if (updates.sNo !== undefined) delete newErrors[slabId][`${type}Entries`][index].sNo;
+      if (updates.integrated712 !== undefined) delete newErrors[slabId][`${type}Entries`][index].integrated712;
+      
+      // Clean up empty objects
+      if (Object.keys(newErrors[slabId][`${type}Entries`][index]).length === 0) {
+        delete newErrors[slabId][`${type}Entries`][index];
+      }
+      if (Object.keys(newErrors[slabId][`${type}Entries`]).length === 0) {
+        delete newErrors[slabId][`${type}Entries`];
+      }
+      if (Object.keys(newErrors[slabId]).length === 0) {
+        delete newErrors[slabId];
+      }
+    }
+    return newErrors;
+  });
+}
+
     if (type === "paiky") {
       const updatedEntries = [...(slab.paikyEntries || [])];
       updatedEntries[index] = { 
@@ -867,6 +1015,10 @@ const handleSaveAndNext = async () => {
   setLoading(true);
   
   try {
+    if (!validateForm()) {
+      setLoading(false);
+      return;
+    }
     // Check for empty start years first
     const emptyStartYears = slabs.filter(slab => slab.startYear === "" || slab.startYear === undefined);
     if (emptyStartYears.length > 0) {
@@ -1039,7 +1191,11 @@ const toggleCollapse = (id: string) => {
   }}
   onWheel={(e) => e.currentTarget.blur()}
   max={slab.endYear}
+  className={validationErrors[slab.id]?.startYear ? "border-red-500" : ""}
 />
+{validationErrors[slab.id]?.startYear && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].startYear}</p>
+)}
   <p className="text-xs text-muted-foreground">
     Must be ≤ end year ({slab.endYear})
   </p>
@@ -1103,10 +1259,14 @@ const toggleCollapse = (id: string) => {
                 <div className="space-y-2">
                   <Label>S.No / Block No / Re-Survey No *</Label>
                   <Input
-                    value={slab.sNo}
-                    onChange={(e) => updateSlab(slab.id, { sNo: e.target.value })}
-                    placeholder="Enter number"
-                  />
+  value={slab.sNo}
+  onChange={(e) => updateSlab(slab.id, { sNo: e.target.value })}
+  placeholder="Enter number"
+  className={validationErrors[slab.id]?.sNo ? "border-red-500" : ""}
+/>
+{validationErrors[slab.id]?.sNo && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].sNo}</p>
+)}
                 </div>
                 <div className="space-y-2">
                   <Label>Area Type</Label>
@@ -1163,6 +1323,9 @@ const toggleCollapse = (id: string) => {
         <Upload className="w-4 h-4" />
         {loading ? "Uploading..." : "Choose File"}
       </Button>
+      {validationErrors[slab.id]?.integrated712 && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].integrated712}</p>
+)}
     </div>
     
     {slabUploadedFileNames[slab.id] && (
@@ -1430,14 +1593,18 @@ const toggleCollapse = (id: string) => {
                             <div>
                               <Label>Number</Label>
                               <Input
-                                value={entry.sNo}
-                                onChange={(e) =>
-                                  updateSlabEntry(slab.id, "paiky", globalIndex, {
-                                    sNo: e.target.value,
-                                  })
-                                }
-                                placeholder="Enter number"
-                              />
+  value={entry.sNo}
+  onChange={(e) =>
+    updateSlabEntry(slab.id, "paiky", globalIndex, {
+      sNo: e.target.value,
+    })
+  }
+  placeholder="Enter number"
+  className={validationErrors[slab.id]?.paikyEntries?.[globalIndex]?.sNo ? "border-red-500" : ""}
+/>
+{validationErrors[slab.id]?.paikyEntries?.[globalIndex]?.sNo && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].paikyEntries[globalIndex].sNo}</p>
+)}
                             </div>
                             <div>
                               <Label>Area Type</Label>
@@ -1504,6 +1671,9 @@ const toggleCollapse = (id: string) => {
                   <Upload className="w-4 h-4" />
                   {loading ? "Uploading..." : "Choose File"}
                 </Button>
+                {validationErrors[slab.id]?.paikyEntries?.[globalIndex]?.integrated712 && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].paikyEntries[globalIndex].integrated712}</p>
+)}
               </div>
               
               {entryUploadedFileNames[`${slab.id}_paiky_${globalIndex}`] && (
@@ -1712,14 +1882,18 @@ const toggleCollapse = (id: string) => {
                             <div>
                               <Label>Number</Label>
                               <Input
-                                value={entry.sNo}
-                                onChange={(e) =>
-                                  updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
-                                    sNo: e.target.value,
-                                  })
-                                }
-                                placeholder="Enter number"
-                              />
+  value={entry.sNo}
+  onChange={(e) =>
+    updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
+      sNo: e.target.value,
+    })
+  }
+  placeholder="Enter number"
+  className={validationErrors[slab.id]?.ekatrikaranEntries?.[globalIndex]?.sNo ? "border-red-500" : ""}
+/>
+{validationErrors[slab.id]?.ekatrikaranEntries?.[globalIndex]?.sNo && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].ekatrikaranEntries[globalIndex].sNo}</p>
+)}
                             </div>
                             <div>
                               <Label>Area Type</Label>
@@ -1783,6 +1957,9 @@ const toggleCollapse = (id: string) => {
                   <Upload className="w-4 h-4" />
                   {loading ? "Uploading..." : "Choose File"}
                 </Button>
+                {validationErrors[slab.id]?.ekatrikaranEntries?.[globalIndex]?.integrated712 && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].ekatrikaranEntries[globalIndex].integrated712}</p>
+)}
               </div>
               
               {entryUploadedFileNames[`${slab.id}_ekatrikaran_${globalIndex}`] && (

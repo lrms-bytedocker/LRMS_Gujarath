@@ -236,7 +236,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
               }
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full px-1.5">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -345,10 +345,10 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
         )}
       </div>
 
-      {/* On desktop: Original single-row layout */}
-      <div className="hidden md:flex items-end gap-4">
+      {/* On desktop: Original single-row layout with better spacing */}
+      <div className="hidden md:flex items-end gap-6">
         {/* Unit Selector */}
-        <div className="space-y-2 w-[180px]">
+        <div className="space-y-2 w-[140px] flex-shrink-0">
           <Label>Unit</Label>
           <Select
             value={workingArea.unit}
@@ -376,7 +376,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
               }
             }}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[140px] px-1.5">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -402,7 +402,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
           </div>
         ) : (
           <>
-            <div className="space-y-2 min-w-[150px] flex-1">
+            <div className="space-y-2 min-w-[120px] flex-1">
               <Label>Acres</Label>
               <Input
                 type="number"
@@ -414,7 +414,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
                 className="w-full"
               />
             </div>
-            <div className="space-y-2 min-w-[120px] flex-1">
+            <div className="space-y-2 min-w-[100px] flex-1">
               <Label>Gunthas</Label>
               <Input
                 type="number"
@@ -438,7 +438,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
         {/* Secondary Fields */}
         {workingArea.unit === "sq_m" ? (
           <>
-            <div className="space-y-2 min-w-[150px] flex-1">
+            <div className="space-y-2 min-w-[120px] flex-1">
               <Label>Acres</Label>
               <Input
                 type="number"
@@ -450,7 +450,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
                 className="w-full bg-blue-50 border-blue-200"
               />
             </div>
-            <div className="space-y-2 min-w-[120px] flex-1">
+            <div className="space-y-2 min-w-[100px] flex-1">
               <Label>Gunthas</Label>
               <Input
                 type="number"
@@ -571,8 +571,36 @@ export default function NondhDetailsEdit() {
           }))
         }))
 
-        setNondhDetails(transformedDetails);
-      setOriginalDetails(transformedDetails);
+        const existingDetailNondhIds = new Set(transformedDetails.map(detail => detail.nondhId));
+const missingDetails = formattedNondhs
+  .filter(nondh => !existingDetailNondhIds.has(nondh.id))
+  .map(nondh => ({
+    id: `temp_${nondh.id}_${Date.now()}`, // Temporary ID for new records
+    nondhId: nondh.id,
+    sNo: nondh.affectedSNos?.[0] || '', // Use first affected S.No
+    type: nondh.type || 'Kabjedaar', // Default type
+    reason: "",
+    date: "",
+    vigat: "",
+    status: "valid",
+    invalidReason: "",
+    showInOutput: true,
+    hasDocuments: false,
+    docUpload: "",
+    oldOwner: "",
+    hukamDate: "",
+    hukamType: "SSRD",
+    hukamStatus: "valid",
+    hukamInvalidReason: "",
+    affectedNondhNo: "",
+    ownerRelations: [] // Initialize with empty relations
+  }));
+
+// Combine existing details with initialized missing ones
+const allDetails = [...transformedDetails, ...missingDetails];
+
+setNondhDetails(allDetails);
+setOriginalDetails(allDetails);
 
       // Load documents
       const { data: docData, error: docError } = await LandRecordService.get712Documents(recordId);
@@ -1887,23 +1915,39 @@ const sortNondhs = (a: any, b: any): number => {
                         Affected Survey Numbers:
                       </h4>
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {nondh.affectedSNos?.map((sNo: string) => {
-  const type = getSurveyNumberType(sNo);
-  const typeLabel = 
-    type === 'block_no' ? 'Block No' :
-    type === 're_survey_no' ? 'Resurvey No' : 'Survey No';
-  
-  return (
-    <span 
-      key={sNo} 
-      className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm flex items-center gap-1"
-    >
-      <span className="font-medium">{typeLabel}:</span>
-      <span>{sNo}</span>
-    </span>
-  );
-})}
-                      </div>
+  {nondh.affectedSNos
+    ?.map(sNoItem => {
+      // Parse the stringified JSON object
+      try {
+        const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
+        return {
+          number: parsed.number || sNoItem,
+          type: parsed.type || 's_no'
+        };
+      } catch (e) {
+        // Fallback if parsing fails
+        return {
+          number: sNoItem,
+          type: 's_no'
+        };
+      }
+    })
+    .sort((a, b) => {
+      const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+      const aPriority = priorityOrder.indexOf(a.type);
+      const bPriority = priorityOrder.indexOf(b.type);
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return a.number.localeCompare(b.number, undefined, { numeric: true });
+    })
+    .map(({ number, type }) => (
+      <span 
+        key={`${number}-${type}`}
+        className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm"
+      >
+        {number} ({type})
+      </span>
+    ))}
+</div>
                     </div>
                   </div>
                   <Button
@@ -2086,7 +2130,6 @@ const sortNondhs = (a: any, b: any): number => {
     </Button>
   </div>
 )}
-
       </CardContent>
     </Card>
   )

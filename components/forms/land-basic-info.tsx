@@ -33,6 +33,15 @@ function isEqual(obj1: any, obj2: any) {
   return JSON.stringify(obj1) === JSON.stringify(obj2);
 }
 
+interface ValidationErrors {
+  district?: string
+  taluka?: string
+  village?: string
+  blockNo?: string
+  reSurveyNo?: string
+  integrated712?: string
+}
+
 export default function LandBasicInfoComponent() {
   const { 
     landBasicInfo, 
@@ -46,6 +55,7 @@ export default function LandBasicInfoComponent() {
 
   const [loading, setLoading] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string>("")
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
 
   // Form data with proper initialization
   const { getStepData, updateStepData } = useStepFormData(currentStep)
@@ -103,7 +113,55 @@ export default function LandBasicInfoComponent() {
         ...updates
       }
     })
-  }, [formData, updateStepData])
+    
+    // Clear validation errors for updated fields
+    const updatedErrors = { ...validationErrors }
+    Object.keys(updates).forEach(field => {
+      if (updatedErrors[field as keyof ValidationErrors]) {
+        delete updatedErrors[field as keyof ValidationErrors]
+      }
+    })
+    setValidationErrors(updatedErrors)
+  }, [formData, updateStepData, validationErrors])
+
+  // Validation function
+  const validateForm = (): boolean => {
+    const errors: ValidationErrors = {}
+    let isValid = true
+
+    if (!formData.district) {
+      errors.district = "Please select a district"
+      isValid = false
+    }
+
+    if (!formData.taluka) {
+      errors.taluka = "Please select a taluka"
+      isValid = false
+    }
+
+    if (!formData.village) {
+      errors.village = "Please select a village"
+      isValid = false
+    }
+
+    if (!formData.blockNo) {
+      errors.blockNo = "Please enter Block No"
+      isValid = false
+    }
+
+    if (formData.isPromulgation && !formData.reSurveyNo) {
+      errors.reSurveyNo = "Please enter Re Survey No (required for Promulgation)"
+      isValid = false
+    }
+
+    if (!formData.integrated712) {
+      errors.integrated712 = "Please upload Integrated 7/12 Document"
+      isValid = false
+    }
+
+    setValidationErrors(errors)
+    return isValid
+  }
 
   // Handlers for cascading selects
   const handleDistrictChange = (value: string) => {
@@ -180,12 +238,7 @@ export default function LandBasicInfoComponent() {
   // Submission
   const handleSubmit = async () => {
     // Validate all required fields
-    if (!formData.district || !formData.taluka || !formData.village || !formData.blockNo) {
-      toast({ title: "Please fill all required fields", variant: "destructive" })
-      return
-    }
-    if (formData.isPromulgation && !formData.reSurveyNo) {
-      toast({ title: "Re Survey No is required for Promulgation", variant: "destructive" })
+    if (!validateForm()) {
       return
     }
 
@@ -264,7 +317,7 @@ export default function LandBasicInfoComponent() {
           <div className="space-y-2">
             <Label>District *</Label>
             <Select value={district} onValueChange={handleDistrictChange}>
-              <SelectTrigger>
+              <SelectTrigger className={validationErrors.district ? "border-red-500" : ""}>
                 <SelectValue placeholder="Select District" />
               </SelectTrigger>
               <SelectContent>
@@ -273,12 +326,15 @@ export default function LandBasicInfoComponent() {
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors.district && (
+              <p className="text-sm text-red-600">{validationErrors.district}</p>
+            )}
           </div>
 
           <div className="space-y-2">
             <Label>Taluka *</Label>
             <Select value={taluka} onValueChange={handleTalukaChange} disabled={!district}>
-              <SelectTrigger>
+              <SelectTrigger className={validationErrors.taluka ? "border-red-500" : ""}>
                 <SelectValue placeholder="Select Taluka" />
               </SelectTrigger>
               <SelectContent>
@@ -287,12 +343,15 @@ export default function LandBasicInfoComponent() {
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors.taluka && (
+              <p className="text-sm text-red-600">{validationErrors.taluka}</p>
+            )}
           </div>
 
           <div className="space-y-2">
             <Label>Village *</Label>
             <Select value={village} onValueChange={handleVillageChange} disabled={!taluka}>
-              <SelectTrigger>
+              <SelectTrigger className={validationErrors.village ? "border-red-500" : ""}>
                 <SelectValue placeholder="Select Village" />
               </SelectTrigger>
               <SelectContent>
@@ -301,10 +360,11 @@ export default function LandBasicInfoComponent() {
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors.village && (
+              <p className="text-sm text-red-600">{validationErrors.village}</p>
+            )}
           </div>
         </div>
-
-
 
         {/* Promulgation Display */}
         {formData.village && formData.isPromulgation !== null && (
@@ -324,7 +384,11 @@ export default function LandBasicInfoComponent() {
             value={formData.blockNo}
             onChange={(e) => updateFormField({ blockNo: e.target.value })}
             placeholder="Enter Block No"
+            className={validationErrors.blockNo ? "border-red-500" : ""}
           />
+          {validationErrors.blockNo && (
+            <p className="text-sm text-red-600">{validationErrors.blockNo}</p>
+          )}
         </div>
 
         {/* Re Survey No - Only show if promulgation is Yes */}
@@ -337,14 +401,18 @@ export default function LandBasicInfoComponent() {
                 value={formData.reSurveyNo}
                 onChange={(e) => updateFormField({ reSurveyNo: e.target.value })}
                 placeholder="Enter Re Survey No"
+                className={validationErrors.reSurveyNo ? "border-red-500" : ""}
               />
+              {validationErrors.reSurveyNo && (
+                <p className="text-sm text-red-600">{validationErrors.reSurveyNo}</p>
+              )}
             </div>
           </div>
         )}
 
         {/* Document Upload */}
         <div className="space-y-2">
-          <Label htmlFor="integrated-712">Integrated 7/12 Document</Label>
+          <Label htmlFor="integrated-712">Integrated 7/12 Document *</Label>
           <div className="flex items-center gap-4">
             <div className="relative">
               <input
@@ -365,7 +433,9 @@ export default function LandBasicInfoComponent() {
                 type="button" 
                 variant="outline" 
                 disabled={loading}
-                className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50"
+                className={`flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 ${
+                  validationErrors.integrated712 ? 'border-red-500' : ''
+                }`}
               >
                 <Upload className="w-4 h-4" />
                 {loading ? "Uploading..." : "Choose File"}
@@ -387,6 +457,9 @@ export default function LandBasicInfoComponent() {
               </div>
             )}
           </div>
+          {validationErrors.integrated712 && (
+            <p className="text-sm text-red-600">{validationErrors.integrated712}</p>
+          )}
           <p className="text-xs text-gray-500">
             Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
           </p>

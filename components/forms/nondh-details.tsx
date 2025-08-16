@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Eye, Loader2, ChevronDown, ChevronUp, Badge } from "lucide-react"
+import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Eye, Loader2, ChevronDown, ChevronUp, Badge, Divide } from "lucide-react"
 import { useLandRecord, type NondhDetail } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
@@ -257,7 +257,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
               }
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full px-1.5">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -366,10 +366,10 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
         )}
       </div>
 
-      {/* On desktop: Original single-row layout */}
-      <div className="hidden md:flex items-end gap-4">
+      {/* On desktop: Original single-row layout with better spacing */}
+      <div className="hidden md:flex items-end gap-6">
         {/* Unit Selector */}
-        <div className="space-y-2 w-[180px]">
+        <div className="space-y-2 w-[140px] flex-shrink-0">
           <Label>Unit</Label>
           <Select
             value={workingArea.unit}
@@ -397,7 +397,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
               }
             }}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[140px] px-1.5">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -423,7 +423,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
           </div>
         ) : (
           <>
-            <div className="space-y-2 min-w-[150px] flex-1">
+            <div className="space-y-2 min-w-[120px] flex-1">
               <Label>Acres</Label>
               <Input
                 type="number"
@@ -435,7 +435,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
                 className="w-full"
               />
             </div>
-            <div className="space-y-2 min-w-[120px] flex-1">
+            <div className="space-y-2 min-w-[100px] flex-1">
               <Label>Gunthas</Label>
               <Input
                 type="number"
@@ -459,7 +459,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
         {/* Secondary Fields */}
         {workingArea.unit === "sq_m" ? (
           <>
-            <div className="space-y-2 min-w-[150px] flex-1">
+            <div className="space-y-2 min-w-[120px] flex-1">
               <Label>Acres</Label>
               <Input
                 type="number"
@@ -471,7 +471,7 @@ const areaFields = ({ area, onChange }: AreaFieldsProps) => {
                 className="w-full bg-blue-50 border-blue-200"
               />
             </div>
-            <div className="space-y-2 min-w-[120px] flex-1">
+            <div className="space-y-2 min-w-[100px] flex-1">
               <Label>Gunthas</Label>
               <Input
                 type="number"
@@ -513,6 +513,8 @@ export default function NondhDetails() {
   const { yearSlabs, nondhs, setNondhs, nondhDetails, setNondhDetails, setCurrentStep, landBasicInfo } = useLandRecord()
   const { toast } = useToast()
   const { getStepData, updateStepData, markAsSaved } = useStepFormData(5) // Step 5 for NondhDetails
+  console.log('Initial nondhs data:', nondhs);
+  console.log('Land basic info:', landBasicInfo);
   const [loading, setLoading] = useState(false)
   const [nondhDetailData, setNondhDetailData] = useState<NondhDetail[]>(getStepData().nondhDetails || [])
   const [collapsedNondhs, setCollapsedNondhs] = useState<Set<string>>(new Set())
@@ -547,10 +549,60 @@ export default function NondhDetails() {
   
   return sNoTypes;
 };
-const parseNondhNumber = (nondh: any): number => {
-  if (typeof nondh.number === 'number') return nondh.number;
-  const num = parseInt(nondh.number, 10);
-  return isNaN(num) ? 0 : num;
+const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; errors: string[] } => {
+  const errors: string[] = [];
+  
+  details.forEach((detail, index) => {
+    const nondhNumber = nondhs.find(n => n.id === detail.nondhId)?.number || index + 1;
+    
+    // Common required fields for all types
+    if (!detail.type.trim()) {
+      errors.push(`Nondh ${nondhNumber}: Type is required`);
+    }
+    if (!detail.date.trim()) {
+      errors.push(`Nondh ${nondhNumber}: Date is required`);
+    }
+    
+    // Owner name validation (at least one non-empty owner name)
+    const hasValidOwnerName = detail.ownerRelations.some(rel => rel.ownerName.trim() !== "");
+    if (!hasValidOwnerName) {
+      errors.push(`Nondh ${nondhNumber}: At least one owner name is required`);
+    }
+    
+    // Type-specific validations
+    switch (detail.type) {
+      case "Varsai":
+      case "Hakkami": 
+      case "Vechand":
+      case "Hayati_ma_hakh_dakhal":
+        if (!detail.oldOwner || !detail.oldOwner.trim()) {
+          errors.push(`Nondh ${nondhNumber}: Old Owner is required for ${detail.type} type`);
+        }
+        break;
+        
+      case "Hukam":
+        if (!detail.hukamDate || !detail.hukamDate.trim()) {
+          errors.push(`Nondh ${nondhNumber}: Hukam Date is required`);
+        }
+        if (!detail.affectedNondhNo || !detail.affectedNondhNo.trim()) {
+          errors.push(`Nondh ${nondhNumber}: Affected From Nondh Number is required`);
+        }
+        if (detail.hukamStatus === "invalid" && (!detail.hukamInvalidReason || !detail.hukamInvalidReason.trim())) {
+          errors.push(`Nondh ${nondhNumber}: Hukam Invalid Reason is required when status is invalid`);
+        }
+        break;
+    }
+    
+    // Status-specific validation
+    if (detail.status === "invalid" && (!detail.invalidReason || !detail.invalidReason.trim())) {
+      errors.push(`Nondh ${nondhNumber}: Invalid Reason is required when status is invalid`);
+    }
+  });
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
 };
 const getNondhNumber = (nondh: any): number => {
   if (typeof nondh.number === 'number') return nondh.number;
@@ -654,74 +706,87 @@ const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]): num
 
   // Load nondhs from database first
   useEffect(() => {
-    const loadNondhs = async () => {
-      if (!landBasicInfo?.id) return
+  const loadNondhs = async () => {
+    if (!landBasicInfo?.id) return
 
-      try {
-        const { data: nondhData, error } = await supabase
-          .from('nondhs')
-          .select('*')
-          .eq('land_record_id', landBasicInfo.id)
-          .order('number')
+    try {
+      console.log('Fetching nondhs for land record:', landBasicInfo.id); // Add this
+      
+      const { data: nondhData, error } = await supabase
+        .from('nondhs')
+        .select('*')
+        .eq('land_record_id', landBasicInfo.id)
+        .order('number')
 
-        if (error) throw error
+      if (error) throw error
 
-        if (nondhData?.length) {
-          const formattedNondhs = nondhData.map(nondh => ({
-            id: nondh.id,
-            number: nondh.number,
-            sNoType: nondh.s_no_type,
-            affectedSNos: nondh.affected_s_nos || [],
-            nondhDoc: nondh.nondh_doc_url || '',
-          }))
+      console.log('Fetched nondhs from DB:', nondhData); // Add this
 
-          setNondhs(formattedNondhs)
-        }
-      } catch (error) {
-        console.error('Error loading nondhs:', error)
-        toast({
-          title: "Error loading nondhs",
-          description: "Could not load nondh data from database",
-          variant: "destructive"
-        })
+      if (nondhData?.length) {
+        const formattedNondhs = nondhData.map(nondh => ({
+          id: nondh.id,
+          number: nondh.number,
+          sNoType: nondh.s_no_type,
+          affectedSNos: nondh.affected_s_nos || [],
+          nondhDoc: nondh.nondh_doc_url || '',
+        }))
+
+        console.log('Formatted nondhs:', formattedNondhs); // Add this
+        setNondhs(formattedNondhs)
       }
+    } catch (error) {
+      console.error('Error loading nondhs:', error)
+      toast({
+        title: "Error loading nondhs",
+        description: "Could not load nondh data from database",
+        variant: "destructive"
+      })
     }
+  }
 
-    loadNondhs()
-  }, [landBasicInfo?.id, setNondhs, toast])
+  loadNondhs()
+}, [landBasicInfo?.id, setNondhs, toast])
 
   useEffect(() => {
   const initializeData = () => {
-    if (nondhDetailData.length === 0) {
-      const initialData: NondhDetail[] = nondhs.map(nondh => ({
-        id: nondh.id,
-        nondhId: nondh.id,
-        sNo: nondh.affectedSNos[0] || '',
-        type: "Kabjedaar",
-        reason: "",
-        date: "",
-        vigat: "",
-        status: "valid",
-        raddReason: "",
-        showInOutput: true, // Default to true
-        hasDocuments: false,
-        docUpload: "",
-        oldOwner: "",
-        hukamDate: "",
-        hukamType: "SSRD", // Default Hukam type
-        ownerRelations: [{
-          id: Date.now().toString(),
-          ownerName: "",
-          area: { value: 0, unit: "sq_m" },
-          tenure: "Navi",
-          isValid: true
-        }],
-      }));
+    // Only initialize if we have nondhs but no details yet
+    if (nondhDetailData.length === 0 && nondhs.length > 0) {
+      const initialData: NondhDetail[] = nondhs.map(nondh => {
+        // Safely get the first affected S.No
+        const firstSNo = nondh.affectedSNos?.[0];
+        const sNo = typeof firstSNo === 'string' ? firstSNo : firstSNo?.number || '';
+        
+        return {
+          id: nondh.id,
+          nondhId: nondh.id,
+          sNo,
+          type: "Kabjedaar",
+          reason: "",
+          date: "",
+          vigat: "",
+          status: "valid",
+          raddReason: "",
+          showInOutput: true,
+          hasDocuments: false,
+          docUpload: "",
+          oldOwner: "",
+          hukamDate: "",
+          hukamType: "SSRD",
+          ownerRelations: [{
+            id: Date.now().toString(),
+            ownerName: "",
+            area: { value: 0, unit: "sq_m" },
+            tenure: "Navi",
+            isValid: true
+          }],
+        };
+      });
       setNondhDetailData(initialData);
     }
   };
+  
   initializeData();
-}, [nondhs]);
+}, [nondhs, nondhDetailData.length]); 
 
   const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
     setNondhDetailData((prev) => prev.map((detail) => (detail.id === id ? { ...detail, ...updates } : detail)))
@@ -836,20 +901,24 @@ const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]): num
     }
   }
 
-const getPrimarySNoType = (affectedSNos: string[]): string => {
-  const sNoTypes = getSNoTypesFromSlabs();
+
+const getPrimarySNoType = (affectedSNos: Array<{number: string, type: string}>): string => {
+  if (!affectedSNos || affectedSNos.length === 0) return 's_no';
   
-  // Check all affected S.Nos and determine the primary type
-  const types = affectedSNos.map(sNo => sNoTypes.get(sNo) || 's_no');
+  // Priority order
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
   
-  // Priority: survey_no appears anywhere > block_no > resurvey_no
-  if (types.includes('s_no')) return 's_no';
-  if (types.includes('block_no')) return 'block_no';
-  return 're_survey_no';
+  // Find the highest priority type present
+  for (const type of priorityOrder) {
+    if (affectedSNos.some(s => s.type === type)) {
+      return type;
+    }
+  }
+  
+  return 's_no'; // default
 };
 
-// Enhanced sorting function for nondhs
-const sortNondhs = (a: any, b: any): number => {
+const sortNondhs = (a: Nondh, b: Nondh): number => {
   // Get primary types
   const aType = getPrimarySNoType(a.affectedSNos);
   const bType = getPrimarySNoType(b.affectedSNos);
@@ -863,13 +932,15 @@ const sortNondhs = (a: any, b: any): number => {
   if (aPriority !== bPriority) return aPriority - bPriority;
 
   // For same type, sort by first affected S.No numerically
-  const aFirstSNo = a.affectedSNos[0] || '';
-  const bFirstSNo = b.affectedSNos[0] || '';
+  const aFirstSNo = a.affectedSNos[0]?.number || '';
+  const bFirstSNo = b.affectedSNos[0]?.number || '';
   const sNoCompare = aFirstSNo.localeCompare(bFirstSNo, undefined, { numeric: true });
   if (sNoCompare !== 0) return sNoCompare;
 
   // Finally sort by nondh number if S.Nos are same
-  return getNondhNumber(a) - getNondhNumber(b);
+  const aNum = parseInt(a.number) || 0;
+  const bNum = parseInt(b.number) || 0;
+  return aNum - bNum;
 };
 // Helper function to sort nondhs by S.No type and number
 const getSNoTypePriority = (type: string | undefined): number => {
@@ -1524,8 +1595,8 @@ case "Bojo":
                           <span className="font-medium">Nondh No: {nondh.number}</span>
                           <div className="flex flex-wrap gap-1 mt-1">
                             <span className="text-xs px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 rounded">
-                              {typeLabel} No: {nondh.affectedSNos[0] || ''}
-                            </span>
+  {typeLabel} No: {typeof nondh.affectedSNos[0] === 'string' ? nondh.affectedSNos[0] : nondh.affectedSNos[0]?.number || ''}
+</span>
                             <span className="text-xs px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded">
                               Type: {type}
                             </span>
@@ -1769,6 +1840,16 @@ case "Bojo":
     return detail;
   });
 
+  const validation = validateNondhDetails(processedDetails);
+if (!validation.isValid) {
+  toast({
+    title: "Validation Error",
+    description: validation.errors.join('; '),
+    variant: "destructive"
+  });
+  return;
+}
+
   // Filter out empty/incomplete nondh details from processed data
   const validNondhDetails = processedDetails.filter(detail => {
     // Check if detail has meaningful content
@@ -1991,6 +2072,7 @@ case "Bojo":
           </Card>
         )}
 
+
         {/* Nondh Details by S.No */}
         {nondhs
   .map(nondh => ({
@@ -2018,36 +2100,40 @@ case "Bojo":
               <h4 className="text-sm font-medium text-muted-foreground">
                 Affected Survey Numbers:
               </h4>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {sortedNondh.affectedSNos
-                  .map(sNo => {
-                    const sNoTypes = getSNoTypesFromSlabs();
-                    const type = sNoTypes.get(sNo) || 's_no';
-                    return { sNo, type };
-                  })
-                  .sort((a, b) => {
-                    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
-                    const aPriority = priorityOrder.indexOf(a.type);
-                    const bPriority = priorityOrder.indexOf(b.type);
-                    if (aPriority !== bPriority) return aPriority - bPriority;
-                    return a.sNo.localeCompare(b.sNo, undefined, { numeric: true });
-                  })
-                  .map(({ sNo, type }) => {
-                    const typeLabel = 
-                      type === 'block_no' ? 'Block No' :
-                      type === 're_survey_no' ? 'Resurvey No' : 'Survey No';
-                    
-                    return (
-                      <span 
-                        key={sNo} 
-                        className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm flex items-center gap-1"
-                      >
-                        <span className="font-medium">{typeLabel}:</span>
-                        <span>{sNo}</span>
-                      </span>
-                    );
-                  })}
-              </div>
+             <div className="flex flex-wrap gap-2 mt-1">
+  {sortedNondh.affectedSNos
+    .map(sNoItem => {
+      // Parse the stringified JSON object
+      try {
+        const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
+        return {
+          number: parsed.number || sNoItem,
+          type: parsed.type || 's_no'
+        };
+      } catch (e) {
+        // Fallback if parsing fails
+        return {
+          number: sNoItem,
+          type: 's_no'
+        };
+      }
+    })
+    .sort((a, b) => {
+      const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+      const aPriority = priorityOrder.indexOf(a.type);
+      const bPriority = priorityOrder.indexOf(b.type);
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return a.number.localeCompare(b.number, undefined, { numeric: true });
+    })
+    .map(({ number, type }) => (
+      <span 
+        key={`${number}-${type}`}
+        className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm"
+      >
+        {number} ({type})
+      </span>
+    ))}
+</div>
             </div>
           </div>
           <Button

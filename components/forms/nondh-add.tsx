@@ -14,22 +14,23 @@ import { useStepFormData } from "@/hooks/use-step-form-data"
 
 type SNoTypeUI = "block_no" | "re_survey_no" | "survey_no";
 
+
 export default function NondhAdd() {
   const { yearSlabs, setCurrentStep, currentStep, landBasicInfo} = useLandRecord()
   const { toast } = useToast()
   const { getStepData, updateStepData, markAsSaved } = useStepFormData(4) // Step 4 for NondhAdd
   const [loading, setLoading] = useState(false)
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set())
-  const [nondhData, setNondhData] = useState<Nondh[]>([
-    {
-      id: "1",
-      number: "",
-      sNoType: "s_no",
-      affectedSNos: [],
-      nondhDoc: "",
-      nondhDocFileName: "",
-    },
-  ])
+ const [nondhData, setNondhData] = useState<Nondh[]>([
+  {
+    id: "1",
+    number: "",
+    sNoType: "s_no",
+    affectedSNos: [],  
+    nondhDoc: "",
+    nondhDocFileName: "",
+  },
+])
 
   // Initialize with saved data if available
   useEffect(() => {
@@ -63,6 +64,33 @@ export default function NondhAdd() {
   }
 }, [nondhData, updateStepData, getStepData]);
 
+const validateForm = (): boolean => {
+  let isValid = true;
+  const missingDocs: string[] = [];
+
+  const validNondhs = nondhData.filter(nondh => 
+    nondh.number.trim() !== "" && nondh.id !== "new"
+  );
+
+  validNondhs.forEach((nondh, index) => {
+    if (!nondh.nondhDoc || nondh.nondhDoc.trim() === "") {
+      // Find the original index for display purposes
+      const originalIndex = nondhData.findIndex(n => n.id === nondh.id) + 1;
+      missingDocs.push(`Nondh ${originalIndex} (${nondh.number || 'Unnamed'})`);
+      isValid = false;
+    }
+  });
+
+  if (!isValid) {
+    toast({
+      title: "Missing Documents",
+      description: `Please upload documents for: ${missingDocs.join(", ")}`,
+      variant: "destructive"
+    });
+  }
+
+  return isValid;
+};
   // Get unique S.Nos from all slabs
   const getAllSNos = () => {
   const sNos = new Map<string, { type: "s_no" | "block_no" | "re_survey_no" }>();
@@ -145,10 +173,12 @@ export default function NondhAdd() {
   if (nondh) {
     let updatedSNos = [...nondh.affectedSNos]
     if (checked) {
+      // Check if this sNo already exists in the array
       if (!updatedSNos.some(s => s.number === sNo)) {
         updatedSNos.push({ number: sNo, type: sNoType })
       }
     } else {
+      // Remove by matching the number
       updatedSNos = updatedSNos.filter((s) => s.number !== sNo)
     }
     updateNondh(nondhId, { affectedSNos: updatedSNos })
@@ -273,80 +303,91 @@ export default function NondhAdd() {
     }
   }
 
-  const handleSubmit = async () => {
-    const stepData = getStepData();
-    if (!landBasicInfo?.id) {
-      toast({ 
-        title: "Error", 
-        description: "Land record not found", 
-        variant: "destructive" 
-      })
-      return
-    }
-
-    setLoading(true)
-    try {
-      // Filter out empty nondhs (where number is empty)
-      const validNondhs = nondhData.filter(nondh => 
-        nondh.number.trim() !== "" && nondh.id !== "new"
-      )
-      
-      // Validate nondh numbers format
-      const hasInvalidNumbers = validNondhs.some(nondh => !validateNondhNumber(nondh.number))
-      if (hasInvalidNumbers) {
-        throw new Error("Nondh numbers must be in format like 10-35 or 30/45")
-      }
-
-      // Validate that all nondhs have at least one affected S.No
-      const hasEmptyAffectedSNos = validNondhs.some(nondh => nondh.affectedSNos.length === 0)
-      if (hasEmptyAffectedSNos) {
-        throw new Error("Please select at least one affected S.No for each Nondh")
-      }
-
-      // Prepare data for Supabase
-      const nondhsToSave = validNondhs.map(nondh => ({
-        land_record_id: landBasicInfo.id,
-        number: nondh.number,
-        s_no_type: nondh.sNoType,
-        affected_s_nos: nondh.affectedSNos,
-        nondh_doc_url: nondh.nondhDoc,
-        nondh_doc_filename: nondh.nondhDocFileName || null,
-      }))
-
-      // Delete existing nondhs for this land record
-      const { error: deleteError } = await supabase
-        .from("nondhs")
-        .delete()
-        .eq("land_record_id", landBasicInfo.id)
-
-      if (deleteError) throw deleteError
-
-      // Insert new nondhs
-      const { error: insertError } = await supabase
-        .from("nondhs")
-        .insert(nondhsToSave)
-
-      if (insertError) throw insertError
-
-      // Update local state with only valid nondhs
-      setNondhData(validNondhs)
-      updateStepData({ nondhs: validNondhs })
-      
-      // Mark this step as saved
-      markAsSaved()
-      
-      toast({ title: "Nondh data saved successfully" })
-      setCurrentStep(5)
-    } catch (error) {
-      toast({ 
-        title: "Error saving nondh data", 
-        description: error instanceof Error ? error.message : "Save failed",
-        variant: "destructive" 
-      })
-    } finally {
-      setLoading(false)
-    }
+ const handleSubmit = async () => {
+  const stepData = getStepData();
+  if (!landBasicInfo?.id) {
+    toast({ 
+      title: "Error", 
+      description: "Land record not found", 
+      variant: "destructive" 
+    })
+    return
   }
+
+  // Filter out empty nondhs (where number is empty) - allows empty last nondh
+  const validNondhs = nondhData.filter(nondh => 
+    nondh.number.trim() !== "" && nondh.id !== "new"
+  )
+
+  // If no valid nondhs, allow proceeding to next step
+  if (validNondhs.length === 0) {
+    setCurrentStep(5);
+    return;
+  }
+
+  // Add validation check here - will only check the validNondhs
+  if (!validateForm()) {
+    return;
+  }
+
+  setLoading(true)
+  try {
+    // Validate nondh numbers format
+    const hasInvalidNumbers = validNondhs.some(nondh => !validateNondhNumber(nondh.number))
+    if (hasInvalidNumbers) {
+      throw new Error("Nondh numbers must be in format like 10-35 or 30/45")
+    }
+
+    // Validate that all nondhs have at least one affected S.No
+    const hasEmptyAffectedSNos = validNondhs.some(nondh => nondh.affectedSNos.length === 0)
+    if (hasEmptyAffectedSNos) {
+      throw new Error("Please select at least one affected S.No for each Nondh")
+    }
+
+    // Prepare data for Supabase
+    const nondhsToSave = validNondhs.map(nondh => ({
+      land_record_id: landBasicInfo.id,
+      number: nondh.number,
+      s_no_type: nondh.sNoType,
+      affected_s_nos: nondh.affectedSNos,
+      nondh_doc_url: nondh.nondhDoc,
+      nondh_doc_filename: nondh.nondhDocFileName || null,
+    }))
+
+    // Delete existing nondhs for this land record
+    const { error: deleteError } = await supabase
+      .from("nondhs")
+      .delete()
+      .eq("land_record_id", landBasicInfo.id)
+
+    if (deleteError) throw deleteError
+
+    // Insert new nondhs
+    const { error: insertError } = await supabase
+      .from("nondhs")
+      .insert(nondhsToSave)
+
+    if (insertError) throw insertError
+
+    // Update local state with only valid nondhs
+    setNondhData(validNondhs)
+    updateStepData({ nondhs: validNondhs })
+    
+    // Mark this step as saved
+    markAsSaved()
+    
+    toast({ title: "Nondh data saved successfully" })
+    setCurrentStep(5)
+  } catch (error) {
+    toast({ 
+      title: "Error saving nondh data", 
+      description: error instanceof Error ? error.message : "Save failed",
+      variant: "destructive" 
+    })
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <Card>
@@ -402,10 +443,10 @@ export default function NondhAdd() {
     return (
       <div key={sNo} className="flex items-center space-x-2">
         <Checkbox
-          id={`${nondh.id}_${sNo}`}
-          checked={nondh.affectedSNos.includes(sNo)}
-          onCheckedChange={(checked) => handleSNoSelection(nondh.id, sNo, checked as boolean)}
-        />
+  id={`${nondh.id}_${sNo}`}
+  checked={nondh.affectedSNos.some(s => s.number === sNo)} // Changed this line
+  onCheckedChange={(checked) => handleSNoSelection(nondh.id, sNo, type, checked as boolean)}
+/>
         <Label htmlFor={`${nondh.id}_${sNo}`} className="text-sm">
           {sNo} ({sNoType})
         </Label>
@@ -415,12 +456,11 @@ export default function NondhAdd() {
 </div>
   {nondh.affectedSNos.length > 0 && (
   <p className="text-sm text-muted-foreground">
-    Selected: {nondh.affectedSNos.map(sNo => {
-      const type = availableSNos.get(sNo)?.type || "s_no";
-      const typeDisplay = type === "s_no" ? "Survey" : 
-                        type === "block_no" ? "Block" : 
+    Selected: {nondh.affectedSNos.map(sNoObj => { 
+      const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
+                        sNoObj.type === "block_no" ? "Block" : 
                         "Re-survey";
-      return `${sNo} (${typeDisplay})`;
+      return `${sNoObj.number} (${typeDisplay})`; 
     }).join(", ")}
   </p>
 )}

@@ -13,6 +13,10 @@ import { useToast } from "@/hooks/use-toast"
 import { LandRecordService } from "@/lib/supabase"
 import type { Nondh } from "@/contexts/land-record-context"
 
+const generateUUID = () => {
+  return crypto.randomUUID();
+};
+
 const initialNondhData: Nondh = {
   id: "",
   number: "",
@@ -32,7 +36,7 @@ export default function NondhAdd() {
 
   const [loading, setLoading] = useState(false)
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set())
-  const [nondhs, setNondhs] = useState<Nondh[]>([{ ...initialNondhData, id: "1" }])
+  const [nondhs, setNondhs] = useState<Nondh[]>([{ ...initialNondhData, id: generateUUID() }])
   const [originalNondhs, setOriginalNondhs] = useState<Nondh[]>([])
   const [isDataLoaded, setIsDataLoaded] = useState(false)
 
@@ -55,6 +59,7 @@ export default function NondhAdd() {
         }
       })
     })
+
 
     // Convert to array of unique entries
     return Array.from(sNosMap.entries()).map(([number, type]) => ({
@@ -158,14 +163,14 @@ useEffect(() => {
 
   // Add a new nondh
   const addNondh = () => {
-    setNondhs(prev => [
-      ...prev,
-      {
-        ...initialNondhData,
-        id: Date.now().toString()
-      }
-    ])
-  }
+  setNondhs(prev => [
+    ...prev,
+    {
+      ...initialNondhData,
+      id: generateUUID()
+    }
+  ])
+}
 
   // Remove a nondh
   const removeNondh = (id: string) => {
@@ -175,20 +180,48 @@ useEffect(() => {
   }
 
   // Handle S.No selection
-  const handleSNoSelection = (nondhId: string, sNo: string, checked: boolean) => {
-    const nondh = nondhs.find(n => n.id === nondhId)
-    if (nondh) {
-      let updatedSNos = [...nondh.affectedSNos]
-      if (checked) {
-        if (!updatedSNos.includes(sNo)) {
-          updatedSNos.push(sNo)
+  const handleSNoSelection = (nondhId: string, sNo: string, sNoType: "s_no" | "block_no" | "re_survey_no", checked: boolean) => {
+  const nondh = nondhs.find((n) => n.id === nondhId)
+  if (nondh) {
+    let updatedSNos = [...nondh.affectedSNos]
+    if (checked) {
+      // Check if this sNo already exists in any format
+      const alreadyExists = updatedSNos.some(item => {
+        try {
+          if (typeof item === 'string') {
+            const parsed = JSON.parse(item);
+            return parsed.number === sNo;
+          } else if (typeof item === 'object' && item.number) {
+            return item.number === sNo;
+          }
+          return item === sNo;
+        } catch {
+          return item === sNo;
         }
-      } else {
-        updatedSNos = updatedSNos.filter(s => s !== sNo)
+      });
+      
+      if (!alreadyExists) {
+        updatedSNos.push({ number: sNo, type: sNoType })
       }
-      updateNondh(nondhId, { affectedSNos: updatedSNos })
+    } else {
+      // Remove by matching the number in any format
+      updatedSNos = updatedSNos.filter((item) => {
+        try {
+          if (typeof item === 'string') {
+            const parsed = JSON.parse(item);
+            return parsed.number !== sNo;
+          } else if (typeof item === 'object' && item.number) {
+            return item.number !== sNo;
+          }
+          return item !== sNo;
+        } catch {
+          return item !== sNo;
+        }
+      });
     }
+    updateNondh(nondhId, { affectedSNos: updatedSNos })
   }
+}
 
   // Handle file upload
   const handleFileUpload = async (file: File, nondhId: string) => {
@@ -276,14 +309,14 @@ useEffect(() => {
     try {
       // Prepare data for upsert
       const nondhsToSave = validNondhs.map(nondh => ({
-        id: nondh.id.length > 1 ? nondh.id : undefined, // Only include ID if it's not a temporary one
-        land_record_id: recordId,
-        number: nondh.number,
-        s_no_type: nondh.sNoType,
-        affected_s_nos: nondh.affectedSNos,
-        nondh_doc_url: nondh.nondhDoc || null,
-        nondh_doc_filename: nondh.nondhDocFileName || null
-      }))
+  id: nondh.id,
+  land_record_id: recordId,
+  number: nondh.number,
+  s_no_type: nondh.sNoType,
+  affected_s_nos: nondh.affectedSNos,
+  nondh_doc_url: nondh.nondhDoc || null,
+  nondh_doc_filename: nondh.nondhDocFileName || null
+}))
 
       // Use upsert to handle both inserts and updates
       const { error } = await LandRecordService.upsertNondhs(nondhsToSave)
@@ -383,10 +416,20 @@ useEffect(() => {
                   <div key={number} className="flex items-center space-x-2">
                     <Checkbox
                       id={`${nondh.id}_${number}`}
-                      checked={nondh.affectedSNos.includes(number)}
-                      onCheckedChange={(checked) => 
-                        handleSNoSelection(nondh.id, number, checked as boolean)
-                      }
+                     checked={nondh.affectedSNos.some(item => {
+  try {
+    if (typeof item === 'string') {
+      const parsed = JSON.parse(item);
+      return parsed.number === number;
+    } else if (typeof item === 'object' && item.number) {
+      return item.number === number;
+    }
+    return item === number; // fallback for plain string numbers
+  } catch {
+    return item === number;
+  }
+})}
+                      onCheckedChange={(checked) => handleSNoSelection(nondh.id, number, type, checked as boolean)}
                     />
                     <Label htmlFor={`${nondh.id}_${number}`} className="text-sm">
                       {type} {number}
@@ -395,13 +438,29 @@ useEffect(() => {
                 ))}
               </div>
               {nondh.affectedSNos.length > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Selected: {nondh.affectedSNos.map(sNo => {
-                    const sNoInfo = getAllSNos().find(item => item.number === sNo);
-                    return `${sNoInfo?.type || 'S.No.'} ${sNo}`;
-                  }).join(", ")}
-                </p>
-              )}
+  <p className="text-sm text-muted-foreground">
+    Selected: {nondh.affectedSNos.map((item, index) => {
+      try {
+        let sNoObj;
+        if (typeof item === 'string') {
+          sNoObj = JSON.parse(item);
+        } else if (typeof item === 'object' && item.number) {
+          sNoObj = item;
+        } else {
+          // fallback for plain string numbers
+          return `${item} (S.No.)`;
+        }
+        
+        const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
+                          sNoObj.type === "block_no" ? "Block" : 
+                          sNoObj.type === "re_survey_no" ? "Re-survey" : "S.No.";
+        return `${sNoObj.number} (${typeDisplay})`;
+      } catch {
+        return `${item} (S.No.)`;
+      }
+    }).join(", ")}
+  </p>
+)}
             </div>
 
             {/* Document Upload */}

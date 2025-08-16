@@ -604,8 +604,25 @@ static async upsertNondhs(nondhs: any[]): Promise<{ data: any, error: any }> {
         number: String(nondh.number),
         s_no_type: nondh.sNoType || nondh.s_no_type || 's_no',
         affected_s_nos: Array.isArray(affectedSNos) 
-          ? affectedSNos.map(s => typeof s === 'object' ? s.number : s).filter(Boolean)
-          : [],
+  ? affectedSNos.map(s => {
+      if (typeof s === 'object' && s.number) {
+        // Keep the full object structure
+        return JSON.stringify({ number: s.number, type: s.type });
+      } else if (typeof s === 'string') {
+        try {
+          // If it's already a JSON string, keep it as is
+          const parsed = JSON.parse(s);
+          return JSON.stringify({ number: parsed.number, type: parsed.type });
+        } catch {
+          // If it's a plain string number, wrap it as s_no type
+          return JSON.stringify({ number: s, type: 's_no' });
+        }
+      } else {
+        // Fallback for plain string numbers
+        return JSON.stringify({ number: s, type: 's_no' });
+      }
+    }).filter(Boolean)
+  : [],
         nondh_doc_url: nondh.nondhDoc || nondh.nondh_doc_url || null,
         nondh_doc_filename: nondh.nondhDocFileName || nondh.nondh_doc_filename || null
       };
@@ -622,17 +639,23 @@ static async upsertNondhs(nondhs: any[]): Promise<{ data: any, error: any }> {
       throw error;
     }
 
-    return { 
-      data: data?.map(d => ({
-        id: d.id,
-        number: d.number,
-        sNoType: d.s_no_type,
-        affectedSNos: d.affected_s_nos || [],
-        nondhDoc: d.nondh_doc_url || "",
-        nondhDocFileName: d.nondh_doc_filename || ""
-      })), 
-      error: null 
-    };
+   return { 
+  data: data?.map(d => ({
+    id: d.id,
+    number: d.number,
+    sNoType: d.s_no_type,
+    affectedSNos: (d.affected_s_nos || []).map(item => {
+      // The data comes back as JSON strings from the database
+      if (typeof item === 'string') {
+        return item; // Keep as JSON string
+      }
+      return JSON.stringify(item); // Convert object to JSON string
+    }),
+    nondhDoc: d.nondh_doc_url || "",
+    nondhDocFileName: d.nondh_doc_filename || ""
+  })), 
+  error: null 
+};
   } catch (error) {
     console.error('[upsertNondhs] Error:', error);
     return { 

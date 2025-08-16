@@ -66,7 +66,7 @@ export interface Nondh {
   id: string
   number: string
   sNoType: "s_no" | "block_no" | "re_survey_no"
-  affectedSNos: string[]
+  affectedSNos: Array<{ number: string; type: "s_no" | "block_no" | "re_survey_no" }>
   nondhDoc?: string
   nondhDocFileName?: string
 }
@@ -150,7 +150,6 @@ export function LandRecordProvider({
   const [isLoading, setIsLoading] = useState(mode !== 'add');
   
   // Add useEffect to load data if in view/edit mode
- // In LandRecordProvider component
 useEffect(() => {
   if (mode !== 'add' && recordId) {
     const loadData = async () => {
