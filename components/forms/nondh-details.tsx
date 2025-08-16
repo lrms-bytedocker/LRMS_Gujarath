@@ -671,13 +671,6 @@ const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]): num
   const bNondhNo = nondhB ? getNondhNumber(nondhB) : 0;
   return aNondhNo - bNondhNo;
 };
-  // Initialize with saved data if available
-  useEffect(() => {
-  const stepData = getStepData()
-  if (stepData.nondhDetails) {
-    setNondhDetailData(stepData.nondhDetails)
-  }
-}, [getStepData])
 
   // Update form data whenever nondhDetailData changes (with debouncing to prevent excessive updates)
   useEffect(() => {
@@ -704,89 +697,93 @@ const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]): num
     }
   }, [nondhDetailData, updateStepData, getStepData])
 
-  // Load nondhs from database first
-  useEffect(() => {
+// Load nondhs from database first
+useEffect(() => {
   const loadNondhs = async () => {
-    if (!landBasicInfo?.id) return
+    if (!landBasicInfo?.id) return;
 
     try {
-      console.log('Fetching nondhs for land record:', landBasicInfo.id); // Add this
-      
       const { data: nondhData, error } = await supabase
         .from('nondhs')
         .select('*')
         .eq('land_record_id', landBasicInfo.id)
-        .order('number')
+        .order('number');
 
-      if (error) throw error
-
-      console.log('Fetched nondhs from DB:', nondhData); // Add this
+      if (error) throw error;
 
       if (nondhData?.length) {
         const formattedNondhs = nondhData.map(nondh => ({
           id: nondh.id,
-          number: nondh.number,
+          number: nondh.number.toString(),
           sNoType: nondh.s_no_type,
-          affectedSNos: nondh.affected_s_nos || [],
+          affectedSNos: Array.isArray(nondh.affected_s_nos) 
+            ? nondh.affected_s_nos
+            : nondh.affected_s_nos 
+              ? JSON.parse(nondh.affected_s_nos) 
+              : [],
           nondhDoc: nondh.nondh_doc_url || '',
-        }))
-
-        console.log('Formatted nondhs:', formattedNondhs); // Add this
-        setNondhs(formattedNondhs)
+        }));
+        
+        setNondhs(formattedNondhs);
+        updateStepData({ nondhs: formattedNondhs }); // Keep step data in sync
       }
     } catch (error) {
-      console.error('Error loading nondhs:', error)
-      toast({
-        title: "Error loading nondhs",
-        description: "Could not load nondh data from database",
-        variant: "destructive"
-      })
-    }
-  }
-
-  loadNondhs()
-}, [landBasicInfo?.id, setNondhs, toast])
-
-  useEffect(() => {
-  const initializeData = () => {
-    // Only initialize if we have nondhs but no details yet
-    if (nondhDetailData.length === 0 && nondhs.length > 0) {
-      const initialData: NondhDetail[] = nondhs.map(nondh => {
-        // Safely get the first affected S.No
-        const firstSNo = nondh.affectedSNos?.[0];
-        const sNo = typeof firstSNo === 'string' ? firstSNo : firstSNo?.number || '';
-        
-        return {
-          id: nondh.id,
-          nondhId: nondh.id,
-          sNo,
-          type: "Kabjedaar",
-          reason: "",
-          date: "",
-          vigat: "",
-          status: "valid",
-          raddReason: "",
-          showInOutput: true,
-          hasDocuments: false,
-          docUpload: "",
-          oldOwner: "",
-          hukamDate: "",
-          hukamType: "SSRD",
-          ownerRelations: [{
-            id: Date.now().toString(),
-            ownerName: "",
-            area: { value: 0, unit: "sq_m" },
-            tenure: "Navi",
-            isValid: true
-          }],
-        };
-      });
-      setNondhDetailData(initialData);
+      console.error('Error loading nondhs:', error);
+      toast({ title: "Error loading nondhs", variant: "destructive" });
     }
   };
-  
-  initializeData();
-}, [nondhs, nondhDetailData.length]); 
+
+  loadNondhs();
+}, [landBasicInfo?.id]);
+
+useEffect(() => {
+  if (nondhs.length > 0) {
+    const stepData = getStepData();
+
+    const needsReinit = nondhDetailData.length === 0 || 
+                       nondhDetailData.length !== nondhs.length ||
+                       !nondhs.every(nondh => nondhDetailData.some(detail => detail.nondhId === nondh.id));
+    
+    if (needsReinit) {
+      // Use saved data if available and matches current nondhs
+      if (stepData.nondhDetails && 
+          stepData.nondhDetails.length === nondhs.length &&
+          nondhs.every(nondh => stepData.nondhDetails.some(detail => detail.nondhId === nondh.id))) {
+        setNondhDetailData(stepData.nondhDetails);
+      } else {
+        // Initialize new data with proper affectedSNos handling
+        const initialData = nondhs.map(nondh => {
+          const firstSNo = Array.isArray(nondh.affectedSNos) && nondh.affectedSNos.length > 0
+            ? typeof nondh.affectedSNos[0] === 'string'
+              ? JSON.parse(nondh.affectedSNos[0]).number
+              : nondh.affectedSNos[0].number
+            : '';
+            
+          return {
+            id: nondh.id,
+            nondhId: nondh.id,
+            sNo: firstSNo,
+            type: "Kabjedaar",
+            reason: "",
+            date: "",
+            vigat: "",
+            status: "valid",
+            showInOutput: true,
+            hasDocuments: false,
+            ownerRelations: [{
+              id: Date.now().toString(),
+              ownerName: "",
+              area: { value: 0, unit: "sq_m" },
+              tenure: "Navi",
+              isValid: true
+            }],
+          };
+        });
+        setNondhDetailData(initialData);
+      }
+    }
+  }
+}, [nondhs]);
 
   const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
     setNondhDetailData((prev) => prev.map((detail) => (detail.id === id ? { ...detail, ...updates } : detail)))
