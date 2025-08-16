@@ -3,6 +3,7 @@
 import { Building2, FileText, Home, Layers, MapPin, Users, BookOpen, Search } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useEffect } from "react"
 
 import {
   Sidebar,
@@ -23,57 +24,87 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ChevronRight } from "lucide-react"
 
 const menuItems = [
-  {
-    title: "Dashboard",
-    url: "/",
-    icon: Home,
-  },
+  // {
+  //   title: "Dashboard",
+  //   url: "/land-master",
+  //   icon: MapPin,
+  // },
   {
     title: "Land Master",
     url: "/land-master",
     icon: MapPin,
   },
-  {
-    title: "Slab Management",
-    url: "/slab-management",
-    icon: Layers,
-  },
-  {
-    title: "Panipatrak Registry",
-    url: "/panipatrak",
-    icon: Users,
-  },
-  {
-    title: "Land Notice (Nondh)",
-    icon: FileText,
-    items: [
-      {
-        title: "Land Notice Entry",
-        url: "/land-notice/entry",
-      },
-      {
-        title: "Land Notice Details",
-        url: "/land-notice/details",
-      },
-    ],
-  },
+  // {
+  //   title: "Slab Management",
+  //   url: "/slab-management",
+  //   icon: Layers,
+  // },
+  // {
+  //   title: "Panipatrak Registry",
+  //   url: "/panipatrak",
+  //   icon: Users,
+  // },
+  // {
+  //   title: "Land Notice (Nondh)",
+  //   icon: FileText,
+  //   items: [
+  //     {
+  //       title: "Land Notice Entry",
+  //       url: "/land-notice/entry",
+  //     },
+  //     {
+  //       title: "Land Notice Details",
+  //       url: "/land-notice/details",
+  //     },
+  //   ],
+  // },
   {
     title: "Passbook Ledger",
     url: "/passbook",
     icon: BookOpen,
   },
-  {
-    title: "Reports & Queries",
-    url: "/reports",
-    icon: Search,
-  },
+  // {
+  //   title: "Reports & Queries",
+  //   url: "/reports",
+  //   icon: Search,
+  // },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
 
+  // Close sidebar on mobile when pathname changes
+  useEffect(() => {
+    const closeMobileSidebar = () => {
+      const isMobile = window.innerWidth < 1024
+      if (isMobile) {
+        // Try multiple methods to close the sidebar
+        
+        // Method 1: Using data attributes (most common)
+        const sidebar = document.querySelector('[data-sidebar="sidebar"]') as HTMLElement;
+        if (sidebar) {
+          sidebar.setAttribute('data-state', 'closed')
+        }
+        
+        // Method 2: Using CSS classes
+        const sidebarOverlay = document.querySelector('.sheet-overlay, [data-sheet-overlay]') as HTMLElement;
+        if (sidebarOverlay) {
+          sidebarOverlay.click()
+        }
+        
+        // Method 3: Dispatch escape key event to close modal/sheet
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      }
+    }
+
+    closeMobileSidebar()
+  }, [pathname])
+
   return (
     <Sidebar className="border-r">
+      {/* Hidden title for accessibility - required for mobile sheet */}
+      <span className="sr-only">Navigation Menu</span>
+      
       <SidebarHeader className="border-b px-6 py-4">
         <div className="flex items-center gap-2">
           <Building2 className="h-6 w-6 text-blue-600" />

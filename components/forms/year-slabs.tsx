@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight} from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -1307,33 +1307,37 @@ const toggleCollapse = (id: string) => {
                   {/* Horizontal Pagination at Top */}
                   {slab.paikyCount > PAIKY_PER_PAGE && (
                     <div className="flex justify-between items-center mb-4">
-                      <div className="text-sm text-muted-foreground">
-                        Page {(currentPaikyPage[slab.id] || 0) + 1} of {Math.ceil(slab.paikyCount / PAIKY_PER_PAGE)}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={(currentPaikyPage[slab.id] || 0) === 0}
-                          onClick={() => setCurrentPaikyPage(prev => ({
-                            ...prev,
-                            [slab.id]: (prev[slab.id] || 0) - 1
-                          }))}
-                        >
-                          Previous
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={(currentPaikyPage[slab.id] || 0) >= Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) - 1}
-                          onClick={() => setCurrentPaikyPage(prev => ({
-                            ...prev,
-                            [slab.id]: (prev[slab.id] || 0) + 1
-                          }))}
-                        >
-                          Next
-                        </Button>
-                      </div>
+                     <div className="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground">
+  Page {(currentPaikyPage[slab.id] || 0) + 1} of {Math.ceil(slab.paikyCount / PAIKY_PER_PAGE)}
+</div>
+                    <div className="flex gap-2">
+  <Button
+    variant="outline"
+    size="sm"
+    className="h-8 w-8 p-0 sm:h-auto sm:w-auto sm:px-4"
+    disabled={(currentPaikyPage[slab.id] || 0) === 0}
+    onClick={() => setCurrentPaikyPage(prev => ({
+      ...prev,
+      [slab.id]: (prev[slab.id] || 0) - 1
+    }))}
+  >
+    <ChevronLeft className="h-4 w-4 block sm:hidden" />
+    <span className="hidden sm:block">Previous</span>
+  </Button>
+  <Button
+    variant="outline"
+    size="sm"
+    className="h-8 w-8 p-0 sm:h-auto sm:w-auto sm:px-4"
+    disabled={(currentPaikyPage[slab.id] || 0) >= Math.ceil(slab.paikyCount / PAIKY_PER_PAGE) - 1}
+    onClick={() => setCurrentPaikyPage(prev => ({
+      ...prev,
+      [slab.id]: (prev[slab.id] || 0) + 1
+    }))}
+  >
+    <span className="hidden sm:block">Next</span>
+    <ChevronRight className="h-4 w-4 block sm:hidden" />
+  </Button>
+</div>
                     </div>
                   )}
 
@@ -1584,33 +1588,37 @@ const toggleCollapse = (id: string) => {
                   {/* Horizontal Pagination at Top */}
                   {slab.ekatrikaranCount > EKATRIKARAN_PER_PAGE && (
                     <div className="flex justify-between items-center mb-4">
-                      <div className="text-sm text-muted-foreground">
+                      <div className="flex items-center gap-1 whitespace-nowrap text-sm text-muted-foreground">
                         Page {(currentEkatrikaranPage[slab.id] || 0) + 1} of {Math.ceil(slab.ekatrikaranCount / EKATRIKARAN_PER_PAGE)}
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={(currentEkatrikaranPage[slab.id] || 0) === 0}
-                          onClick={() => setCurrentEkatrikaranPage(prev => ({
-                            ...prev,
-                            [slab.id]: (prev[slab.id] || 0) - 1
-                          }))}
-                        >
-                          Previous
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={(currentEkatrikaranPage[slab.id] || 0) >= Math.ceil(slab.ekatrikaranCount / EKATRIKARAN_PER_PAGE) - 1}
-                          onClick={() => setCurrentEkatrikaranPage(prev => ({
-                            ...prev,
-                            [slab.id]: (prev[slab.id] || 0) + 1
-                          }))}
-                        >
-                          Next
-                        </Button>
-                      </div>
+                     <div className="flex gap-2">
+  <Button
+    variant="outline"
+    size="sm"
+    className="h-8 w-8 p-0 sm:h-auto sm:w-auto sm:px-4"
+    disabled={(currentEkatrikaranPage[slab.id] || 0) === 0}
+    onClick={() => setCurrentEkatrikaranPage(prev => ({
+      ...prev,
+      [slab.id]: (prev[slab.id] || 0) - 1
+    }))}
+  >
+    <ChevronLeft className="h-4 w-4 block sm:hidden" />
+    <span className="hidden sm:block">Previous</span>
+  </Button>
+  <Button
+    variant="outline"
+    size="sm"
+    className="h-8 w-8 p-0 sm:h-auto sm:w-auto sm:px-4"
+    disabled={(currentEkatrikaranPage[slab.id] || 0) >= Math.ceil(slab.ekatrikaranCount / EKATRIKARAN_PER_PAGE) - 1}
+    onClick={() => setCurrentEkatrikaranPage(prev => ({
+      ...prev,
+      [slab.id]: (prev[slab.id] || 0) + 1
+    }))}
+  >
+    <span className="hidden sm:block">Next</span>
+    <ChevronRight className="h-4 w-4 block sm:hidden" />
+  </Button>
+</div>
                     </div>
                   )}
 
