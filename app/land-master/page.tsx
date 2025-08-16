@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Card,
+  Card, 
   CardContent,
   CardDescription,
   CardHeader,
@@ -407,8 +407,8 @@ export default function LandMaster() {
                   <TableHead>Village</TableHead>
                   <TableHead>Block No</TableHead>
                   <TableHead>Re-Survey No</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  { /* <TableHead>Status</TableHead> */} 
+                  <TableHead>Actions</TableHead> 
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -441,7 +441,7 @@ export default function LandMaster() {
                       <TableCell>{land.village}</TableCell>
                       <TableCell>{land.block_no}</TableCell>
                       <TableCell>{land.re_survey_no}</TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         <Badge variant="secondary">Active</Badge>
                       </TableCell>
                       <TableCell>
@@ -454,6 +454,17 @@ export default function LandMaster() {
                           </Link>
                         </div>
                       </TableCell>
+                      </TableCell> */} 
+<TableCell>
+   <div className="flex gap-2">
+    <Link href={`/land-master/forms?mode=view&id=${land.id}`}>
+      <Button variant="ghost" size="sm">View</Button>
+    </Link>
+    <Link href={`/land-master/forms?mode=edit&id=${land.id}`}>
+      <Button variant="ghost" size="sm">Edit</Button>
+    </Link>
+  </div> 
+</TableCell>
                     </TableRow>
                   ))
                 )}
