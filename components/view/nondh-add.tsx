@@ -143,17 +143,26 @@ export default function NondhAdd() {
               </Label>
               <div className="flex flex-wrap gap-2">
                 {nondh.affectedSNos && nondh.affectedSNos.length > 0 ? (
-                  nondh.affectedSNos.map((sNo) => (
-                    <span 
-                      key={`${nondh.id}-${sNo}`} 
-                      className="px-2 py-1 bg-gray-100 rounded-md text-sm"
-                    >
-                      {getSNoType(sNo)} {sNo}
-                    </span>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500">No affected survey numbers</p>
-                )}
+  nondh.affectedSNos.map((sNoItem, index) => {
+    try {
+      const parsed = JSON.parse(sNoItem);
+      return (
+        <span key={`${nondh.id}-${index}`} className="px-2 py-1 bg-gray-100 rounded-md text-sm">
+          {parsed.number} ({parsed.type})
+        </span>
+      );
+    } catch (error) {
+      // Handle JSON parsing errors
+      return (
+        <span key={`${nondh.id}-${index}`} className="px-2 py-1 bg-red-100 rounded-md text-sm">
+          Invalid data: {sNoItem}
+        </span>
+      );
+    }
+  })
+) : (
+  <p className="text-sm text-gray-500">No affected survey numbers</p>
+)}
               </div>
             </div>
 
