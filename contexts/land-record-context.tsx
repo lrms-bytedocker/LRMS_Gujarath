@@ -88,6 +88,19 @@ export interface NondhDetail {
   hukamStatus?: "valid" | "invalid" | "nullified";
   hukamInvalidReason?: string;
   affectedNondhNo?: string;
+  ganot?: string;
+  // New fields for transfers
+  ownerTransfers?: Array<{
+    id: string
+    oldOwner: string
+    newOwners: string[]
+    equalDistribution: boolean
+    oldOwnerArea: { value: number; unit: AreaUnit }
+    newOwnerAreas: Array<{ ownerId: string; area: { value: number; unit: AreaUnit } }>
+  }>
+  // Vechand specific fields
+  sdDate?: string
+  amount?: number
   ownerRelations: Array<{
     id: string
     ownerName: string
@@ -109,6 +122,22 @@ export interface LocalFormData {
     panipatraks?: Panipatrak[]
     nondhs?: Nondh[]
     nondhDetails?: NondhDetail[]
+    // Add the new fields for step 5 (NondhDetails component state)
+    ownerTransfers?: Record<string, Array<{
+      id: string
+      oldOwner: string
+      newOwners: string[]
+      equalDistribution: boolean
+      oldOwnerArea: { value: number; unit: string }
+      newOwnerAreas: Array<{ ownerId: string; area: { value: number; unit: string } }>
+    }>>
+    transferEqualDistribution?: Record<string, Record<string, boolean>>
+    affectedNondhDetails?: Record<string, Array<{
+      id: string
+      nondhNo: string
+      status: "valid" | "invalid" | "nullified"
+      invalidReason?: string
+    }>>
   }
 }
 

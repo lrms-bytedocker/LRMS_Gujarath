@@ -33,12 +33,14 @@ const nondhTypes = [
 
 const tenureTypes = ["Navi", "Juni", "Kheti_Kheti_ma_Juni", "NA", "Bin_Kheti_Pre_Patra", "Prati_bandhit_satta_prakar"]
 
-const hukamTypes = ["SSRD", "Collector", "Collector_ganot", "Prant", "Mamlajdaar", "GRT", "Jasu", "Krushipanch", "DILR"]
+const hukamTypes = ["SSRD", "Collector", "Collector_ganot", "Prant", "Mamlajdaar", "GRT", "Jasu", "ALT Krushipanch", "DILR"]
+
+const ganotOptions = ["1st Right", "2nd Right"]
 
 const statusTypes = [
-  { value: "valid", label: "Valid" },
-  { value: "invalid", label: "Invalid" },
-  { value: "nullified", label: "Nullified" }
+  { value: "valid", label: "Pramanik" },
+  { value: "invalid", label: "Radd" },
+  { value: "nullified", label: "Na manjoor" }
 ]
 
 const GUNTHAS_PER_ACRE = 40;

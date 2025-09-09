@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Download, Eye, Filter, Calendar } from "lucide-react"
+import { ArrowLeft, Download, Eye, Filter, Calendar, AlertTriangle } from "lucide-react"
 import { useLandRecord } from "@/contexts/land-record-context"
 import { convertToSquareMeters } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
@@ -24,176 +24,517 @@ interface PassbookEntry {
   createdAt: string
 }
 
+interface NondhDetail {
+  id: string
+  nondhId: string
+  sNo: string
+  type: string
+  subType?: string
+  vigat?: string
+  invalidReason?: string
+  oldOwner?: string
+  status: 'valid' | 'invalid' | 'nullified'
+  hukamStatus?: 'valid' | 'invalid' | 'nullified'
+  hukamInvalidReason?: string
+  affectedNondhNo?: string
+  showInOutput: boolean
+  hasDocuments: boolean
+  docUploadUrl?: string
+  createdAt: string
+  nondhNumber?: number
+  affectedSNos?: string[]
+  // Add fields for document URLs
+  nondhDocUrl?: string
+  docUrl?: string
+}
+
 export default function OutputViews() {
   const { yearSlabs, panipatraks, nondhs, nondhDetails, setCurrentStep } = useLandRecord()
   const { toast } = useToast()
   const router = useRouter()
   const [passbookData, setPassbookData] = useState<PassbookEntry[]>([])
-  const [filteredNondhs, setFilteredNondhs] = useState<any[]>([])
+  const [filteredNondhs, setFilteredNondhs] = useState<NondhDetail[]>([])
   const [dateFilter, setDateFilter] = useState("")
 
+  // Helper function to check if a string is a valid URL
+const isValidUrl = (string: string): boolean => {
+  try {
+    new URL(string);
+    return true;
+  } catch (_) {
+    return false;
+  }
+};
+  // Helper function to get S.No types from slabs
+  const getSNoTypesFromSlabs = () => {
+    const sNoTypes = new Map<string, string>();
+    
+    yearSlabs?.forEach(slab => {
+      // Survey numbers
+      slab.surveyNumbers?.forEach((sNo: string) => {
+        sNoTypes.set(sNo, 's_no');
+      });
+      
+      // Block numbers  
+      slab.blockNumbers?.forEach((blockNo: string) => {
+        sNoTypes.set(blockNo, 'block_no');
+      });
+      
+      // Re-survey numbers
+      slab.reSurveyNumbers?.forEach((reSurveyNo: string) => {
+        sNoTypes.set(reSurveyNo, 're_survey_no');
+      });
+    });
+    
+    return sNoTypes;
+  };
+
+  // Helper function to get nondh number
+  const getNondhNumber = (nondh: any): number => {
+    return parseInt(nondh?.number || '0', 10);
+  };
+
+  // Helper function to format affected S.Nos properly
+const formatAffectedSNos = (affectedSNos: any): string => {
+  if (!affectedSNos) return '-';
+  
+  try {
+    let sNos: Array<{number: string, type: string}> = [];
+    
+    // Handle if it's already an array of objects
+    if (Array.isArray(affectedSNos)) {
+      // Check if first element is already an object with number/type properties
+      if (affectedSNos.length > 0 && typeof affectedSNos[0] === 'object' && affectedSNos[0].number && affectedSNos[0].type) {
+        sNos = affectedSNos;
+      } 
+      // Handle if it's an array of JSON strings
+      else if (typeof affectedSNos[0] === 'string' && affectedSNos[0].startsWith('{')) {
+        sNos = affectedSNos.map(sNo => {
+          try {
+            return JSON.parse(sNo);
+          } catch {
+            return { number: sNo, type: 's_no' };
+          }
+        });
+      }
+      // Handle simple array of strings
+      else {
+        sNos = affectedSNos.map(sNo => ({ number: sNo.toString(), type: 's_no' }));
+      }
+    }
+    // Handle if it's a string (could be JSON array or single JSON object)
+    else if (typeof affectedSNos === 'string') {
+      // Try to parse JSON array
+      if (affectedSNos.startsWith('[')) {
+        try {
+          sNos = JSON.parse(affectedSNos);
+        } catch {
+          // If not JSON array, try to parse as single JSON object
+          try {
+            const singleObj = JSON.parse(affectedSNos);
+            sNos = [singleObj];
+          } catch {
+            // If not JSON at all, treat as comma-separated values
+            return affectedSNos.split(',').map(s => s.trim()).join(', ');
+          }
+        }
+      } 
+      // Try to parse single JSON object
+      else if (affectedSNos.startsWith('{')) {
+        try {
+          const singleObj = JSON.parse(affectedSNos);
+          sNos = [singleObj];
+        } catch {
+          // If not JSON, treat as simple string
+          return affectedSNos;
+        }
+      }
+      // Simple comma-separated string
+      else {
+        return affectedSNos.split(',').map(s => s.trim()).join(', ');
+      }
+    }
+    // Handle if it's a single object
+    else if (typeof affectedSNos === 'object' && affectedSNos.number && affectedSNos.type) {
+      sNos = [affectedSNos];
+    }
+    
+    // Format the S.Nos nicely with type labels
+    if (sNos && sNos.length > 0) {
+      return sNos.map(sNo => {
+        if (typeof sNo === 'object' && sNo.number && sNo.type) {
+          const typeLabel = sNo.type === 'block_no' ? 'Block' : 
+                           sNo.type === 're_survey_no' ? 'Re-survey' : 'Survey';
+          return `${sNo.number} (${typeLabel})`;
+        }
+        return sNo.toString();
+      }).join(', ');
+    }
+    
+    return '-';
+  } catch (error) {
+    console.warn('Error formatting affected S.Nos:', error);
+    return typeof affectedSNos === 'string' ? affectedSNos : JSON.stringify(affectedSNos);
+  }
+};
+const getPrimarySNoType = (affectedSNos: string[]): string => {
+  if (!affectedSNos || affectedSNos.length === 0) return 's_no';
+  
+  // Priority order: s_no > block_no > re_survey_no
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+  
+  // Parse the stringified JSON objects to get the actual types
+  const types = affectedSNos.map(sNoStr => {
+    try {
+      const parsed = JSON.parse(sNoStr);
+      return parsed.type || 's_no';
+    } catch (e) {
+      return 's_no'; // fallback
+    }
+  });
+  
+  // Find the highest priority type present
+  for (const type of priorityOrder) {
+    if (types.includes(type)) {
+      return type;
+    }
+  }
+  
+  return 's_no'; // default
+};
+
+  // Sorting function for nondhs
+ const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail): number => {
+  // Get the nondh objects for the details
+  const nondhA = nondhs.find(n => n.id === a.nondhId);
+  const nondhB = nondhs.find(n => n.id === b.nondhId);
+  
+  if (!nondhA || !nondhB) return 0;
+  
+  // Use the same getPrimarySNoType function for consistency
+  const typeA = getPrimarySNoType(nondhA.affectedSNos);
+  const typeB = getPrimarySNoType(nondhB.affectedSNos);
+  
+  // Priority order: s_no > block_no > re_survey_no
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+  const priorityA = priorityOrder.indexOf(typeA);
+  const priorityB = priorityOrder.indexOf(typeB);
+  
+  // First sort by type priority
+  if (priorityA !== priorityB) {
+    return priorityA - priorityB;
+  }
+  
+  // Within same type group, sort only by nondh number (ascending)
+  const aNondhNo = parseInt(nondhA.number.toString()) || 0;
+  const bNondhNo = parseInt(nondhB.number.toString()) || 0;
+  return aNondhNo - bNondhNo;
+};
+
+  // Helper function to get status display name
+  const getStatusDisplayName = (status: string): string => {
+    switch (status) {
+      case 'valid': return 'Pramanik'
+      case 'invalid': return 'Radd'
+      case 'nullified': return 'Na manjoor'
+      default: return status
+    }
+  };
+
+  // Helper function to get status color classes
+  const getStatusColorClass = (status: string): string => {
+    switch (status) {
+      case 'valid': return 'bg-green-100 text-green-800'
+      case 'invalid': return 'bg-red-100 text-red-800'
+      case 'nullified': return 'bg-yellow-100 text-yellow-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  };
+
+  // Helper function to view document in new window
+  const viewDocument = (url: string, title: string) => {
+    if (url) {
+      window.open(url, '_blank', 'width=800,height=600');
+    } else {
+      toast({
+        title: 'Error',
+        description: 'Document URL not available',
+        variant: 'destructive'
+      });
+    }
+  };
+
+// Enhanced function to fetch detailed nondh information including document URLs
+const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
+  try {
+    const enhancedDetails = await Promise.all(
+      nondhDetails.map(async (detail) => {
+        let nondhDocUrl = null;
+        let affectedSNosData = null;
+        
+        // Only try to fetch from database if we have a valid nondhId
+        if (detail.nondhId) {
+          try {
+            // Get nondh document URL from nondh table
+            const { data: nondhData, error: nondhError } = await supabase
+              .from('nondhs')
+              .select('nondh_doc_url, affected_s_nos')
+              .eq('id', detail.nondhId)
+              .maybeSingle();
+
+            if (!nondhError && nondhData) {
+              nondhDocUrl = nondhData.nondh_doc_url;
+              affectedSNosData = nondhData.affected_s_nos;
+            } else if (nondhError) {
+              console.warn(`Error fetching nondh data for ${detail.nondhId}:`, nondhError);
+            }
+          } catch (error) {
+            console.warn(`Exception fetching nondh data for ${detail.nondhId}:`, error);
+          }
+        }
+
+        let docUploadUrl = detail.docUploadUrl || null;
+        let hasDocuments = detail.hasDocuments;
+        
+        // Only try to fetch detail data if we have a valid detail ID
+        if (detail.id) {
+          try {
+            // Get detail document URL from nondh_details table
+            const { data: detailData, error: detailError } = await supabase
+  .from('nondh_details')
+  .select('doc_upload_url, has_documents')
+  .eq('nondh_id', detail.nondhId)
+  .maybeSingle();
+
+            if (!detailError && detailData) {
+  console.log('Detail data fetched:', detailData); // Debug log
+  
+  // Update hasDocuments from database if available
+  if (detailData.has_documents !== undefined) {
+    hasDocuments = detailData.has_documents;
+  }
+  
+  const rawDocUrl = detailData.doc_upload_url;
+  console.log('Raw doc URL from DB:', rawDocUrl); // Debug log
+  
+  // Simplified processing - just use the text as-is if it exists
+  if (rawDocUrl && rawDocUrl.trim() !== '') {
+    docUploadUrl = rawDocUrl.trim();
+    hasDocuments = true; // Force to true if we have a URL
+    console.log('Set docUploadUrl to:', docUploadUrl);
+  }
+} else if (detailError) {
+              console.warn(`Error fetching detail data for ${detail.id}:`, detailError);
+            }
+          } catch (error) {
+            console.warn(`Exception fetching detail data for ${detail.id}:`, error);
+          }
+        }
+
+        console.log('Final result for nondh:', {
+          id: detail.id,
+          hasDocuments,
+          docUploadUrl,
+          nondhDocUrl
+        }); // Debug log
+
+        return {
+          ...detail,
+          nondhDocUrl: nondhDocUrl,
+          docUploadUrl: docUploadUrl,
+          hasDocuments: hasDocuments,
+          affectedSNos: affectedSNosData || detail.affectedSNos
+        };
+      })
+    );
+
+    return enhancedDetails;
+  } catch (error) {
+    console.error('Error fetching detailed nondh info:', error);
+    return nondhDetails;
+  }
+};
+
+  const safeNondhNumber = (nondh: any): number => {
+  const numberValue = typeof nondh.number === 'string' 
+    ? parseInt(nondh.number, 10) 
+    : nondh.number;
+  return isNaN(numberValue) ? 0 : numberValue;
+};
   useEffect(() => {
     fetchPassbookData()
     generateFilteredNondhs()
   }, [yearSlabs, panipatraks, nondhs, nondhDetails])
 
   const fetchPassbookData = async () => {
-  try {
-    console.log('Starting to fetch passbook data...');
-    
-    // Get all nondh detail IDs from nondhDetails context
-    const nondhDetailIds = nondhDetails.map(detail => detail.id);
-    console.log('nondhDetails IDs from context:', nondhDetailIds);
-
-    if (nondhDetailIds.length === 0) {
-      console.log('No nondh details found in context');
-      setPassbookData([]);
-      return;
-    }
-
-    // First, let's find the nondh_ids from our context nondhDetails
-    const nondhIds = nondhDetails.map(detail => detail.nondhId);
-    console.log('Nondh IDs from context:', nondhIds);
-
-    // Method 1: Try to match using the context IDs directly
-    let { data: ownerRelations, error: relationsError } = await supabase
-      .from('nondh_owner_relations')
-      .select(`
-        owner_name,
-        s_no,
-        acres,
-        gunthas,
-        square_meters,
-        area_unit,
-        is_valid,
-        created_at,
-        nondh_detail_id
-      `)
-      .in('nondh_detail_id', nondhDetailIds)
-      .or('is_valid.eq.true,is_valid.eq.TRUE');
-
-    console.log('Direct match results:', ownerRelations?.length || 0);
-
-    // Method 2: If no direct match, try to find via nondh_details table
-    if (!ownerRelations || ownerRelations.length === 0) {
-      console.log('No direct match found, trying to find via nondh_details...');
+    try {
+      console.log('Starting to fetch passbook data...');
       
-      // Get all nondh_details that belong to our nondhs
-      const { data: allNondhDetails, error: detailsError } = await supabase
-        .from('nondh_details')
-        .select('id, nondh_id')
-        .in('nondh_id', nondhIds);
+      // Get all nondh detail IDs from nondhDetails context
+      const nondhDetailIds = nondhDetails.map(detail => detail.id);
+      console.log('nondhDetails IDs from context:', nondhDetailIds);
 
-      console.log('All nondh_details for our nondhs:', allNondhDetails);
-
-      if (allNondhDetails && allNondhDetails.length > 0) {
-        const allDetailIds = allNondhDetails.map(detail => detail.id);
-        console.log('All detail IDs for our nondhs:', allDetailIds);
-
-        // Now fetch owner relations for all these details
-        const { data: allOwnerRelations, error: allRelationsError } = await supabase
-          .from('nondh_owner_relations')
-          .select(`
-            owner_name,
-            s_no,
-            acres,
-            gunthas,
-            square_meters,
-            area_unit,
-            is_valid,
-            created_at,
-            nondh_detail_id
-          `)
-          .in('nondh_detail_id', allDetailIds)
-          .or('is_valid.eq.true,is_valid.eq.TRUE');
-
-        ownerRelations = allOwnerRelations;
-        relationsError = allRelationsError;
-        console.log('Found owner relations via nondh lookup:', ownerRelations?.length || 0);
-      }
-    }
-
-    if (relationsError) {
-      console.error('Error fetching owner relations:', relationsError);
-      throw relationsError;
-    }
-
-    if (!ownerRelations || ownerRelations.length === 0) {
-      console.log('No owner relations found for any method');
-      setPassbookData([]);
-      return;
-    }
-
-    // Process the data - we need to map back to get nondh numbers
-    const passbookEntries = [];
-
-    for (const relation of ownerRelations) {
-      // Find which nondh this detail belongs to
-      const { data: detailInfo, error: detailError } = await supabase
-        .from('nondh_details')
-        .select('nondh_id')
-        .eq('id', relation.nondh_detail_id)
-        .single();
-
-      if (detailError) {
-        console.warn('Could not find detail info for:', relation.nondh_detail_id);
-        continue;
+      if (nondhDetailIds.length === 0) {
+        console.log('No nondh details found in context');
+        setPassbookData([]);
+        return;
       }
 
-      // Find the nondh number from context
-      const nondh = nondhs.find(n => n.id === detailInfo.nondh_id);
-      const nondhNumber = Number(nondh?.number || 0);
+      // First, let's find the nondh_ids from our context nondhDetails
+      const nondhIds = nondhDetails.map(detail => detail.nondhId);
+      console.log('Nondh IDs from context:', nondhIds);
 
-      // Calculate area
-      let area = 0;
-      if (relation.area_unit === 'acre_guntha') {
-        const totalGunthas = (relation.acres || 0) * 40 + (relation.gunthas || 0);
-        area = convertToSquareMeters(totalGunthas, 'guntha');
-      } else {
-        area = relation.square_meters || 0;
+      // Method 1: Try to match using the context IDs directly
+      let { data: ownerRelations, error: relationsError } = await supabase
+        .from('nondh_owner_relations')
+        .select(`
+          owner_name,
+          s_no,
+          acres,
+          gunthas,
+          square_meters,
+          area_unit,
+          is_valid,
+          created_at,
+          nondh_detail_id
+        `)
+        .in('nondh_detail_id', nondhDetailIds)
+        .or('is_valid.eq.true,is_valid.eq.TRUE');
+
+      console.log('Direct match results:', ownerRelations?.length || 0);
+
+      // Method 2: If no direct match, try to find via nondh_details table
+      if (!ownerRelations || ownerRelations.length === 0) {
+        console.log('No direct match found, trying to find via nondh_details...');
+        
+        // Get all nondh_details that belong to our nondhs
+        const { data: allNondhDetails, error: detailsError } = await supabase
+          .from('nondh_details')
+          .select('id, nondh_id')
+          .in('nondh_id', nondhIds);
+
+        console.log('All nondh_details for our nondhs:', allNondhDetails);
+
+        if (allNondhDetails && allNondhDetails.length > 0) {
+          const allDetailIds = allNondhDetails.map(detail => detail.id);
+          console.log('All detail IDs for our nondhs:', allDetailIds);
+
+          // Now fetch owner relations for all these details
+          const { data: allOwnerRelations, error: allRelationsError } = await supabase
+            .from('nondh_owner_relations')
+            .select(`
+              owner_name,
+              s_no,
+              acres,
+              gunthas,
+              square_meters,
+              area_unit,
+              is_valid,
+              created_at,
+              nondh_detail_id
+            `)
+            .in('nondh_detail_id', allDetailIds)
+            .or('is_valid.eq.true,is_valid.eq.TRUE');
+
+          ownerRelations = allOwnerRelations;
+          relationsError = allRelationsError;
+          console.log('Found owner relations via nondh lookup:', ownerRelations?.length || 0);
+        }
       }
 
-      console.log(`Processing: Owner ${relation.owner_name}, Nondh ${nondhNumber}, Area ${area}`);
+      if (relationsError) {
+        console.error('Error fetching owner relations:', relationsError);
+        throw relationsError;
+      }
 
-      passbookEntries.push({
-        year: new Date(relation.created_at).getFullYear(),
-        ownerName: relation.owner_name || '',
-        area,
-        sNo: relation.s_no || '',
-        nondhNumber,
-        createdAt: relation.created_at || ''
+      if (!ownerRelations || ownerRelations.length === 0) {
+        console.log('No owner relations found for any method');
+        setPassbookData([]);
+        return;
+      }
+
+      // Process the data - we need to map back to get nondh numbers
+      const passbookEntries = [];
+
+      for (const relation of ownerRelations) {
+        // Find which nondh this detail belongs to
+        const { data: detailInfo, error: detailError } = await supabase
+          .from('nondh_details')
+          .select('nondh_id')
+          .eq('id', relation.nondh_detail_id)
+          .single();
+
+        if (detailError) {
+          console.warn('Could not find detail info for:', relation.nondh_detail_id);
+          continue;
+        }
+
+        // Find the nondh number from context
+const nondh = nondhs.find(n => n.id === detailInfo.nondh_id);
+const nondhNumber = nondh ? safeNondhNumber(nondh) : 0;
+
+        // Calculate area
+        let area = 0;
+        if (relation.area_unit === 'acre_guntha') {
+          const totalGunthas = (relation.acres || 0) * 40 + (relation.gunthas || 0);
+          area = convertToSquareMeters(totalGunthas, 'guntha');
+        } else {
+          area = relation.square_meters || 0;
+        }
+
+        console.log(`Processing: Owner ${relation.owner_name}, Nondh ${nondhNumber}, Area ${area}`);
+
+        passbookEntries.push({
+          year: new Date(relation.created_at).getFullYear(),
+          ownerName: relation.owner_name || '',
+          area,
+          sNo: relation.s_no || '',
+          nondhNumber,
+          createdAt: relation.created_at || ''
+        });
+      }
+
+      console.log('Final passbook entries:', passbookEntries);
+      setPassbookData(passbookEntries.sort((a, b) => a.year - b.year));
+      
+    } catch (error) {
+      console.error('Error in fetchPassbookData:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch passbook data',
+        variant: 'destructive'
       });
     }
+  };
 
-    console.log('Final passbook entries:', passbookEntries);
-    setPassbookData(passbookEntries.sort((a, b) => a.year - b.year));
-    
-  } catch (error) {
-    console.error('Error in fetchPassbookData:', error);
-    toast({
-      title: 'Error',
-      description: 'Failed to fetch passbook data',
-      variant: 'destructive'
-    });
-  }
-};
+  const generateFilteredNondhs = async () => {
+  // Only show nondhs that are marked for output
+  const outputNondhs = nondhDetails
+    .filter((detail) => detail.showInOutput)
+    .map((detail) => {
+      const nondh = nondhs.find((n) => n.id === detail.nondhId)
+      return {
+        ...detail,
+        nondhNumber: nondh?.number || 0,
+        affectedSNos: nondh?.affectedSNos || [detail.sNo],
+        createdAt: detail.createdAt || new Date().toISOString().split("T")[0],
+        docUploadUrl: detail.docUploadUrl,
+        hasDocuments: detail.hasDocuments // Make sure this is preserved
+      } as NondhDetail
+    })
 
-  const generateFilteredNondhs = () => {
-    const filtered = nondhDetails
-      .filter((detail) => detail.showInOutput)
-      .map((detail) => {
-        const nondh = nondhs.find((n) => n.id === detail.nondhId)
-        return {
-          ...detail,
-          nondhNumber: nondh?.number || 0,
-          createdAt: new Date().toISOString().split("T")[0], // Mock date
-          reason: detail.reason || detail.vigat || "-" // Use reason or vigat as fallback
-        }
-      })
-      .sort((a, b) => a.nondhNumber - b.nondhNumber)
-
-    setFilteredNondhs(filtered)
-  }
+  // Fetch detailed info including document URLs
+  const enhancedNondhs = await fetchDetailedNondhInfo(outputNondhs);
+  
+  // Format affected S.Nos for display
+  const formattedNondhs = enhancedNondhs.map(nondh => ({
+    ...nondh,
+    affectedSNos: formatAffectedSNos(nondh.affectedSNos)
+  }));
+  
+  // Sort and set the filtered nondhs
+  setFilteredNondhs(formattedNondhs.sort(sortNondhsBySNoType));
+}
 
   const exportToCSV = (data: any[], filename: string) => {
     if (!data || data.length === 0) {
@@ -233,70 +574,116 @@ export default function OutputViews() {
     })
   }
 
-  const getFilteredByDate = () => {
-    if (!dateFilter) return filteredNondhs
-    return filteredNondhs.filter((nondh) => nondh.createdAt.includes(dateFilter))
+  const getFilteredByDate = async () => {
+  let filteredDetails = nondhDetails;
+  
+  if (dateFilter) {
+    filteredDetails = nondhDetails.filter((detail) => detail.createdAt?.includes(dateFilter));
   }
+  
+  const mappedDetails = filteredDetails.map((detail) => {
+    const nondh = nondhs.find((n) => n.id === detail.nondhId)
+    return {
+      ...detail,
+      nondhNumber: nondh?.number || 0,
+      affectedSNos: nondh?.affectedSNos || [detail.sNo],
+      createdAt: detail.createdAt || new Date().toISOString().split("T")[0]
+    } as NondhDetail
+  });
+
+  // Fetch detailed info including document URLs
+  const enhancedDetails = await fetchDetailedNondhInfo(mappedDetails);
+  
+  // Format affected S.Nos for display
+  const formattedDetails = enhancedDetails.map(nondh => ({
+    ...nondh,
+    affectedSNos: formatAffectedSNos(nondh.affectedSNos)
+  }));
+  
+  return formattedDetails.sort(sortNondhsBySNoType);
+}
 
   const handleCompleteProcess = () => {
     toast({ title: "Land record process completed successfully!" })
     router.push('/land-master')
   }
 
-  const renderQueryListCard = (nondh: any, index: number) => (
-    <Card key={index} className="p-4">
-      <div className="space-y-3">
-        <div className="flex justify-between items-start">
-          <div className="space-y-1">
-            <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
-            <div className="text-muted-foreground text-xs">S.No: {nondh.sNo}</div>
-          </div>
-          <Badge 
-            className={`text-xs ${
-              nondh.status === "Valid"
-                ? "bg-green-100 text-green-800"
-                : nondh.status === "Invalid"
-                  ? "bg-red-100 text-red-800"
-                  : "bg-gray-100 text-gray-800"
-            }`}
-          >
-            {nondh.status}
-          </Badge>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>
-            <span className="text-muted-foreground">Type:</span>
-            <div className="font-medium">{nondh.type}</div>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Documents:</span>
-            <div className="font-medium">
-              {nondh.hasDocuments ? (
-                <Button size="sm" variant="outline" className="h-6 px-2">
-                  <Eye className="w-3 h-3" />
-                </Button>
-              ) : (
-                "-"
-              )}
+  const renderQueryListCard = (nondh: NondhDetail, index: number) => {    
+    return (
+      <Card key={index} className="p-4">
+        <div className="space-y-3">
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
+              <div className="text-muted-foreground text-xs">
+                Affected S.No: {nondh.affectedSNos || nondh.sNo}
+              </div>
             </div>
+            <Badge className={`text-xs ${getStatusColorClass(nondh.status)}`}>
+              {getStatusDisplayName(nondh.status)}
+            </Badge>
           </div>
-        </div>
-        
-        <div className="space-y-1">
-          <span className="text-muted-foreground text-sm">Reason:</span>
-          <div className="text-sm font-medium">{nondh.reason}</div>
-        </div>
-        
-        {nondh.vigat && nondh.vigat !== '-' && (
-          <div className="space-y-1">
-            <span className="text-muted-foreground text-sm">Vigat:</span>
-            <div className="text-sm font-medium truncate">{nondh.vigat}</div>
+          
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Nondh Doc:</span>
+              <div className={`font-medium p-1 rounded ${!nondh.nondhDocUrl ? 'bg-red-100' : ''}`}>
+                {nondh.nondhDocUrl ? (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    className="h-6 px-2"
+                    onClick={() => viewDocument(nondh.nondhDocUrl!, `Nondh ${nondh.nondhNumber} Document`)}
+                  >
+                    <Eye className="w-3 h-3 mr-1" />
+                    View
+                  </Button>
+                ) : (
+                  <span className="text-red-600 text-xs">N/A</span>
+                )}
+              </div>
+            </div>
+            <div>
+  <span className="text-muted-foreground text-sm">Relevant Docs:</span>
+  <div className={`font-medium p-1 rounded ${nondh.hasDocuments ? (!nondh.docUploadUrl ? 'bg-yellow-100' : '') : ''}`}>
+    {nondh.hasDocuments ? (
+      nondh.docUploadUrl ? (
+        <Button 
+          size="sm" 
+          variant="outline" 
+          className="h-6 px-2"
+          onClick={() => viewDocument(nondh.docUploadUrl!, `Relevant Documents for Nondh ${nondh.nondhNumber}`)}
+        >
+          <Eye className="w-3 h-3 mr-1" />
+          View
+        </Button>
+      ) : (
+        <span className="text-yellow-600 text-xs">Not uploaded</span>
+      )
+    ) : (
+      <span className="text-xs">N/A</span>
+    )}
+  </div>
+</div>
           </div>
-        )}
-      </div>
-    </Card>
-  )
+          
+          {nondh.status === 'invalid' && nondh.invalidReason && (
+            <div className="space-y-1">
+              <span className="text-muted-foreground text-sm">Reason:</span>
+              <div className="text-sm font-medium text-red-600">{nondh.invalidReason}</div>
+            </div>
+          )}
+          
+          {nondh.vigat && nondh.vigat !== '-' && (
+            <div className="space-y-1">
+              <span className="text-muted-foreground text-sm">Vigat:</span>
+              <div className="text-sm font-medium truncate">{nondh.vigat}</div>
+            </div>
+          )}
+        </div>
+      </Card>
+    )
+  }
 
   const renderPassbookCard = (entry: PassbookEntry, index: number) => (
     <Card key={index} className="p-4">
@@ -307,7 +694,7 @@ export default function OutputViews() {
             <div className="text-muted-foreground text-xs">Year: {entry.year}</div>
           </div>
           <Badge variant="outline" className="text-xs">
-            #{entry.nondhNumber || "-"}
+            {entry.nondhNumber || "-"}
           </Badge>
         </div>
         
@@ -325,48 +712,44 @@ export default function OutputViews() {
     </Card>
   )
 
-  const renderDateWiseCard = (nondh: any, index: number) => (
-    <Card key={index} className="p-4">
-      <div className="space-y-3">
-        <div className="flex justify-between items-start">
-          <div className="space-y-1">
-            <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
-            <div className="text-muted-foreground text-xs flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {nondh.createdAt}
+  const renderDateWiseCard = (nondh: NondhDetail, index: number) => {    
+    return (
+      <Card key={index} className="p-4">
+        <div className="space-y-3">
+          <div className="flex justify-between items-start">
+            <div className="space-y-1">
+              <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
+              <div className="text-muted-foreground text-xs flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {nondh.createdAt}
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <Badge className={`text-xs ${getStatusColorClass(nondh.status)}`}>
+                {getStatusDisplayName(nondh.status)}
+              </Badge>
+              <span className={`text-xs ${nondh.showInOutput ? "text-green-600" : "text-red-600"}`}>
+                {nondh.showInOutput ? "In Output" : "Not in Output"}
+              </span>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <Badge 
-              className={`text-xs ${
-                nondh.status === "Valid"
-                  ? "bg-green-100 text-green-800"
-                  : nondh.status === "Invalid"
-                    ? "bg-red-100 text-red-800"
-                    : "bg-gray-100 text-gray-800"
-              }`}
-            >
-              {nondh.status}
-            </Badge>
-            <span className={`text-xs ${nondh.showInOutput ? "text-green-600" : "text-red-600"}`}>
-              {nondh.showInOutput ? "In Output" : "Not in Output"}
-            </span>
+          
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Affected S.No:</span>
+              <div className="font-medium">
+                {nondh.affectedSNos || nondh.sNo}
+              </div>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Type:</span>
+              <div className="font-medium">{nondh.type}</div>
+            </div>
           </div>
         </div>
-        
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>
-            <span className="text-muted-foreground">S.No:</span>
-            <div className="font-medium">{nondh.sNo}</div>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Type:</span>
-            <div className="font-medium">{nondh.type}</div>
-          </div>
-        </div>
-      </div>
-    </Card>
-  )
+      </Card>
+    )
+  }
 
   return (
     <Card className="w-full max-w-none">
@@ -409,46 +792,77 @@ export default function OutputViews() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Nondh No.</TableHead>
-                        <TableHead>S.No</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Reason</TableHead>
+                        <TableHead>Nondh Doc</TableHead>
+                        <TableHead>Relevant Docs Available</TableHead>
+                        <TableHead>Relevant Docs</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Reason</TableHead>
                         <TableHead>Vigat</TableHead>
-                        <TableHead>Documents</TableHead>
+                        <TableHead>Affected S.No</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredNondhs.map((nondh, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{nondh.nondhNumber}</TableCell>
-                          <TableCell>{nondh.sNo}</TableCell>
-                          <TableCell>{nondh.type}</TableCell>
-                          <TableCell>{nondh.reason}</TableCell>
-                          <TableCell>
-                            <span
-                              className={`px-2 py-1 rounded text-xs ${
-                                nondh.status === "Valid"
-                                  ? "bg-green-100 text-green-800"
-                                  : nondh.status === "Invalid"
-                                    ? "bg-red-100 text-red-800"
-                                    : "bg-gray-100 text-gray-800"
-                              }`}
-                            >
-                              {nondh.status}
-                            </span>
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate">{nondh.vigat || "-"}</TableCell>
-                          <TableCell>
-                            {nondh.hasDocuments ? (
-                              <Button size="sm" variant="outline">
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                            ) : (
-                              "-"
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {filteredNondhs.map((nondh, index) => {
+                        return (
+                          <TableRow key={index}>
+                            <TableCell>{nondh.nondhNumber}</TableCell>
+                            <TableCell className={!nondh.nondhDocUrl ? 'bg-red-100' : ''}>
+                              {nondh.nondhDocUrl ? (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => viewDocument(nondh.nondhDocUrl!, `Nondh ${nondh.nondhNumber} Document`)}
+                                >
+                                  <Eye className="w-4 h-4 mr-1" />
+                                  View Document
+                                </Button>
+                              ) : (
+                                <span className="text-red-600 font-medium">N/A</span>
+                              )}
+                            </TableCell>
+                            <TableCell>{nondh.hasDocuments ? "Yes" : "No"}</TableCell>
+                            <TableCell className={nondh.hasDocuments && !nondh.docUploadUrl ? 'bg-yellow-100' : ''}>
+  {nondh.hasDocuments ? (
+    nondh.docUploadUrl ? (
+      <Button 
+        size="sm" 
+        variant="outline"
+        onClick={() => viewDocument(nondh.docUploadUrl!, `Relevant Documents for Nondh ${nondh.nondhNumber}`)}
+      >
+        <Eye className="w-4 h-4 mr-1" />
+        View Document
+      </Button>
+    ) : (
+      <div className="flex items-center gap-1">
+        <AlertTriangle className="w-4 h-4 text-yellow-600" />
+        <span className="text-sm">Not uploaded</span>
+      </div>
+    )
+  ) : (
+    "N/A"
+  )}
+</TableCell>
+                            <TableCell>
+                              <span
+                                className={`px-2 py-1 rounded text-xs ${getStatusColorClass(nondh.status)}`}
+                              >
+                                {getStatusDisplayName(nondh.status)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="max-w-xs">
+                              {nondh.status === 'invalid' && nondh.invalidReason ? (
+                                <span className="text-red-600 text-sm">{nondh.invalidReason}</span>
+                              ) : (
+                                "-"
+                              )}
+                            </TableCell>
+                            <TableCell className="max-w-xs truncate">{nondh.vigat || "-"}</TableCell>
+                            <TableCell>
+                              {nondh.affectedSNos || nondh.sNo}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
@@ -464,10 +878,10 @@ export default function OutputViews() {
           <TabsContent value="passbook" className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <h3 className="text-base sm:text-lg font-semibold">
-                Passbook View ({passbookData.length} entries)
+                Land Ownership Records ({passbookData.length})
               </h3>
               <Button 
-                onClick={() => exportToCSV(passbookData, "passbook")} 
+                onClick={() => exportToCSV(passbookData, "passbook-data")} 
                 className="flex items-center gap-2 w-full sm:w-auto"
                 disabled={passbookData.length === 0}
                 size="sm"
@@ -489,10 +903,10 @@ export default function OutputViews() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Year</TableHead>
-                        <TableHead>Land Owner</TableHead>
-                        <TableHead>Area (sq.m)</TableHead>
+                        <TableHead>Owner Name</TableHead>
                         <TableHead>S.No</TableHead>
-                        <TableHead>Nondh Number</TableHead>
+                        <TableHead>Area (sq.m)</TableHead>
+                        <TableHead>Nondh No.</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -500,8 +914,8 @@ export default function OutputViews() {
                         <TableRow key={index}>
                           <TableCell>{entry.year}</TableCell>
                           <TableCell>{entry.ownerName}</TableCell>
-                          <TableCell>{entry.area?.toFixed(2)}</TableCell>
                           <TableCell>{entry.sNo}</TableCell>
+                          <TableCell>{entry.area?.toFixed(2)}</TableCell>
                           <TableCell>{entry.nondhNumber || "-"}</TableCell>
                         </TableRow>
                       ))}
@@ -521,7 +935,7 @@ export default function OutputViews() {
             <div className="flex flex-col gap-4">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                 <h3 className="text-base sm:text-lg font-semibold">
-                  Date-wise All Nondhs ({getFilteredByDate().length})
+                  Date-wise All Nondhs
                 </h3>
                 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -537,9 +951,11 @@ export default function OutputViews() {
                     />
                   </div>
                   <Button
-                    onClick={() => exportToCSV(getFilteredByDate(), "date-wise-nondhs")}
+                    onClick={async () => {
+                      const filteredData = await getFilteredByDate();
+                      exportToCSV(filteredData, "date-wise-nondhs");
+                    }}
                     className="flex items-center gap-2 w-full sm:w-auto"
-                    disabled={getFilteredByDate().length === 0}
                     size="sm"
                   >
                     <Download className="w-4 h-4" />
@@ -549,66 +965,79 @@ export default function OutputViews() {
               </div>
             </div>
 
-            {getFilteredByDate().length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-gray-500 text-sm">
-                  {dateFilter ? 'No nondhs found for selected date' : 'No nondh details available'}
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Desktop Table */}
-                <div className="hidden lg:block rounded-md border overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Nondh No.</TableHead>
-                        <TableHead>S.No</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Show in Output</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {getFilteredByDate().map((nondh, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{nondh.createdAt}</TableCell>
-                          <TableCell>{nondh.nondhNumber}</TableCell>
-                          <TableCell>{nondh.sNo}</TableCell>
-                          <TableCell>{nondh.type}</TableCell>
-                          <TableCell>
-                            <span
-                              className={`px-2 py-1 rounded text-xs ${
-                                nondh.status === "Valid"
-                                  ? "bg-green-100 text-green-800"
-                                  : nondh.status === "Invalid"
-                                    ? "bg-red-100 text-red-800"
-                                    : "bg-gray-100 text-gray-800"
-                              }`}
-                            >
-                              {nondh.status}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            {nondh.showInOutput ? (
-                              <span className="text-green-600 text-sm">Yes</span>
-                            ) : (
-                              <span className="text-red-600 text-sm">No</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+            <div className="space-y-4">
+              {/* We'll render the filtered data dynamically */}
+              {(() => {
+                const [filteredData, setFilteredData] = useState<NondhDetail[]>([]);
+                
+                useEffect(() => {
+                  const loadFilteredData = async () => {
+                    const data = await getFilteredByDate();
+                    setFilteredData(data);
+                  };
+                  loadFilteredData();
+                }, [dateFilter, nondhDetails]);
 
-                {/* Mobile Cards */}
-                <div className="lg:hidden space-y-3">
-                  {getFilteredByDate().map(renderDateWiseCard)}
-                </div>
-              </>
-            )}
+                if (filteredData.length === 0) {
+                  return (
+                    <div className="text-center py-8">
+                      <p className="text-gray-500 text-sm">
+                        {dateFilter ? 'No nondhs found for selected date' : 'No nondh details available'}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <>
+                    {/* Desktop Table */}
+                    <div className="hidden lg:block rounded-md border overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Nondh No.</TableHead>
+                            <TableHead>Affected S.No</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Show in Output</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredData.map((nondh, index) => (
+                            <TableRow key={index}>
+                              <TableCell>{nondh.createdAt}</TableCell>
+                              <TableCell>{nondh.nondhNumber}</TableCell>
+                              <TableCell>{nondh.affectedSNos || nondh.sNo}</TableCell>
+                              <TableCell>{nondh.type}</TableCell>
+                              <TableCell>
+                                <span
+                                  className={`px-2 py-1 rounded text-xs ${getStatusColorClass(nondh.status)}`}
+                                >
+                                  {getStatusDisplayName(nondh.status)}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                {nondh.showInOutput ? (
+                                  <span className="text-green-600 text-sm">Yes</span>
+                                ) : (
+                                  <span className="text-red-600 text-sm">No</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Mobile Cards */}
+                    <div className="lg:hidden space-y-3">
+                      {filteredData.map(renderDateWiseCard)}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
           </TabsContent>
         </Tabs>
 

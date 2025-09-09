@@ -358,7 +358,45 @@ useEffect(() => {
         }));
         
         setSlabs(uiSlabs);
-        initialSlabsRef.current = JSON.parse(JSON.stringify(uiSlabs)); // Deep copy
+        initialSlabsRef.current = JSON.parse(JSON.stringify(uiSlabs));
+        
+        // Extract filenames from database data
+        const newSlabFileNames = {};
+        const newEntryFileNames = {};
+        uiSlabs.forEach(slab => {
+          // Extract filename for main slab document
+          if (slab.integrated712) {
+            const filename = extractFilenameFromUrl(slab.integrated712);
+            if (filename) {
+              newSlabFileNames[slab.id] = filename;
+            }
+          }
+         
+          // Extract filenames for paiky entries
+          slab.paikyEntries?.forEach((entry, index) => {
+            if (entry.integrated712) {
+              const filename = extractFilenameFromUrl(entry.integrated712);
+              if (filename) {
+                newEntryFileNames[`${slab.id}_paiky_${index}`] = filename;
+              }
+            }
+          });
+         
+          // Extract filenames for ekatrikaran entries
+          slab.ekatrikaranEntries?.forEach((entry, index) => {
+            if (entry.integrated712) {
+              const filename = extractFilenameFromUrl(entry.integrated712);
+              if (filename) {
+                newEntryFileNames[`${slab.id}_ekatrikaran_${index}`] = filename;
+              }
+            }
+          });
+        });
+        
+        // Set the filename states
+        setSlabUploadedFileNames(newSlabFileNames);
+        setEntryUploadedFileNames(newEntryFileNames);
+        
       } else {
         const defaultSlab = await createDefaultSlab();
         setSlabs([defaultSlab]);
@@ -369,14 +407,13 @@ useEffect(() => {
       toast({ title: "Error loading data", variant: "destructive" });
     } finally {
       setInitialLoading(false);
-      setModified(false); // Reset modified flag after load
+      setModified(false);
     }
   };
 
   loadData();
 }, [recordId, toast]);
 
-// Add this useEffect after the loadData useEffect
 useEffect(() => {
   if (slabs.length > 0) {
     setActiveTab(prev => {
@@ -770,9 +807,15 @@ const addSlab = async () => {
 
   // Get the default S.No based on block_no type
   const defaultSNo = await getAutoPopulatedSNoData(recordId, "block_no");
+  
+  // Check if previous slab has ekatrikaran entries to copy
+  const previousSlab = slabs.length > 0 ? slabs[slabs.length - 1] : null;
+  const shouldCopyEkatrikaran = previousSlab?.ekatrikaran && previousSlab?.ekatrikaranEntries?.length > 0;
+
+  const newSlabId = generateUUID(); // Use proper UUID instead of Date.now().toString()
 
   const newSlab: YearSlabUI = {
-    id: Date.now().toString(),
+    id: newSlabId,
     startYear,
     endYear,
     sNoTypeUI: "block_no",
@@ -782,13 +825,25 @@ const addSlab = async () => {
     paiky: false,
     paikyCount: 0,
     paikyEntries: [],
-    ekatrikaran: false,
-    ekatrikaranCount: 0,
-    ekatrikaranEntries: [],
+    // Copy ekatrikaran settings from previous slab
+    ekatrikaran: shouldCopyEkatrikaran,
+    ekatrikaranCount: shouldCopyEkatrikaran ? previousSlab.ekatrikaranCount : 0,
+    ekatrikaranEntries: shouldCopyEkatrikaran 
+      ? previousSlab.ekatrikaranEntries.map(entry => ({
+          ...entry,
+          id: generateUUID(), // Generate new UUID for each entry
+          integrated712: "" // Reset document upload
+        }))
+      : [],
     collapsed: false,
   };
 
   setSlabs([...slabs, newSlab]);
+  
+  // Set active tab if ekatrikaran was copied
+  if (shouldCopyEkatrikaran) {
+    setActiveTab(prev => ({ ...prev, [newSlabId]: 'ekatrikaran' }));
+  }
 };
 
   const removeSlab = (id: string) => {
