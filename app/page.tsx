@@ -662,6 +662,40 @@ export default function LandMaster() {
 
   const hasActiveFilters = searchTerm || districtFilter !== "all" || talukaFilter !== "all" || villageFilter !== "all";
 
+  // Export to CSV function
+  const exportToCSV = () => {
+    if (filteredLands.length === 0) return;
+    
+    // Create CSV header
+    const headers = ["District", "Taluka", "Village", "Block No", "Re-Survey No", "Created At"];
+    
+    // Create CSV rows
+    const rows = filteredLands.map(land => [
+      land.district,
+      land.taluka,
+      land.village,
+      land.block_no,
+      land.re_survey_no,
+      new Date(land.created_at).toLocaleDateString()
+    ]);
+    
+    // Combine header and rows
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(field => `"${field}"`).join(","))
+      .join("\n");
+    
+    // Create download link
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `land-records-${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (error) {
     return (
       <div className="space-y-4 p-4 sm:p-6">
@@ -748,7 +782,12 @@ export default function LandMaster() {
                 <Filter className="h-4 w-4 mr-2" />
                 Filters {hasActiveFilters && <span className="ml-1 bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 text-xs">•</span>}
               </Button>
-              <Button variant="outline" disabled={loading} size="sm">
+              <Button 
+                variant="outline" 
+                disabled={loading || filteredLands.length === 0} 
+                size="sm"
+                onClick={exportToCSV}
+              >
                 <Download className="h-4 w-4" />
               </Button>
             </div>
@@ -826,7 +865,11 @@ export default function LandMaster() {
                   Clear
                 </Button>
               )}
-              <Button variant="outline" disabled={loading}>
+              <Button 
+                variant="outline" 
+                disabled={loading || filteredLands.length === 0}
+                onClick={exportToCSV}
+              >
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
@@ -931,8 +974,7 @@ export default function LandMaster() {
                   <TableHead>Village</TableHead>
                   <TableHead>Block No</TableHead>
                   <TableHead>Re-Survey No</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>Actions</TableHead> 
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -965,9 +1007,6 @@ export default function LandMaster() {
                       <TableCell>{land.village}</TableCell>
                       <TableCell>{land.block_no}</TableCell>
                       <TableCell>{land.re_survey_no}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">Active</Badge>
-                      </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
                           <Link href={`/land-master/forms?mode=view&id=${land.id}`}>

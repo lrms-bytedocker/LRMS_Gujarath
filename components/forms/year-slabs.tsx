@@ -321,7 +321,7 @@ const extractFilenameFromUrl = (url: string): string => {
     
     toast({ 
       title: "File uploaded successfully",
-      description: "Document saved to land-documents bucket"
+      description: "Document saved"
     });
     
   } catch (error) {
@@ -352,7 +352,7 @@ useEffect(() => {
             acre: 0, 
             guntha: 0 
           },
-          integrated712: landBasicInfo?.integrated712 || "", // Auto-populate URL
+          integrated712: "",
           paiky: false,
           paikyCount: 0,
           paikyEntries: [],
@@ -362,17 +362,6 @@ useEffect(() => {
           collapsed: false
         }]);
         
-        // Auto-populate filename if file exists from step 1
-        if (landBasicInfo?.integrated712) {
-          const filename = landBasicInfo?.integrated712FileName || 
-                          extractFilenameFromUrl(landBasicInfo.integrated712);
-          if (filename) {
-            setSlabUploadedFileNames(prev => ({
-              ...prev,
-              "1": filename
-            }));
-          }
-        }
       }
       const stepData = getStepData();
       
@@ -395,32 +384,42 @@ useEffect(() => {
           setSlabs(uiSlabs);
           
           // Extract filenames from database data
-          const newEntryFileNames = {};
-          
-          uiSlabs.forEach(slab => {
-            // Extract filenames for paiky entries
-            slab.paikyEntries?.forEach((entry, index) => {
-              if (entry.integrated712) {
-                const filename = extractFilenameFromUrl(entry.integrated712);
-                if (filename) {
-                  newEntryFileNames[`${slab.id}_paiky_${index}`] = filename;
-                }
-              }
-            });
-            
-            // Extract filenames for ekatrikaran entries
-            slab.ekatrikaranEntries?.forEach((entry, index) => {
-              if (entry.integrated712) {
-                const filename = extractFilenameFromUrl(entry.integrated712);
-                if (filename) {
-                  newEntryFileNames[`${slab.id}_ekatrikaran_${index}`] = filename;
-                }
-              }
-            });
-          });
-          
-          // Merge with existing filename states
-          setEntryUploadedFileNames(prev => ({ ...newEntryFileNames, ...prev }));
+const newSlabFileNames = {};
+const newEntryFileNames = {};
+
+uiSlabs.forEach(slab => {
+  // Extract filename for main slab document
+  if (slab.integrated712) {
+    const filename = extractFilenameFromUrl(slab.integrated712);
+    if (filename) {
+      newSlabFileNames[slab.id] = filename;
+    }
+  }
+  
+  // Extract filenames for paiky entries
+  slab.paikyEntries?.forEach((entry, index) => {
+    if (entry.integrated712) {
+      const filename = extractFilenameFromUrl(entry.integrated712);
+      if (filename) {
+        newEntryFileNames[`${slab.id}_paiky_${index}`] = filename;
+      }
+    }
+  });
+  
+  // Extract filenames for ekatrikaran entries
+  slab.ekatrikaranEntries?.forEach((entry, index) => {
+    if (entry.integrated712) {
+      const filename = extractFilenameFromUrl(entry.integrated712);
+      if (filename) {
+        newEntryFileNames[`${slab.id}_ekatrikaran_${index}`] = filename;
+      }
+    }
+  });
+});
+
+// Merge with existing filename states
+setSlabUploadedFileNames(prev => ({ ...newSlabFileNames, ...prev }));
+setEntryUploadedFileNames(prev => ({ ...newEntryFileNames, ...prev }));
         }
       }
     } finally {
@@ -723,55 +722,57 @@ const validateForm = (): boolean => {
       isValid = false;
     }
 
-    // Validate main slab document upload
-    if (!slab.integrated712) {
-      slabErrors.integrated712 = "Please upload 7/12 document for this slab";
-      isValid = false;
-    }
+    // Validate main slab document upload - ONLY if no paiky/ekatrikaran
+if (!slab.paiky && !slab.ekatrikaran && !slab.integrated712) {
+  slabErrors.integrated712 = "Please upload 7/12 document for this slab";
+  isValid = false;
+}
 
     // Validate paiky entries
-    if (slab.paiky && slab.paikyEntries.length > 0) {
-      const paikyErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
-      slab.paikyEntries.forEach((entry, index) => {
-        const entryErrors: any = {};
-        if (!entry.sNo.trim()) {
-          entryErrors.sNo = "Please enter S.No";
-          isValid = false;
-        }
-        if (!entry.integrated712) {
-          entryErrors.integrated712 = "Please upload 7/12 document";
-          isValid = false;
-        }
-        if (Object.keys(entryErrors).length > 0) {
-          paikyErrors[index] = entryErrors;
-        }
-      });
-      if (Object.keys(paikyErrors).length > 0) {
-        slabErrors.paikyEntries = paikyErrors;
-      }
+if (slab.paiky && slab.paikyEntries && slab.paikyEntries.length > 0) {
+  const paikyErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+  slab.paikyEntries.forEach((entry, index) => {
+    const entryErrors: any = {};
+    // Add safety check for entry existence
+    if (!entry || !entry.sNo || !entry.sNo.trim()) {
+      entryErrors.sNo = "Please enter S.No";
+      isValid = false;
     }
+    if (!entry || !entry.integrated712) {
+      entryErrors.integrated712 = "Please upload 7/12 document";
+      isValid = false;
+    }
+    if (Object.keys(entryErrors).length > 0) {
+      paikyErrors[index] = entryErrors;
+    }
+  });
+  if (Object.keys(paikyErrors).length > 0) {
+    slabErrors.paikyEntries = paikyErrors;
+  }
+}
 
-    // Validate ekatrikaran entries
-    if (slab.ekatrikaran && slab.ekatrikaranEntries.length > 0) {
-      const ekatrikaranErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
-      slab.ekatrikaranEntries.forEach((entry, index) => {
-        const entryErrors: any = {};
-        if (!entry.sNo.trim()) {
-          entryErrors.sNo = "Please enter S.No";
-          isValid = false;
-        }
-        if (!entry.integrated712) {
-          entryErrors.integrated712 = "Please upload 7/12 document";
-          isValid = false;
-        }
-        if (Object.keys(entryErrors).length > 0) {
-          ekatrikaranErrors[index] = entryErrors;
-        }
-      });
-      if (Object.keys(ekatrikaranErrors).length > 0) {
-        slabErrors.ekatrikaranEntries = ekatrikaranErrors;
-      }
+// Validate ekatrikaran entries
+if (slab.ekatrikaran && slab.ekatrikaranEntries && slab.ekatrikaranEntries.length > 0) {
+  const ekatrikaranErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+  slab.ekatrikaranEntries.forEach((entry, index) => {
+    const entryErrors: any = {};
+    // Add safety check for entry existence
+    if (!entry || !entry.sNo || !entry.sNo.trim()) {
+      entryErrors.sNo = "Please enter S.No";
+      isValid = false;
     }
+    if (!entry || !entry.integrated712) {
+      entryErrors.integrated712 = "Please upload 7/12 document";
+      isValid = false;
+    }
+    if (Object.keys(entryErrors).length > 0) {
+      ekatrikaranErrors[index] = entryErrors;
+    }
+  });
+  if (Object.keys(ekatrikaranErrors).length > 0) {
+    slabErrors.ekatrikaranEntries = ekatrikaranErrors;
+  }
+}
 
     if (Object.keys(slabErrors).length > 0) {
       errors[slab.id] = slabErrors;
@@ -864,7 +865,12 @@ const addSlab = () => {
     startYear = "";
   }
 
-   const newSlabId = Date.now().toString();
+  const newSlabId = Date.now().toString();
+  
+  // Check if previous slab has ekatrikaran entries to copy
+  const previousSlab = slabs.length > 0 ? slabs[slabs.length - 1] : null;
+  const shouldCopyEkatrikaran = previousSlab?.ekatrikaran && previousSlab?.ekatrikaranEntries?.length > 0;
+  
   const newSlab: YearSlabUI = {
     id: newSlabId,
     startYear,
@@ -872,28 +878,27 @@ const addSlab = () => {
     sNoTypeUI: "block_no",
     sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
     areaUI: defaultArea,
-    integrated712: landBasicInfo?.integrated712 || "", // Auto-populate URL
+    integrated712: "",
     paiky: false,
     paikyCount: 0,
     paikyEntries: [],
-    ekatrikaran: false,
-    ekatrikaranCount: 0,
-    ekatrikaranEntries: [],
+    // Copy ekatrikaran settings from previous slab
+    ekatrikaran: shouldCopyEkatrikaran,
+    ekatrikaranCount: shouldCopyEkatrikaran ? previousSlab.ekatrikaranCount : 0,
+    ekatrikaranEntries: shouldCopyEkatrikaran 
+      ? previousSlab.ekatrikaranEntries.map(entry => ({
+          ...entry,
+          integrated712: "" // Reset document upload
+        }))
+      : [],
     collapsed: false,
   };
 
   setSlabs([...slabs, newSlab]);
   
-  // Auto-populate filename if available
-  if (landBasicInfo?.integrated712) {
-    const filename = landBasicInfo?.integrated712FileName || 
-                    extractFilenameFromUrl(landBasicInfo.integrated712);
-    if (filename) {
-      setSlabUploadedFileNames(prev => ({
-        ...prev,
-        [newSlabId]: filename
-      }));
-    }
+  // Set active tab if ekatrikaran was copied
+  if (shouldCopyEkatrikaran) {
+    setActiveTab(prev => ({ ...prev, [newSlabId]: 'ekatrikaran' }));
   }
 };
 
@@ -1015,18 +1020,32 @@ const handleSaveAndNext = async () => {
   setLoading(true);
   
   try {
+    // Add debugging
+    console.log('Current slabs:', slabs);
+    
     if (!validateForm()) {
-      setLoading(false);
-      return;
-    }
+  console.log('Validation errors:', validationErrors);
+  console.log('Current slabs state:', slabs);
+  // Show a toast to indicate validation failed
+  toast({
+    title: "Validation Failed",
+    description: "Please check all required fields and try again",
+    variant: "destructive"
+  });
+  setLoading(false);
+  return;
+}
+    
     // Check for empty start years first
     const emptyStartYears = slabs.filter(slab => slab.startYear === "" || slab.startYear === undefined);
     if (emptyStartYears.length > 0) {
+      console.log('Empty start years found:', emptyStartYears);
       toast({ 
         title: "Missing start year", 
         description: "Please fill in start year for all slabs", 
         variant: "destructive" 
       });
+      setLoading(false); // Add this missing line
       return;
     }
 

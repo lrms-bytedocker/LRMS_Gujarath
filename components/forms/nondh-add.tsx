@@ -91,10 +91,12 @@ const validateForm = (): boolean => {
 
   return isValid;
 };
-  // Get unique S.Nos from all slabs
-  const getAllSNos = () => {
+
+  // Get unique S.Nos from all slabs AND unused ones from step 1
+const getAllSNos = () => {
   const sNos = new Map<string, { type: "s_no" | "block_no" | "re_survey_no" }>();
   
+  // Add S.Nos from year slabs (step 2)
   yearSlabs.forEach((slab) => {
     if (slab.sNo.trim() !== "") {
       sNos.set(slab.sNo, { type: slab.sNoType });
@@ -113,8 +115,39 @@ const validateForm = (): boolean => {
     });
   });
   
+  // Add unused S.Nos from step 1 (landBasicInfo)
+  if (landBasicInfo) {
+    // Get all S.Nos currently used in step 2
+    const usedSNos = new Set(Array.from(sNos.keys()));
+    
+    // Check Survey Numbers from step 1
+    if (landBasicInfo.sNo && landBasicInfo.sNo.trim() !== "") {
+      const surveyNos = landBasicInfo.sNo.split(',').map(s => s.trim()).filter(s => s !== "");
+      surveyNos.forEach(sNo => {
+        if (!usedSNos.has(sNo)) {
+          sNos.set(sNo, { type: "s_no" });
+        }
+      });
+    }
+    
+    // Check Block Number from step 1
+    if (landBasicInfo.blockNo && landBasicInfo.blockNo.trim() !== "") {
+      if (!usedSNos.has(landBasicInfo.blockNo)) {
+        sNos.set(landBasicInfo.blockNo, { type: "block_no" });
+      }
+    }
+    
+    // Check Re-survey Number from step 1
+    if (landBasicInfo.reSurveyNo && landBasicInfo.reSurveyNo.trim() !== "") {
+      if (!usedSNos.has(landBasicInfo.reSurveyNo)) {
+        sNos.set(landBasicInfo.reSurveyNo, { type: "re_survey_no" });
+      }
+    }
+  }
+  
   return sNos;
 }
+
   const availableSNos = getAllSNos()
 
   // Automatically add new nondh when user starts typing in last empty one

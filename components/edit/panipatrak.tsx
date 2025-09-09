@@ -38,19 +38,19 @@ type FarmerStrict = {
   type: 'regular' | 'paiky' | 'ekatrikaran';
 };
 
-function getYearPeriods(slab: YearSlab) {
-  if (!slab.startYear || !slab.endYear) return [];
-  
-  const periods: { from: number; to: number; period: string }[] = [];
-  for (let y = slab.startYear; y < slab.endYear; y++) {
-    periods.push({ 
-      from: y, 
-      to: y + 1, 
-      period: `${y}-${y + 1}` 
-    });
+const getYearPeriods = (slab: YearSlab) => {
+  const periods = [];
+  if (slab.startYear && slab.endYear) {
+    for (let year = slab.startYear; year < slab.endYear; year++) {
+      periods.push({
+        period: `${year}-${year + 1}`,
+        from: year,
+        to: year + 1
+      });
+    }
   }
   return periods;
-}
+};
 
 const areaFields = (farmer: FarmerStrict, onChange: (f: FarmerStrict) => void) => {
   // Calculate display values based on current area with rounded sq_m
@@ -390,14 +390,34 @@ const normalizeForComparison = (panipatraks: Panipatrak[]) => {
       return a.year - b.year;
     });
 };
+
 export default function PanipatrakStep() {
-  const { yearSlabs, setCurrentStep, currentStep, landBasicInfo, panipatraks, // Add this line to get panipatraks from context
+  const { yearSlabs, setCurrentStep, currentStep, landBasicInfo, panipatraks, // get panipatraks from context
   setPanipatraks, recordId } = useLandRecord();
   const { getStepData, updateStepData } = useStepFormData(3);
   const [loading, setLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [expandedSlabs, setExpandedSlabs] = useState<Record<string, boolean>>({});
   const [expandedPeriods, setExpandedPeriods] = useState<Record<string, boolean>>({});
+  const [previousYearSlabs, setPreviousYearSlabs] = useState<YearSlab[]>([]);
+
+useEffect(() => {
+  // Only compare specific properties that affect the period structure
+  const shouldReinitialize = yearSlabs.length > 0 && isInitialized && 
+      (previousYearSlabs.length !== yearSlabs.length ||
+       !yearSlabs.every((slab, index) => 
+         previousYearSlabs[index]?.startYear === slab.startYear &&
+         previousYearSlabs[index]?.endYear === slab.endYear
+       ));
+  
+  if (shouldReinitialize) {
+    console.log('Year slabs structure changed, forcing reinitialization');
+    setIsInitialized(false);
+  }
+  
+  // Update previous reference
+  setPreviousYearSlabs(yearSlabs);
+}, [yearSlabs, isInitialized, previousYearSlabs]);
 
   const [slabPanels, setSlabPanels] = useState<{
   [slabId: string]: {
@@ -432,6 +452,48 @@ useEffect(() => {
 }, [yearSlabs]);
 
 useEffect(() => {
+  if (!yearSlabs?.length) {
+    setSlabPanels({});
+    setIsInitialized(false);
+    setPreviousYearSlabs([]);
+    return;
+  }
+
+  const initialize = async () => {
+    // Only initialize if not already initialized or if forced
+    if (isInitialized) return;
+    console.log('Reinitializing with updated yearSlabs:', yearSlabs);
+    
+    // Force complete reset before reinitializing
+    setSlabPanels({});
+    setIsInitialized(false);
+    
+    // Add a small delay to ensure state is cleared
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    const stepData = getStepData();
+    let dataToUse: Panipatrak[] = [];
+
+    if (stepData?.panipatraks?.length > 0) {
+      dataToUse = stepData.panipatraks;
+    } else if (panipatraks?.length > 0) {
+      dataToUse = panipatraks;
+    }
+    
+    initializeFromYearSlabs(yearSlabs, dataToUse);
+    setIsInitialized(true);
+    
+    setTimeout(() => {
+      const initialPanipatraks = getCurrentPanipatraks();
+      setOriginalData(normalizeForComparison(initialPanipatraks));
+      setHasChanges(false);
+    }, 100);
+  };
+
+  initialize();
+}, [yearSlabs, panipatraks, isInitialized]);
+
+useEffect(() => {
   console.log('YearSlabs changed:', yearSlabs);
   console.log('SlabPanels:', slabPanels);
   console.log('isInitialized:', isInitialized);
@@ -443,7 +505,7 @@ const [hasChanges, setHasChanges] = useState(false);
 
 
 // Add this function to get current panipatraks
-const getCurrentPanipatraks = () => {
+const getCurrentPanipatraks = useCallback(() => {
   const panipatraks: Panipatrak[] = [];
   Object.values(slabPanels).forEach(({ periods, slab }) => {
     periods.forEach(p => {
@@ -477,12 +539,11 @@ const getCurrentPanipatraks = () => {
     });
   });
   
-  // Sort for consistent comparison
   return panipatraks.sort((a, b) => {
     if (a.slabId !== b.slabId) return a.slabId.localeCompare(b.slabId);
     return a.year - b.year;
   });
-};
+}, [slabPanels]);
 
 // Add this useMemo before the effect
 const currentNormalizedData = useMemo(() => {
@@ -499,57 +560,22 @@ useEffect(() => {
   setHasChanges(hasChanged);
 }, [currentNormalizedData, originalData, isInitialized]);
 
-  // Initialize panels with default data or saved data
-useEffect(() => {
-  if (!yearSlabs?.length) return;
-
-  const initialize = async () => {
-    const stepData = getStepData();
-    let dataToUse: Panipatrak[] = [];
-
-    if (stepData?.panipatraks?.length > 0) {
-      dataToUse = stepData.panipatraks;
-    } else if (panipatraks?.length > 0) {
-      dataToUse = panipatraks;
-    }
-
-    // Initialize panels first
-    initializeFromYearSlabs(yearSlabs, dataToUse);
-    setIsInitialized(true);
-  };
-
-  initialize();
-}, [yearSlabs, getStepData, panipatraks]);
-
 useEffect(() => {
   if (isInitialized && Object.keys(slabPanels).length > 0 && originalData.length === 0) {
     const initialPanipatraks = getCurrentPanipatraks();
     setOriginalData(normalizeForComparison(initialPanipatraks));
   }
 }, [isInitialized, slabPanels, originalData.length]);
-// Helper function to reconstruct slabs from panipatraks if needed
-const reconstructYearSlabsFromPanipatraks = (panipatraks: Panipatrak[]): YearSlab[] => {
-  const slabMap: Record<string, YearSlab> = {};
-  
-  panipatraks.forEach(pani => {
-    if (!slabMap[pani.slabId]) {
-      slabMap[pani.slabId] = {
-        id: pani.slabId,
-        startYear: pani.year,
-        endYear: pani.year + 1,
-        sNo: pani.sNo,
-        sNoType: 's_no', // Default, adjust as needed
-        area: { value: 0, unit: 'sq_m' }, // Default
-        paiky: false,
-        ekatrikaran: false
-      };
-    }
-  });
-  
-  return Object.values(slabMap);
-};
+
 
 const initializeFromYearSlabs = (slabs: YearSlab[], savedPanipatraks: Panipatrak[] = []) => {
+    // Clear existing state more aggressively
+  setSlabPanels({});
+  setExpandedSlabs({});
+  setExpandedPeriods({});
+  console.log('Initializing from slabs:', slabs);
+  console.log('Using saved panipatraks:', savedPanipatraks);
+  
   const newPanels: typeof slabPanels = {};
   const initialExpanded: Record<string, boolean> = {};
   const initialPeriodsExpanded: Record<string, boolean> = {};
@@ -560,14 +586,16 @@ const initializeFromYearSlabs = (slabs: YearSlab[], savedPanipatraks: Panipatrak
       return;
     }
     
+    console.log(`Processing slab ${slab.id}:`, slab);
+    
     const periods = getYearPeriods(slab);
     const slabPanipatraks = savedPanipatraks.filter(p => p.slabId === slab.id);
-    const hasSpecialTypes = slab.paiky || slab.ekatrikaran;
     
     newPanels[slab.id] = {
       slab,
       sameForAll: false,
       periods: periods.map(pr => {
+        // Find saved data for this specific period (year)
         const savedData = slabPanipatraks.find(p => p.year === pr.from);
         const allFarmers = savedData?.farmers || [];
         
@@ -588,113 +616,99 @@ const initializeFromYearSlabs = (slabs: YearSlab[], savedPanipatraks: Panipatrak
             type: 'regular'
           }));
 
-        // Group paiky farmers by their paikyNumber
-        const paikyGroups = allFarmers
-          .filter(f => f.type === 'paiky' && f.paikyNumber)
-          .reduce((groups, farmer) => {
-            const group = groups.find(g => g.paikyNumber === farmer.paikyNumber) || {
-              paikyNumber: farmer.paikyNumber!,
-              farmers: [],
-              entry: slab.paikyEntries?.find(e => 
-                e.sNoType === slab.sNoType && 
-                e.sNo === slab.sNo
-              )
+        // Create paikies based on current slab data, not saved data
+        const paikies = slab.paiky && slab.paikyCount > 0 ? 
+          Array.from({ length: slab.paikyCount }, (_, i) => {
+            const paikyNumber = i + 1;
+            const savedPaikyFarmers = allFarmers.filter(f => 
+              f.type === 'paiky' && f.paikyNumber === paikyNumber
+            );
+            
+            // Use saved farmers if they exist, otherwise create default
+            const farmers = savedPaikyFarmers.length > 0 ? 
+              savedPaikyFarmers.map(f => ({
+                id: f.id,
+                name: f.name,
+                area: f.area,
+                areaType: "sq_m",
+                sq_m: f.area.unit === "sq_m" ? f.area.value : convertToSquareMeters(f.area.value, f.area.unit),
+                acre: convertFromSquareMeters(f.area.value, "acre"),
+                guntha: convertFromSquareMeters(f.area.value, "guntha") % 40,
+                type: 'paiky',
+                paikyNumber
+              })) : 
+              [{
+                id: `paiky-${Date.now()}-${Math.random()}`,
+                name: "",
+                area: { value: 0, unit: "sq_m" },
+                areaType: "sq_m",
+                sq_m: 0,
+                acre: 0,
+                guntha: 0,
+                type: 'paiky',
+                paikyNumber
+              }];
+            
+            return {
+              paikyNumber,
+              farmers,
+              entry: slab.paikyEntries?.[i]
             };
-            
-            group.farmers.push({
-              id: farmer.id,
-              name: farmer.name,
-              area: farmer.area,
-              areaType: "sq_m",
-              sq_m: farmer.area.unit === "sq_m" ? farmer.area.value : convertToSquareMeters(farmer.area.value, farmer.area.unit),
-              acre: convertFromSquareMeters(farmer.area.value, "acre"),
-              guntha: convertFromSquareMeters(farmer.area.value, "guntha") % 40,
-              type: 'paiky',
-              paikyNumber: farmer.paikyNumber
-            });
-            
-            if (!groups.some(g => g.paikyNumber === group.paikyNumber)) {
-              groups.push(group);
-            }
-            
-            return groups;
-          }, [] as {
-            paikyNumber: number;
-            farmers: FarmerStrict[];
-            entry?: SlabEntry;
-          }[]);
+          }) : [];
 
-        // If no paikies but slab has paiky, create default
-        const paikies = paikyGroups.length > 0 ? paikyGroups : 
-          (slab.paiky ? Array.from({ length: slab.paikyCount || 0 }, (_, i) => ({
-            paikyNumber: i + 1,
-            farmers: [{
-              id: `paiky-${Date.now()}-${Math.random()}`,
-              name: "",
-              area: { value: 0, unit: "sq_m" },
-              areaType: "sq_m",
-              sq_m: 0,
-              acre: 0,
-              guntha: 0,
-              type: 'paiky',
-              paikyNumber: i + 1
-            }],
-            entry: slab.paikyEntries?.[i]
-          })) : []);
-
-        // Group ekatrikaran farmers by their ekatrikaranNumber
-        const ekatrikaranGroups = allFarmers
-          .filter(f => f.type === 'ekatrikaran' && f.ekatrikaranNumber)
-          .reduce((groups, farmer) => {
-            const group = groups.find(g => g.ekatrikaranNumber === farmer.ekatrikaranNumber) || {
-              ekatrikaranNumber: farmer.ekatrikaranNumber!,
-              farmers: [],
-              entry: slab.ekatrikaranEntries?.find(e => 
-                e.sNoType === slab.sNoType && 
-                e.sNo === slab.sNo
-              )
+        // Create ekatrikarans based on current slab data, not saved data
+        const ekatrikarans = slab.ekatrikaran && slab.ekatrikaranCount > 0 ? 
+          Array.from({ length: slab.ekatrikaranCount }, (_, i) => {
+            const ekatrikaranNumber = i + 1;
+            const savedEkatrikaranFarmers = allFarmers.filter(f => 
+              f.type === 'ekatrikaran' && f.ekatrikaranNumber === ekatrikaranNumber
+            );
+            
+            // Use saved farmers if they exist, otherwise create default
+            const farmers = savedEkatrikaranFarmers.length > 0 ? 
+              savedEkatrikaranFarmers.map(f => ({
+                id: f.id,
+                name: f.name,
+                area: f.area,
+                areaType: "sq_m",
+                sq_m: f.area.unit === "sq_m" ? f.area.value : convertToSquareMeters(f.area.value, f.area.unit),
+                acre: convertFromSquareMeters(f.area.value, "acre"),
+                guntha: convertFromSquareMeters(f.area.value, "guntha") % 40,
+                type: 'ekatrikaran',
+                ekatrikaranNumber
+              })) : 
+              [{
+                id: `ekatrikaran-${Date.now()}-${Math.random()}`,
+                name: "",
+                area: { value: 0, unit: "sq_m" },
+                areaType: "sq_m",
+                sq_m: 0,
+                acre: 0,
+                guntha: 0,
+                type: 'ekatrikaran',
+                ekatrikaranNumber
+              }];
+            
+            return {
+              ekatrikaranNumber,
+              farmers,
+              entry: slab.ekatrikaranEntries?.[i]
             };
-            
-            group.farmers.push({
-              id: farmer.id,
-              name: farmer.name,
-              area: farmer.area,
-              areaType: "sq_m",
-              sq_m: farmer.area.unit === "sq_m" ? farmer.area.value : convertToSquareMeters(farmer.area.value, farmer.area.unit),
-              acre: convertFromSquareMeters(farmer.area.value, "acre"),
-              guntha: convertFromSquareMeters(farmer.area.value, "guntha") % 40,
-              type: 'ekatrikaran',
-              ekatrikaranNumber: farmer.ekatrikaranNumber
-            });
-            
-            if (!groups.some(g => g.ekatrikaranNumber === group.ekatrikaranNumber)) {
-              groups.push(group);
-            }
-            
-            return groups;
-          }, [] as {
-            ekatrikaranNumber: number;
-            farmers: FarmerStrict[];
-            entry?: SlabEntry;
-          }[]);
+          }) : [];
 
-        // If no ekatrikarans but slab has ekatrikaran, create default
-        const ekatrikarans = ekatrikaranGroups.length > 0 ? ekatrikaranGroups : 
-          (slab.ekatrikaran ? Array.from({ length: slab.ekatrikaranCount || 0 }, (_, i) => ({
-            ekatrikaranNumber: i + 1,
-            farmers: [{
-              id: `ekatrikaran-${Date.now()}-${Math.random()}`,
-              name: "",
-              area: { value: 0, unit: "sq_m" },
-              areaType: "sq_m",
-              sq_m: 0,
-              acre: 0,
-              guntha: 0,
-              type: 'ekatrikaran',
-              ekatrikaranNumber: i + 1
-            }],
-            entry: slab.ekatrikaranEntries?.[i]
-          })) : []);
+        // If no special types and no saved regular farmers, create default
+        if (!slab.paiky && !slab.ekatrikaran && regularFarmers.length === 0) {
+          regularFarmers.push({
+            id: `farmer-${Date.now()}-${Math.random()}`,
+            name: "",
+            area: { value: 0, unit: "sq_m" },
+            areaType: "sq_m",
+            sq_m: 0,
+            acre: 0,
+            guntha: 0,
+            type: 'regular'
+          });
+        }
 
         initialExpanded[slab.id] = true;
         if (periods.length > 0) {
@@ -712,10 +726,11 @@ const initializeFromYearSlabs = (slabs: YearSlab[], savedPanipatraks: Panipatrak
     };
   });
 
+  console.log('New panels created:', newPanels);
+  
   setSlabPanels(newPanels);
   setExpandedSlabs(initialExpanded);
   setExpandedPeriods(initialPeriodsExpanded);
-  setIsInitialized(true);
 };
 
 const createDefaultFarmer = (type: 'regular' | 'paiky' | 'ekatrikaran', number?: number) => ({

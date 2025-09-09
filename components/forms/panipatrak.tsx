@@ -481,6 +481,7 @@ const paikies = slab.paiky
   : [];
 
 // Initialize ekatrikarans similarly
+// Initialize ekatrikarans similarly to paikies
 const ekatrikarans = slab.ekatrikaran
   ? Array.from({ length: slab.ekatrikaranCount || 0 }, (_, i) => {
       const ekatrikaranNumber = i + 1;
@@ -491,32 +492,33 @@ const ekatrikarans = slab.ekatrikaran
       const ekatrikaranFarmers = savedData?.farmers
         ?.filter(f => f.ekatrikaranNumber === ekatrikaranNumber)
         ?.map(f => ({
-            id: f.id || `ekatrikaran-${Date.now()}-${Math.random()}`,
-            name: f.name || "",
-            area: f.area || { value: 0, unit: "sq_m" },
-            areaType: "sq_m",
-            acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
-            guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
-            sq_m: f.area?.unit === "sq_m" ? f.area.value : undefined,
-            type: 'ekatrikaran',
-            ekatrikaranNumber
-          })) || [{
-            id: `ekatrikaran-${Date.now()}-${Math.random()}`,
-            name: "",
-            area: { value: 0, unit: "sq_m" },
-            areaType: "sq_m",
-            acre: 0,
-            guntha: 0,
-            type: 'ekatrikaran',
-            ekatrikaranNumber
-          }];
-        
-        return {
-          ekatrikaranNumber,
-          farmers: ekatrikaranFarmers,
-          entry: ekatrikaranEntry // Add the entry data here
-        };
-      })
+          id: f.id || `ekatrikaran-${Date.now()}-${Math.random()}`,
+          name: f.name || "",
+          area: f.area || { value: 0, unit: "sq_m" },
+          areaType: "sq_m",
+          acre: convertFromSquareMeters(f.area?.value || 0, "acre"),
+          guntha: convertFromSquareMeters(f.area?.value || 0, "guntha") % 40,
+          sq_m: f.area?.unit === "sq_m" ? f.area.value : f.area?.value || 0, // Fixed this line
+          type: 'ekatrikaran',
+          ekatrikaranNumber
+        })) || [{
+          id: `ekatrikaran-${Date.now()}-${Math.random()}`,
+          name: "",
+          area: { value: 0, unit: "sq_m" },
+          areaType: "sq_m",
+          acre: 0,
+          guntha: 0,
+          sq_m: 0, // Added this line
+          type: 'ekatrikaran',
+          ekatrikaranNumber
+        }];
+      
+      return {
+        ekatrikaranNumber,
+        farmers: ekatrikaranFarmers,
+        entry: ekatrikaranEntry // Add the entry data here
+      };
+    })
   : [];
           return {
             ...pr,

@@ -106,6 +106,7 @@ CREATE TABLE nondh_details (
     vigat TEXT,
     invalid_reason TEXT,
     old_owner VARCHAR(255),
+    ganot VARCHAR(20),
     status VARCHAR(20) DEFAULT 'valid' CHECK (status IN ('valid', 'invalid', 'nullified')),
     hukam_status VARCHAR(20) CHECK (hukam_status IN ('valid', 'invalid', 'nullified')),
     hukam_invalid_reason TEXT,

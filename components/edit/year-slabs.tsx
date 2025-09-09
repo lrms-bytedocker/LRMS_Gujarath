@@ -242,7 +242,7 @@ setHasUnsavedChanges,  } = useLandRecord();
   const [loading, setLoading] = useState(false);
   const [currentPaikyPage, setCurrentPaikyPage] = useState<Record<string, number>>({});
 const PAIKY_PER_PAGE = 5;
-  const [slabs, setSlabs] = useState<YearSlabUI[]>([]);
+  const slabs = yearSlabs.map(toYearSlabUI);
    const [uploadedFileName, setUploadedFileName] = useState<string>("");
    const [currentEkatrikaranPage, setCurrentEkatrikaranPage] = useState<Record<string, number>>({});
 const EKATRIKARAN_PER_PAGE = 5;
@@ -352,40 +352,46 @@ useEffect(() => {
       if (error) throw error;
 
       if (dbSlabs && dbSlabs.length > 0) {
-        const uiSlabs = dbSlabs.map(slab => ({
-          ...toYearSlabUI(slab),
-          collapsed: false
-        }));
+        // Set the context state directly
+        setYearSlabs(dbSlabs);
         
-        setSlabs(uiSlabs);
-        initialSlabsRef.current = JSON.parse(JSON.stringify(uiSlabs)); // Deep copy
+        // Keep your filename extraction logic
+        const newSlabFileNames = {};
+        const newEntryFileNames = {};
+        dbSlabs.forEach(slab => {
+          // ... filename extraction logic
+        });
+        
+        setSlabUploadedFileNames(newSlabFileNames);
+        setEntryUploadedFileNames(newEntryFileNames);
+        
       } else {
         const defaultSlab = await createDefaultSlab();
-        setSlabs([defaultSlab]);
-        initialSlabsRef.current = JSON.parse(JSON.stringify([defaultSlab]));
+        setYearSlabs([fromYearSlabUI(defaultSlab)]);
       }
     } catch (error) {
       console.error('Error loading year slabs:', error);
       toast({ title: "Error loading data", variant: "destructive" });
     } finally {
       setInitialLoading(false);
-      setModified(false); // Reset modified flag after load
+      setModified(false);
     }
   };
 
   loadData();
-}, [recordId, toast]);
+}, [recordId, toast, setYearSlabs]);
 
-// Add this useEffect after the loadData useEffect
 useEffect(() => {
   if (slabs.length > 0) {
-    setActiveTab(prev => {
-      const newActiveTab = { ...prev };
-      slabs.forEach(slab => {
-        // Only set if not already set
-        if (!newActiveTab[slab.id]) {
+    // Only update if there are new slabs that don't have active tabs set
+    const newSlabsWithoutTabs = slabs.filter(slab => !activeTab[slab.id]);
+    
+    if (newSlabsWithoutTabs.length > 0) {
+      setActiveTab(prev => {
+        const newActiveTab = { ...prev };
+        newSlabsWithoutTabs.forEach(slab => {
           if (slab.paiky && slab.ekatrikaran) {
-            newActiveTab[slab.id] = 'paiky'; // Default to paiky when both exist
+            newActiveTab[slab.id] = 'paiky';
           } else if (slab.paiky) {
             newActiveTab[slab.id] = 'paiky';
           } else if (slab.ekatrikaran) {
@@ -393,12 +399,12 @@ useEffect(() => {
           } else {
             newActiveTab[slab.id] = 'main';
           }
-        }
+        });
+        return newActiveTab;
       });
-      return newActiveTab;
-    });
+    }
   }
-}, [slabs]); // Run when slabs change
+}, [slabs.length]);
 
   const createDefaultSlab = async (): Promise<YearSlabUI> => {
     const blockNo = await getAutoPopulatedSNoData(recordId, "block_no");
@@ -721,14 +727,14 @@ const validateYearOrder = (slabs: YearSlabUI[]) => {
 };
 
 const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
-  setSlabs(prev => {
+  setYearSlabs(prev => {
     const newSlabs = [...prev];
     const index = newSlabs.findIndex(s => s.id === id);
     
     if (index === -1) return newSlabs;
 
     // Update current slab
-    newSlabs[index] = { ...newSlabs[index], ...updates };
+    newSlabs[index] = { ...newSlabs[index], ...fromYearSlabUI({...toYearSlabUI(newSlabs[index]), ...updates}) };
 
     // If start year changed, update NEXT slab's end year (not previous)
     if (updates.startYear !== undefined && index < newSlabs.length - 1) {
@@ -738,11 +744,9 @@ const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
       };
     }
 
-    // Update modified state
-    setModified(JSON.stringify(newSlabs) !== JSON.stringify(initialSlabsRef.current));
-    
     return newSlabs;
   });
+  setModified(true);
 };
 
  // Generate a proper UUID v4 for new slabs
@@ -754,25 +758,27 @@ const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
   };
 
 const addSlab = async () => {
-  setModified(true);
   const defaultArea = { areaType: "sq_m" as AreaTypeUI, sq_m: 0 };
 
   let startYear, endYear;
   
-  if (slabs.length === 0) {
+  if (yearSlabs.length === 0) {
     startYear = "";
     endYear = 2004;
   } else {
-    const previousSlab = slabs[slabs.length - 1];
+    const previousSlab = yearSlabs[yearSlabs.length - 1];
     endYear = previousSlab.startYear;
     startYear = "";
   }
 
-  // Get the default S.No based on block_no type
   const defaultSNo = await getAutoPopulatedSNoData(recordId, "block_no");
+  const previousSlab = yearSlabs.length > 0 ? yearSlabs[yearSlabs.length - 1] : null;
+  const shouldCopyEkatrikaran = previousSlab?.ekatrikaran && previousSlab?.ekatrikaranEntries?.length > 0;
+
+  const newSlabId = generateUUID();
 
   const newSlab: YearSlabUI = {
-    id: Date.now().toString(),
+    id: newSlabId,
     startYear,
     endYear,
     sNoTypeUI: "block_no",
@@ -782,26 +788,36 @@ const addSlab = async () => {
     paiky: false,
     paikyCount: 0,
     paikyEntries: [],
-    ekatrikaran: false,
-    ekatrikaranCount: 0,
-    ekatrikaranEntries: [],
+    ekatrikaran: shouldCopyEkatrikaran,
+    ekatrikaranCount: shouldCopyEkatrikaran ? previousSlab.ekatrikaranCount : 0,
+    ekatrikaranEntries: shouldCopyEkatrikaran 
+      ? previousSlab.ekatrikaranEntries.map(entry => ({
+          ...entry,
+          id: generateUUID(),
+          integrated712: ""
+        }))
+      : [],
     collapsed: false,
   };
 
-  setSlabs([...slabs, newSlab]);
+  // Add to context state
+  setYearSlabs([...yearSlabs, fromYearSlabUI(newSlab)]);
+  
+  if (shouldCopyEkatrikaran) {
+    setActiveTab(prev => ({ ...prev, [newSlabId]: 'ekatrikaran' }));
+  }
 };
 
   const removeSlab = (id: string) => {
-
-    setSlabs(slabs.filter((slab) => slab.id !== id));
-  };
+  setYearSlabs(prev => prev.filter((slab) => slab.id !== id));
+  setModified(true);
+};
 
   // "Count" updating helpers
 const updatePaikyCount = async (slabId: string, newCount: number) => {
-  // First fetch the default block_no from the database
   const defaultBlockNo = await getAutoPopulatedSNoData(recordId, "block_no");
 
-  setSlabs(prev => prev.map(slab => {
+  setYearSlabs(prev => prev.map(slab => { 
     if (slab.id !== slabId) return slab;
     
     const currentCount = slab.paikyEntries?.length || 0;
@@ -816,7 +832,7 @@ const updatePaikyCount = async (slabId: string, newCount: number) => {
     
     const newEntries = Array.from({ length: newCount - currentCount }, () => ({
       id: generateUUID(),
-      sNo: defaultBlockNo, // Use the fetched block_no
+      sNo: defaultBlockNo,
       sNoTypeUI: "block_no",
       areaUI: { areaType: "sq_m", sq_m: 0 },
       integrated712: ""
@@ -828,13 +844,13 @@ const updatePaikyCount = async (slabId: string, newCount: number) => {
       paikyEntries: [...(slab.paikyEntries || []), ...newEntries]
     };
   }));
+  setModified(true);
 };
 
 const updateEkatrikaranCount = async (slabId: string, newCount: number) => {
-  // First fetch the default block_no from the database
   const defaultBlockNo = await getAutoPopulatedSNoData(recordId, "block_no");
 
-  setSlabs(prev => prev.map(slab => {
+  setYearSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
     const currentCount = slab.ekatrikaranEntries?.length || 0;
@@ -849,7 +865,7 @@ const updateEkatrikaranCount = async (slabId: string, newCount: number) => {
     
     const newEntries = Array.from({ length: newCount - currentCount }, () => ({
       id: generateUUID(),
-      sNo: defaultBlockNo, // Use the fetched block_no
+      sNo: defaultBlockNo,
       sNoTypeUI: "block_no",
       areaUI: { areaType: "sq_m", sq_m: 0 },
       integrated712: ""
@@ -861,6 +877,7 @@ const updateEkatrikaranCount = async (slabId: string, newCount: number) => {
       ekatrikaranEntries: [...(slab.ekatrikaranEntries || []), ...newEntries]
     };
   }));
+  setModified(true);
 };
   
 const updateSlabEntry = async (
@@ -883,7 +900,7 @@ const updateSlabEntry = async (
     }
   }
 
-  setSlabs(prev => prev.map(slab => {
+  setYearSlabs(prev => prev.map(slab => {
     if (slab.id !== slabId) return slab;
     
     if (type === "paiky") {
@@ -902,8 +919,8 @@ const updateSlabEntry = async (
       return { ...slab, ekatrikaranEntries: updatedEntries };
     }
   }));
+  setModified(true);
 };
-
 const handleSave = async () => {
   if (!recordId) return;
   
@@ -995,7 +1012,7 @@ const handleSave = async () => {
 };
 
 const toggleCollapse = (id: string) => {
-  setSlabs(prev => prev.map(slab => 
+  setYearSlabs(prev => prev.map(slab =>
     slab.id === id ? { ...slab, collapsed: !slab.collapsed } : slab
   ));
 };
