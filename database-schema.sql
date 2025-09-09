@@ -110,7 +110,7 @@ CREATE TABLE nondh_details (
     status VARCHAR(20) DEFAULT 'valid' CHECK (status IN ('valid', 'invalid', 'nullified')),
     hukam_status VARCHAR(20) CHECK (hukam_status IN ('valid', 'invalid', 'nullified')),
     hukam_invalid_reason TEXT,
-    affected_nondh_no VARCHAR(255),
+    affected_nondh_details JSONB,
     show_in_output BOOLEAN DEFAULT true,
     has_documents BOOLEAN DEFAULT false,
     doc_upload_url TEXT,

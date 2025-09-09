@@ -802,18 +802,17 @@ if (!hasValidOwnerName && !is1stRightHukam) {
         break;
         
       case "Hukam":
-        if (!detail.hukamDate || !detail.hukamDate.trim()) {
-          errors.push(`Nondh ${nondhNumber}: Hukam Date is required`);
-        }
-        // Affected Nondh Number is now optional for Hukam
-        if (detail.hukamStatus === "invalid" && (!detail.hukamInvalidReason || !detail.hukamInvalidReason.trim())) {
-          errors.push(`Nondh ${nondhNumber}: Hukam Invalid Reason is required when status is invalid`);
-        }
-        // Ganot validation for ALT Krushipanch
-        if (detail.hukamType === "ALT Krushipanch" && (!detail.ganot || !detail.ganot.trim())) {
-          errors.push(`Nondh ${nondhNumber}: Ganot is required when Hukam Type is ALT Krushipanch`);
-        }
-        break;
+  if (!detail.hukamDate || !detail.hukamDate.trim()) {
+    errors.push(`Nondh ${nondhNumber}: Hukam Date is required`);
+  }
+  // Validate affected nondh details
+  const affectedDetails = affectedNondhDetails[detail.id] || [];
+  affectedDetails.forEach((affected, idx) => {
+    if (affected.status === "invalid" && (!affected.invalidReason || !affected.invalidReason.trim())) {
+      errors.push(`Nondh ${nondhNumber}, Affected Nondh ${idx + 1}: Invalid reason is required when status is invalid`);
+    }
+  });
+  break;
     }
   });
   
@@ -926,9 +925,24 @@ useEffect(() => {
         if (stepData.transferEqualDistribution) {
           setTransferEqualDistribution(stepData.transferEqualDistribution);
         }
-        if (stepData.affectedNondhDetails) {
-          setAffectedNondhDetails(stepData.affectedNondhDetails);
-        }
+        // Load affected nondh details if saved
+if (stepData.affectedNondhDetails) {
+  setAffectedNondhDetails(stepData.affectedNondhDetails);
+} else if (stepData.nondhDetails) {
+  // Convert legacy affected_nondh_no to new format
+  const convertedAffected = {};
+  stepData.nondhDetails.forEach(detail => {
+    if (detail.affectedNondhNo) {
+      convertedAffected[detail.id] = [{
+        id: Date.now().toString(),
+        nondhNo: detail.affectedNondhNo,
+        status: 'valid',
+        invalidReason: ''
+      }];
+    }
+  });
+  setAffectedNondhDetails(convertedAffected);
+}
       } else {
         // Initialize new data with proper affectedSNos handling
         const initialData = nondhs.map(nondh => {
@@ -2474,7 +2488,13 @@ if (!validation.isValid) {
       doc_upload_url: detail.docUpload || null,
       hukam_status: detail.hukamStatus || 'valid',
       hukam_invalid_reason: detail.hukamInvalidReason || null,
-      affected_nondh_no: detail.affectedNondhNo || null,
+      affected_nondh_no: affectedNondhDetails[detail.id] && affectedNondhDetails[detail.id].length > 0 
+  ? JSON.stringify(affectedNondhDetails[detail.id].map(a => ({
+      nondhNo: a.nondhNo,
+      status: a.status,
+      invalidReason: a.invalidReason || null
+    }))) 
+  : null,
       ganot: detail.ganot || null // Add ganot field
     })))
     .select();
