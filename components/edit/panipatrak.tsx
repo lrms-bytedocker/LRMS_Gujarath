@@ -392,13 +392,32 @@ const normalizeForComparison = (panipatraks: Panipatrak[]) => {
 };
 
 export default function PanipatrakStep() {
-  const { yearSlabs, setCurrentStep, currentStep, landBasicInfo, panipatraks, // Add this line to get panipatraks from context
+  const { yearSlabs, setCurrentStep, currentStep, landBasicInfo, panipatraks, // get panipatraks from context
   setPanipatraks, recordId } = useLandRecord();
   const { getStepData, updateStepData } = useStepFormData(3);
   const [loading, setLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [expandedSlabs, setExpandedSlabs] = useState<Record<string, boolean>>({});
   const [expandedPeriods, setExpandedPeriods] = useState<Record<string, boolean>>({});
+  const [previousYearSlabs, setPreviousYearSlabs] = useState<YearSlab[]>([]);
+
+useEffect(() => {
+  // Only compare specific properties that affect the period structure
+  const shouldReinitialize = yearSlabs.length > 0 && isInitialized && 
+      (previousYearSlabs.length !== yearSlabs.length ||
+       !yearSlabs.every((slab, index) => 
+         previousYearSlabs[index]?.startYear === slab.startYear &&
+         previousYearSlabs[index]?.endYear === slab.endYear
+       ));
+  
+  if (shouldReinitialize) {
+    console.log('Year slabs structure changed, forcing reinitialization');
+    setIsInitialized(false);
+  }
+  
+  // Update previous reference
+  setPreviousYearSlabs(yearSlabs);
+}, [yearSlabs, isInitialized, previousYearSlabs]);
 
   const [slabPanels, setSlabPanels] = useState<{
   [slabId: string]: {
@@ -436,10 +455,13 @@ useEffect(() => {
   if (!yearSlabs?.length) {
     setSlabPanels({});
     setIsInitialized(false);
+    setPreviousYearSlabs([]);
     return;
   }
 
   const initialize = async () => {
+    // Only initialize if not already initialized or if forced
+    if (isInitialized) return;
     console.log('Reinitializing with updated yearSlabs:', yearSlabs);
     
     // Force complete reset before reinitializing
@@ -469,7 +491,7 @@ useEffect(() => {
   };
 
   initialize();
-}, [yearSlabs, panipatraks]); // Add proper dependencies
+}, [yearSlabs, panipatraks, isInitialized]);
 
 useEffect(() => {
   console.log('YearSlabs changed:', yearSlabs);
@@ -544,27 +566,7 @@ useEffect(() => {
     setOriginalData(normalizeForComparison(initialPanipatraks));
   }
 }, [isInitialized, slabPanels, originalData.length]);
-// Helper function to reconstruct slabs from panipatraks if needed
-const reconstructYearSlabsFromPanipatraks = (panipatraks: Panipatrak[]): YearSlab[] => {
-  const slabMap: Record<string, YearSlab> = {};
-  
-  panipatraks.forEach(pani => {
-    if (!slabMap[pani.slabId]) {
-      slabMap[pani.slabId] = {
-        id: pani.slabId,
-        startYear: pani.year,
-        endYear: pani.year + 1,
-        sNo: pani.sNo,
-        sNoType: 's_no', // Default, adjust as needed
-        area: { value: 0, unit: 'sq_m' }, // Default
-        paiky: false,
-        ekatrikaran: false
-      };
-    }
-  });
-  
-  return Object.values(slabMap);
-};
+
 
 const initializeFromYearSlabs = (slabs: YearSlab[], savedPanipatraks: Panipatrak[] = []) => {
     // Clear existing state more aggressively

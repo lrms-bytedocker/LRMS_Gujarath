@@ -226,6 +226,7 @@ useEffect(() => {
   const [currentStep, setCurrentStep] = useState(1)
   const [landBasicInfo, setLandBasicInfo] = useState<LandBasicInfo | null>(null)
   const [yearSlabs, setYearSlabs] = useState<YearSlab[]>([])
+  const [yearSlabsVersion, setYearSlabsVersion] = useState(0);
   const [panipatraks, setPanipatraks] = useState<Panipatrak[]>([])
   const [nondhs, setNondhs] = useState<Nondh[]>([])
   const [nondhDetails, setNondhDetails] = useState<NondhDetail[]>([])
