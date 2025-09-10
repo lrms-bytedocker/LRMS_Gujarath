@@ -1,6 +1,6 @@
 "use client"
 import React from 'react'
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -533,22 +533,53 @@ const [affectedNondhDetails, setAffectedNondhDetails] = useState<Record<string, 
   invalidReason?: string;
 }>>>({});
 
+const cleanupTimeoutRef = useRef(null);
+
 useEffect(() => {
-  // Clean up empty owner relations for Hakkami
-  const cleanedData = nondhDetailData.map(detail => {
-    if (["Hakkami"].includes(detail.type)) {
-      const nonEmptyRelations = detail.ownerRelations.filter(rel => rel.ownerName.trim() !== "");
-      if (nonEmptyRelations.length !== detail.ownerRelations.length) {
-        return { ...detail, ownerRelations: nonEmptyRelations };
-      }
-    }
-    return detail;
-  });
-  
-  if (JSON.stringify(cleanedData) !== JSON.stringify(nondhDetailData)) {
-    setNondhDetailData(cleanedData);
+  if (cleanupTimeoutRef.current) {
+    clearTimeout(cleanupTimeoutRef.current);
   }
-}, [nondhDetailData]);
+
+  cleanupTimeoutRef.current = setTimeout(() => {
+    const cleanedData = nondhDetailData.map(detail => {
+      if (["Hakkami"].includes(detail.type)) {
+        const nonEmptyRelations = detail.ownerRelations.filter(rel => rel.ownerName.trim() !== "");
+        if (nonEmptyRelations.length !== detail.ownerRelations.length) {
+          return { ...detail, ownerRelations: nonEmptyRelations };
+        }
+      }
+      return detail;
+    });
+    
+    if (JSON.stringify(cleanedData) !== JSON.stringify(nondhDetailData)) {
+      setNondhDetailData(cleanedData);
+    }
+  }, 100);
+
+  return () => {
+    if (cleanupTimeoutRef.current) {
+      clearTimeout(cleanupTimeoutRef.current);
+    }
+  };
+}, [nondhDetailData.map(d => `${d.id}-${d.type}-${d.ownerRelations.length}`).join(',')]); // More specific dependency
+
+// Initialize additional states from step data
+useEffect(() => {
+  const stepData = getStepData();
+  
+  // Always restore additional states if they exist in step data
+  if (stepData.ownerTransfers && Object.keys(stepData.ownerTransfers).length > 0) {
+    setOwnerTransfers(stepData.ownerTransfers);
+  }
+  
+  if (stepData.transferEqualDistribution && Object.keys(stepData.transferEqualDistribution).length > 0) {
+    setTransferEqualDistribution(stepData.transferEqualDistribution);
+  }
+  
+  if (stepData.affectedNondhDetails && Object.keys(stepData.affectedNondhDetails).length > 0) {
+    setAffectedNondhDetails(stepData.affectedNondhDetails);
+  }
+}, []);
 
 // Add function to manage affected nondh details
 const addAffectedNondh = (detailId: string) => {
@@ -858,12 +889,12 @@ const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; error
           errors.push(`Nondh ${nondhNumber}: Hukam Date is required`);
         }
         // Validate affected nondh details
-        const affectedDetails = affectedNondhDetails[detail.id] || [];
-        affectedDetails.forEach((affected, idx) => {
-          if (affected.status === "invalid" && (!affected.invalidReason || !affected.invalidReason.trim())) {
-            errors.push(`Nondh ${nondhNumber}, Affected Nondh ${idx + 1}: Invalid reason is required when status is invalid`);
-          }
-        });
+const affectedDetails = affectedNondhDetails[detail.id] || [];
+affectedDetails.forEach((affected, idx) => {
+  if (affected.status === "invalid" && (!affected.invalidReason || !affected.invalidReason.trim())) {
+    errors.push(`Nondh ${nondhNumber}, Affected Nondh ${idx + 1}: Reason is required when status is Radd`);
+  }
+});
         break;
     }
   });
@@ -872,12 +903,6 @@ const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; error
     isValid: errors.length === 0,
     errors
   };
-};
-
-const getNondhNumber = (nondh: any): number => {
-  if (typeof nondh.number === 'number') return nondh.number;
-  const num = parseInt(nondh.number, 10);
-  return isNaN(num) ? 0 : num;
 };
 
 const safeNondhNumber = (nondh: any): number => {
@@ -916,9 +941,18 @@ const handleTypeChange = (detailId: string, newType: string) => {
   }
 };
 
-  // Update the useEffect that saves to step data
+// Add a ref to debounce saves
+const saveTimeoutRef = useRef(null);
+
+  // useEffect that saves to step data
 useEffect(() => {
-  if (nondhDetailData.length > 0) {
+  if (nondhDetailData.length === 0) return;
+  
+  if (saveTimeoutRef.current) {
+    clearTimeout(saveTimeoutRef.current);
+  }
+
+  saveTimeoutRef.current = setTimeout(() => {
     const hasContent = nondhDetailData.some(detail => 
       detail.type.trim() !== "" || 
       detail.ownerRelations.some(rel => rel.ownerName.trim() !== "") ||
@@ -929,26 +963,25 @@ useEffect(() => {
       detail.ganot || 
       detail.sdDate ||
       detail.amount
-    )
+    );
     
-    const currentStepData = getStepData()
-    const newStepData = {
-      nondhDetails: nondhDetailData,
-      ownerTransfers,
-      transferEqualDistribution,
-      affectedNondhDetails
+    if (hasContent) {
+      updateStepData({
+        nondhDetails: nondhDetailData,
+        ownerTransfers,
+        transferEqualDistribution,
+        affectedNondhDetails
+      });
     }
-    const isDifferent = JSON.stringify(currentStepData) !== JSON.stringify(newStepData)
-    
-    if (hasContent && isDifferent) {
-      const timeoutId = setTimeout(() => {
-        updateStepData(newStepData)
-      }, 300)
-      
-      return () => clearTimeout(timeoutId)
+  }, 500); // Debounce saves
+
+  return () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
-  }
-}, [nondhDetailData, ownerTransfers, transferEqualDistribution, affectedNondhDetails, updateStepData, getStepData])
+  };
+}, [nondhDetailData, ownerTransfers, transferEqualDistribution, affectedNondhDetails]);
+
 
 // Load nondhs from database first
 useEffect(() => {
@@ -978,7 +1011,8 @@ useEffect(() => {
         }));
         
         setNondhs(formattedNondhs);
-        updateStepData({ nondhs: formattedNondhs }); // Keep step data in sync
+        // Clear existing nondhDetailData when nondhs change
+        setNondhDetailData([]);
       }
     } catch (error) {
       console.error('Error loading nondhs:', error);
@@ -990,90 +1024,91 @@ useEffect(() => {
 }, [landBasicInfo?.id]);
 
 useEffect(() => {
-  if (nondhs.length > 0) {
-    const stepData = getStepData();
+  if (nondhs.length === 0) return;
 
-    const needsReinit = nondhDetailData.length === 0 || 
-                       nondhDetailData.length !== nondhs.length ||
-                       !nondhs.every(nondh => nondhDetailData.some(detail => detail.nondhId === nondh.id));
+  const stepData = getStepData();
+  
+  // Check if we need to reinitialize (new nondhs or mismatched data)
+  const needsReinit = nondhDetailData.length === 0 || 
+                     nondhDetailData.length !== nondhs.length ||
+                     !nondhs.every(nondh => nondhDetailData.some(detail => detail.nondhId === nondh.id));
+  
+  if (needsReinit) {
+    // Check if we have saved data that matches current nondhs
+    const hasSavedDataForCurrentNondhs = stepData.nondhDetails && 
+                                         stepData.nondhDetails.length === nondhs.length &&
+                                         nondhs.every(nondh => stepData.nondhDetails.some(detail => detail.nondhId === nondh.id));
     
-    if (needsReinit) {
-      // Use saved data if available and matches current nondhs
-      if (stepData.nondhDetails && 
-          stepData.nondhDetails.length === nondhs.length &&
-          nondhs.every(nondh => stepData.nondhDetails.some(detail => detail.nondhId === nondh.id))) {
-        
-        setNondhDetailData(stepData.nondhDetails);
-        
-        // Restore ALL additional state if saved
-        if (stepData.ownerTransfers) {
-          setOwnerTransfers(stepData.ownerTransfers);
-        }
-        if (stepData.transferEqualDistribution) {
-          setTransferEqualDistribution(stepData.transferEqualDistribution);
-        }
-        if (stepData.affectedNondhDetails) {
-          setAffectedNondhDetails(stepData.affectedNondhDetails);
-        }
-      } else {
-        // Initialize new data - ensure at least one owner relation for Vechand, Varsai, Hayati
-        const initialData = nondhs.map(nondh => {
-          const firstSNo = Array.isArray(nondh.affectedSNos) && nondh.affectedSNos.length > 0
-            ? typeof nondh.affectedSNos[0] === 'string'
-              ? JSON.parse(nondh.affectedSNos[0]).number
-              : nondh.affectedSNos[0].number
-            : '';
-            
-          // For all types, start with one empty owner relation
-const initialOwnerRelations = [{
-  id: Date.now().toString() + Math.random(),
-  ownerName: "",
-  area: { value: 0, unit: "sq_m" },
-  tenure: "Navi",
-  isValid: true
-}];
-            
-          return {
-            id: nondh.id,
-            nondhId: nondh.id,
-            sNo: firstSNo,
-            type: "Kabjedaar",
-            reason: "",
-            date: "",
-            vigat: "",
-            status: "valid",
-            showInOutput: true,
-            hasDocuments: false,
-            ganot: undefined,
-            sdDate: undefined,
-            amount: undefined,
-            hukamDate: undefined,
-            hukamType: "SSRD",
-            restrainingOrder: "no",
-            ownerRelations: initialOwnerRelations,
-          };
-        });
-        setNondhDetailData(initialData);
-      }
+    if (hasSavedDataForCurrentNondhs) {
+      // Restore saved data
+      setNondhDetailData(stepData.nondhDetails);
+      
+      // Restore additional states
+      if (stepData.ownerTransfers) setOwnerTransfers(stepData.ownerTransfers);
+      if (stepData.transferEqualDistribution) setTransferEqualDistribution(stepData.transferEqualDistribution);
+      if (stepData.affectedNondhDetails) setAffectedNondhDetails(stepData.affectedNondhDetails);
+    } else {
+      // Initialize new data for all nondhs
+      const initialData = nondhs.map(nondh => {
+        const firstSNo = Array.isArray(nondh.affectedSNos) && nondh.affectedSNos.length > 0
+          ? typeof nondh.affectedSNos[0] === 'string'
+            ? JSON.parse(nondh.affectedSNos[0]).number
+            : nondh.affectedSNos[0].number
+          : '';
+          
+        const initialOwnerRelations = [{
+          id: Date.now().toString() + Math.random(),
+          ownerName: "",
+          area: { value: 0, unit: "sq_m" },
+          tenure: "Navi",
+          isValid: true
+        }];
+          
+        return {
+          id: Date.now().toString() + Math.random(), // Ensure unique IDs
+          nondhId: nondh.id,
+          sNo: firstSNo,
+          type: "Kabjedaar",
+          reason: "",
+          date: "",
+          vigat: "",
+          status: "valid",
+          showInOutput: true,
+          hasDocuments: false,
+          ganot: undefined,
+          sdDate: undefined,
+          amount: undefined,
+          hukamDate: undefined,
+          hukamType: "SSRD",
+          restrainingOrder: "no",
+          ownerRelations: initialOwnerRelations,
+        };
+      });
+      
+      setNondhDetailData(initialData);
+      
+      // Clear additional states when initializing fresh
+      setOwnerTransfers({});
+      setTransferEqualDistribution({});
+      setAffectedNondhDetails({});
     }
   }
-}, [nondhs]);
+}, [nondhs, nondhDetailData.length]); // Watch for changes in nondhs or length mismatch
 
-  const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
+  const updateNondhDetail = useCallback((id: string, updates: Partial<NondhDetail>) => {
   setNondhDetailData((prev) => {
     return prev.map((detail) => {
       if (detail.id === id) {
         return { 
           ...detail, 
           ...updates,
-          // Only spread ownerRelations if it's provided in updates
           ...(updates.ownerRelations && { ownerRelations: updates.ownerRelations })
         };
       }
       return detail;
     });
   });
-};
+}, []);
 
   const toggleCollapse = (detailId: string) => {
     setCollapsedNondhs(prev => {
@@ -2191,16 +2226,16 @@ case "Bojo":
                 </div>
               </div>
 
-              {affected.status === "invalid" && (
-                <div className="space-y-2 mt-4">
-                  <Label>Invalid Reason *</Label>
-                  <Input
-                    value={affected.invalidReason || ''}
-                    onChange={(e) => updateAffectedNondh(detail.id, affected.id, { invalidReason: e.target.value })}
-                    placeholder="Enter reason for invalidation"
-                  />
-                </div>
-              )}
+              <div className="space-y-2 mt-4">
+  <Label>
+    Reason {affected.status === "invalid" ? "*" : "(Optional)"}
+  </Label>
+  <Input
+    value={affected.invalidReason || ''}
+    onChange={(e) => updateAffectedNondh(detail.id, affected.id, { invalidReason: e.target.value })}
+    placeholder={affected.status === "invalid" ? "Enter reason for invalidation" : "Enter reason (optional)"}
+  />
+</div>
             </Card>
           );
         })}
@@ -2623,13 +2658,14 @@ const handleGanotChange = (detailId: string, ganot: string) => {
   }
 };
   const handleSubmit = async () => {
-    // Save current state to step data before submitting
-   updateStepData({
-  nondhDetails: nondhDetailData,
-  ownerTransfers,
-  transferEqualDistribution,
-  affectedNondhDetails
-} as any);
+    // Force save current state to step data immediately before submitting
+   const immediateStepData = {
+    nondhDetails: nondhDetailData,
+    ownerTransfers,
+    transferEqualDistribution,
+    affectedNondhDetails
+  };
+  updateStepData(immediateStepData);
   // Update validity chain for all nondhs first
   nondhDetailData.forEach(detail => {
     if (detail.status === 'invalid') {
