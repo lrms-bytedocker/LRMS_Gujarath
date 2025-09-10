@@ -85,11 +85,13 @@ export interface NondhDetail {
   hasDocuments: boolean
   docUpload?: string
   date?: string
-  hukamStatus?: "valid" | "invalid" | "nullified";
-  hukamInvalidReason?: string;
-  affectedNondhNo?: string;
-  ganot?: string;
-  // New fields for transfers
+  hukamDate?: string
+  hukamType?: string
+  hukamStatus?: "valid" | "invalid" | "nullified"
+  hukamInvalidReason?: string
+  affectedNondhNo?: string
+  ganot?: string
+  restrainingOrder?: 'yes' | 'no'
   ownerTransfers?: Array<{
     id: string
     oldOwner: string
@@ -98,22 +100,20 @@ export interface NondhDetail {
     oldOwnerArea: { value: number; unit: AreaUnit }
     newOwnerAreas: Array<{ ownerId: string; area: { value: number; unit: AreaUnit } }>
   }>
-  // Vechand specific fields
   sdDate?: string
   amount?: number
   ownerRelations: Array<{
     id: string
     ownerName: string
     sNo: string
-    area: { value: number; unit: AreaUnit };
+    area: { value: number; unit: AreaUnit }
     tenure: string
-    hukamType?: string
-    hukamDate?: string
-    restrainingOrder?: 'yes' | 'no'
     isValid: boolean
   }>
   dbId?: string
 }
+
+export type AreaUnit = "acre" | "guntha" | "sq_m";
 
 export interface LocalFormData {
   [key: number]: {

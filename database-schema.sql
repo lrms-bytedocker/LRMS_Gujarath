@@ -98,23 +98,29 @@ CREATE TABLE nondhs (
 
 -- Create nondh details table
 CREATE TABLE nondh_details (
- id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     nondh_id UUID REFERENCES nondhs(id) ON DELETE CASCADE,
     s_no VARCHAR(255) NOT NULL,
     type VARCHAR(255) NOT NULL,
-    sub_type VARCHAR(255),
+    reason TEXT,
+    date DATE,
+    hukam_date DATE,
+    hukam_type VARCHAR(50) DEFAULT 'SSRD',
     vigat TEXT,
+    status VARCHAR(20) DEFAULT 'valid' CHECK (status IN ('valid', 'invalid', 'nullified')),
     invalid_reason TEXT,
     old_owner VARCHAR(255),
-    ganot VARCHAR(20),
-    status VARCHAR(20) DEFAULT 'valid' CHECK (status IN ('valid', 'invalid', 'nullified')),
-    hukam_status VARCHAR(20) CHECK (hukam_status IN ('valid', 'invalid', 'nullified')),
-    hukam_invalid_reason TEXT,
-    affected_nondh_no VARCHAR(255),
     show_in_output BOOLEAN DEFAULT true,
     has_documents BOOLEAN DEFAULT false,
     doc_upload_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    hukam_status VARCHAR(20) DEFAULT 'valid' CHECK (hukam_status IN ('valid', 'invalid', 'nullified')),
+    hukam_invalid_reason TEXT,
+    affected_nondh_details JSONB,
+    ganot VARCHAR(20),
+    sd_date DATE,
+    amount DECIMAL(15,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 CREATE TABLE nondh_owner_relations (
@@ -122,19 +128,13 @@ CREATE TABLE nondh_owner_relations (
     nondh_detail_id UUID REFERENCES nondh_details(id) ON DELETE CASCADE,
     owner_name VARCHAR(255) NOT NULL,
     s_no VARCHAR(255) NOT NULL,
-    -- Combined acre-guntha storage
     acres NUMERIC,
     gunthas NUMERIC,
-    -- OR square meters
     square_meters NUMERIC,
-    -- Field to indicate which unit is being used
     area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('acre_guntha', 'sq_m')),
     tenure VARCHAR(50) NOT NULL,
-    hukam_type VARCHAR(50),
-    hukam_date DATE,
-    restraining_order BOOLEAN,
     is_valid BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- Create indexes for better performance

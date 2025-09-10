@@ -1,6 +1,6 @@
 "use client"
 import React from 'react'
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,13 +10,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Trash2, Plus, ArrowRight, ArrowLeft, Upload, Eye, Loader2, ChevronDown, ChevronUp, Badge, Divide } from "lucide-react"
+import { Trash2, Plus, Upload, Eye, Loader2, ChevronDown, ChevronUp, Badge} from "lucide-react"
 import { useLandRecord, type NondhDetail } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { useStepFormData } from "@/hooks/use-step-form-data"
-import { date } from 'zod'
-import { isValid } from 'date-fns'
 
 const nondhTypes = [
   "Kabjedaar",
@@ -535,6 +533,54 @@ const [affectedNondhDetails, setAffectedNondhDetails] = useState<Record<string, 
   invalidReason?: string;
 }>>>({});
 
+const cleanupTimeoutRef = useRef(null);
+
+useEffect(() => {
+  if (cleanupTimeoutRef.current) {
+    clearTimeout(cleanupTimeoutRef.current);
+  }
+
+  cleanupTimeoutRef.current = setTimeout(() => {
+    const cleanedData = nondhDetailData.map(detail => {
+      if (["Hakkami"].includes(detail.type)) {
+        const nonEmptyRelations = detail.ownerRelations.filter(rel => rel.ownerName.trim() !== "");
+        if (nonEmptyRelations.length !== detail.ownerRelations.length) {
+          return { ...detail, ownerRelations: nonEmptyRelations };
+        }
+      }
+      return detail;
+    });
+    
+    if (JSON.stringify(cleanedData) !== JSON.stringify(nondhDetailData)) {
+      setNondhDetailData(cleanedData);
+    }
+  }, 100);
+
+  return () => {
+    if (cleanupTimeoutRef.current) {
+      clearTimeout(cleanupTimeoutRef.current);
+    }
+  };
+}, [nondhDetailData.map(d => `${d.id}-${d.type}-${d.ownerRelations.length}`).join(',')]); // More specific dependency
+
+// Initialize additional states from step data
+useEffect(() => {
+  const stepData = getStepData();
+  
+  // Always restore additional states if they exist in step data
+  if (stepData.ownerTransfers && Object.keys(stepData.ownerTransfers).length > 0) {
+    setOwnerTransfers(stepData.ownerTransfers);
+  }
+  
+  if (stepData.transferEqualDistribution && Object.keys(stepData.transferEqualDistribution).length > 0) {
+    setTransferEqualDistribution(stepData.transferEqualDistribution);
+  }
+  
+  if (stepData.affectedNondhDetails && Object.keys(stepData.affectedNondhDetails).length > 0) {
+    setAffectedNondhDetails(stepData.affectedNondhDetails);
+  }
+}, []);
+
 // Add function to manage affected nondh details
 const addAffectedNondh = (detailId: string) => {
   setAffectedNondhDetails(prev => ({
@@ -697,6 +743,42 @@ const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, c
   return [];
 };
 
+const getMinDateForNondh = (nondhId: string): string => {
+  const allSortedNondhs = [...nondhs].sort(sortNondhs);
+  const currentIndex = allSortedNondhs.findIndex(n => n.id === nondhId);
+  
+  if (currentIndex <= 0) return ''; // First nondh has no minimum date
+  
+  // Get the date of the previous nondh
+  const prevNondhId = allSortedNondhs[currentIndex - 1].id;
+  const prevDetail = nondhDetailData.find(d => d.nondhId === prevNondhId);
+  return prevDetail?.date || '';
+};
+
+const getMaxDateForNondh = (nondhId: string): string => {
+  const allSortedNondhs = [...nondhs].sort(sortNondhs);
+  const currentIndex = allSortedNondhs.findIndex(n => n.id === nondhId);
+  
+  if (currentIndex >= allSortedNondhs.length - 1) return ''; // Last nondh has no maximum date
+  
+  // Get the date of the next nondh
+  const nextNondhId = allSortedNondhs[currentIndex + 1].id;
+  const nextDetail = nondhDetailData.find(d => d.nondhId === nextNondhId);
+  return nextDetail?.date || '';
+};
+
+const isValidNondhDateOrder = (nondhId: string, newDate: string): boolean => {
+  if (!newDate) return true;
+  
+  const minDate = getMinDateForNondh(nondhId);
+  const maxDate = getMaxDateForNondh(nondhId);
+  
+  if (minDate && newDate <= minDate) return false;
+  if (maxDate && newDate >= maxDate) return false;
+  
+  return true;
+};
+
 //Function to add a new transfer
 const addOwnerTransfer = (detailId: string) => {
   setOwnerTransfers(prev => ({
@@ -763,6 +845,7 @@ const updateOwnerTransfer = (detailId: string, transferId: string, updates: any)
   
   return sNoTypes;
 };
+
 const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; errors: string[] } => {
   const errors: string[] = [];
   
@@ -778,12 +861,12 @@ const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; error
     }
 
     // Owner name validation (at least one non-empty owner name) - Skip for 1st Right Hukam
-const hasValidOwnerName = detail.ownerRelations.some(rel => rel.ownerName.trim() !== "");
-const is1stRightHukam = detail.type === "Hukam" && detail.ganot === "1st Right";
+    const hasValidOwnerName = detail.ownerRelations.some(rel => rel.ownerName.trim() !== "");
+    const is1stRightHukam = detail.type === "Hukam" && detail.ganot === "1st Right";
 
-if (!hasValidOwnerName && !is1stRightHukam) {
-  errors.push(`Nondh ${nondhNumber}: At least one owner name is required`);
-}
+    if (!hasValidOwnerName && !is1stRightHukam) {
+      errors.push(`Nondh ${nondhNumber}: At least one owner name is required`);
+    }
     
     // Status-specific validation - only Radd requires reason
     if (detail.status === "invalid" && (!detail.invalidReason || !detail.invalidReason.trim())) {
@@ -805,14 +888,13 @@ if (!hasValidOwnerName && !is1stRightHukam) {
         if (!detail.hukamDate || !detail.hukamDate.trim()) {
           errors.push(`Nondh ${nondhNumber}: Hukam Date is required`);
         }
-        // Affected Nondh Number is now optional for Hukam
-        if (detail.hukamStatus === "invalid" && (!detail.hukamInvalidReason || !detail.hukamInvalidReason.trim())) {
-          errors.push(`Nondh ${nondhNumber}: Hukam Invalid Reason is required when status is invalid`);
-        }
-        // Ganot validation for ALT Krushipanch
-        if (detail.hukamType === "ALT Krushipanch" && (!detail.ganot || !detail.ganot.trim())) {
-          errors.push(`Nondh ${nondhNumber}: Ganot is required when Hukam Type is ALT Krushipanch`);
-        }
+        // Validate affected nondh details
+const affectedDetails = affectedNondhDetails[detail.id] || [];
+affectedDetails.forEach((affected, idx) => {
+  if (affected.status === "invalid" && (!affected.invalidReason || !affected.invalidReason.trim())) {
+    errors.push(`Nondh ${nondhNumber}, Affected Nondh ${idx + 1}: Reason is required when status is Radd`);
+  }
+});
         break;
     }
   });
@@ -822,11 +904,7 @@ if (!hasValidOwnerName && !is1stRightHukam) {
     errors
   };
 };
-const getNondhNumber = (nondh: any): number => {
-  if (typeof nondh.number === 'number') return nondh.number;
-  const num = parseInt(nondh.number, 10);
-  return isNaN(num) ? 0 : num;
-};
+
 const safeNondhNumber = (nondh: any): number => {
   const numberValue = typeof nondh.number === 'string' 
     ? parseInt(nondh.number, 10) 
@@ -834,36 +912,76 @@ const safeNondhNumber = (nondh: any): number => {
   return isNaN(numberValue) ? 0 : numberValue;
 };
 
-  // Update form data whenever nondhDetailData changes (with debouncing to prevent excessive updates)
-  useEffect(() => {
-  if (nondhDetailData.length > 0) {
+// Update the handleTypeChange function to include Vechand
+const handleTypeChange = (detailId: string, newType: string) => {
+  const detail = nondhDetailData.find(d => d.id === detailId);
+  if (!detail) return;
+
+  // If changing to Vechand, Varsai, or Hayati and no owner relations exist, initialize one
+  if (["Vechand", "Varsai", "Hayati_ma_hakh_dakhal"].includes(newType) && detail.ownerRelations.length === 0) {
+    const newRelation = {
+      id: Date.now().toString() + Math.random(),
+      ownerName: "",
+      area: { value: 0, unit: "sq_m" },
+      tenure: "Navi",
+      isValid: true
+    };
+    
+    updateNondhDetail(detailId, { 
+      type: newType, 
+      ownerRelations: [newRelation] 
+    });
+  } else {
+    updateNondhDetail(detailId, { type: newType });
+  }
+  
+  // Initialize default affected nondh for Hukam type
+  if (newType === "Hukam" && (!affectedNondhDetails[detailId] || affectedNondhDetails[detailId].length === 0)) {
+    addAffectedNondh(detailId);
+  }
+};
+
+// Add a ref to debounce saves
+const saveTimeoutRef = useRef(null);
+
+  // useEffect that saves to step data
+useEffect(() => {
+  if (nondhDetailData.length === 0) return;
+  
+  if (saveTimeoutRef.current) {
+    clearTimeout(saveTimeoutRef.current);
+  }
+
+  saveTimeoutRef.current = setTimeout(() => {
     const hasContent = nondhDetailData.some(detail => 
       detail.type.trim() !== "" || 
       detail.ownerRelations.some(rel => rel.ownerName.trim() !== "") ||
       detail.status !== "valid" ||
       detail.reason.trim() !== "" ||
       detail.vigat.trim() !== "" ||
-      detail.date.trim() !== ""
-    )
+      detail.date.trim() !== "" ||
+      detail.ganot || 
+      detail.sdDate ||
+      detail.amount
+    );
     
-    const currentStepData = getStepData()
-    const newStepData = {
-      nondhDetails: nondhDetailData,
-      ownerTransfers, // Add this
-      transferEqualDistribution, // Add this
-      affectedNondhDetails // Add this
+    if (hasContent) {
+      updateStepData({
+        nondhDetails: nondhDetailData,
+        ownerTransfers,
+        transferEqualDistribution,
+        affectedNondhDetails
+      });
     }
-    const isDifferent = JSON.stringify(currentStepData) !== JSON.stringify(newStepData)
-    
-    if (hasContent && isDifferent) {
-      const timeoutId = setTimeout(() => {
-        updateStepData(newStepData)
-      }, 300)
-      
-      return () => clearTimeout(timeoutId)
+  }, 500); // Debounce saves
+
+  return () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
-  }
-}, [nondhDetailData, ownerTransfers, transferEqualDistribution, affectedNondhDetails, updateStepData, getStepData])
+  };
+}, [nondhDetailData, ownerTransfers, transferEqualDistribution, affectedNondhDetails]);
+
 
 // Load nondhs from database first
 useEffect(() => {
@@ -893,7 +1011,8 @@ useEffect(() => {
         }));
         
         setNondhs(formattedNondhs);
-        updateStepData({ nondhs: formattedNondhs }); // Keep step data in sync
+        // Clear existing nondhDetailData when nondhs change
+        setNondhDetailData([]);
       }
     } catch (error) {
       console.error('Error loading nondhs:', error);
@@ -905,68 +1024,91 @@ useEffect(() => {
 }, [landBasicInfo?.id]);
 
 useEffect(() => {
-  if (nondhs.length > 0) {
-    const stepData = getStepData();
+  if (nondhs.length === 0) return;
 
-    const needsReinit = nondhDetailData.length === 0 || 
-                       nondhDetailData.length !== nondhs.length ||
-                       !nondhs.every(nondh => nondhDetailData.some(detail => detail.nondhId === nondh.id));
+  const stepData = getStepData();
+  
+  // Check if we need to reinitialize (new nondhs or mismatched data)
+  const needsReinit = nondhDetailData.length === 0 || 
+                     nondhDetailData.length !== nondhs.length ||
+                     !nondhs.every(nondh => nondhDetailData.some(detail => detail.nondhId === nondh.id));
+  
+  if (needsReinit) {
+    // Check if we have saved data that matches current nondhs
+    const hasSavedDataForCurrentNondhs = stepData.nondhDetails && 
+                                         stepData.nondhDetails.length === nondhs.length &&
+                                         nondhs.every(nondh => stepData.nondhDetails.some(detail => detail.nondhId === nondh.id));
     
-    if (needsReinit) {
-      // Use saved data if available and matches current nondhs
-      if (stepData.nondhDetails && 
-          stepData.nondhDetails.length === nondhs.length &&
-          nondhs.every(nondh => stepData.nondhDetails.some(detail => detail.nondhId === nondh.id))) {
-        setNondhDetailData(stepData.nondhDetails);
-        
-        // Restore additional state if saved
-        if (stepData.ownerTransfers) {
-          setOwnerTransfers(stepData.ownerTransfers);
-        }
-        if (stepData.transferEqualDistribution) {
-          setTransferEqualDistribution(stepData.transferEqualDistribution);
-        }
-        if (stepData.affectedNondhDetails) {
-          setAffectedNondhDetails(stepData.affectedNondhDetails);
-        }
-      } else {
-        // Initialize new data with proper affectedSNos handling
-        const initialData = nondhs.map(nondh => {
-          const firstSNo = Array.isArray(nondh.affectedSNos) && nondh.affectedSNos.length > 0
-            ? typeof nondh.affectedSNos[0] === 'string'
-              ? JSON.parse(nondh.affectedSNos[0]).number
-              : nondh.affectedSNos[0].number
-            : '';
-            
-          return {
-            id: nondh.id,
-            nondhId: nondh.id,
-            sNo: firstSNo,
-            type: "Kabjedaar",
-            reason: "",
-            date: "",
-            vigat: "",
-            status: "valid",
-            showInOutput: true,
-            hasDocuments: false,
-            ownerRelations: [{
-              id: Date.now().toString(),
-              ownerName: "",
-              area: { value: 0, unit: "sq_m" },
-              tenure: "Navi",
-              isValid: true
-            }],
-          };
-        });
-        setNondhDetailData(initialData);
-      }
+    if (hasSavedDataForCurrentNondhs) {
+      // Restore saved data
+      setNondhDetailData(stepData.nondhDetails);
+      
+      // Restore additional states
+      if (stepData.ownerTransfers) setOwnerTransfers(stepData.ownerTransfers);
+      if (stepData.transferEqualDistribution) setTransferEqualDistribution(stepData.transferEqualDistribution);
+      if (stepData.affectedNondhDetails) setAffectedNondhDetails(stepData.affectedNondhDetails);
+    } else {
+      // Initialize new data for all nondhs
+      const initialData = nondhs.map(nondh => {
+        const firstSNo = Array.isArray(nondh.affectedSNos) && nondh.affectedSNos.length > 0
+          ? typeof nondh.affectedSNos[0] === 'string'
+            ? JSON.parse(nondh.affectedSNos[0]).number
+            : nondh.affectedSNos[0].number
+          : '';
+          
+        const initialOwnerRelations = [{
+          id: Date.now().toString() + Math.random(),
+          ownerName: "",
+          area: { value: 0, unit: "sq_m" },
+          tenure: "Navi",
+          isValid: true
+        }];
+          
+        return {
+          id: Date.now().toString() + Math.random(), // Ensure unique IDs
+          nondhId: nondh.id,
+          sNo: firstSNo,
+          type: "Kabjedaar",
+          reason: "",
+          date: "",
+          vigat: "",
+          status: "valid",
+          showInOutput: true,
+          hasDocuments: false,
+          ganot: undefined,
+          sdDate: undefined,
+          amount: undefined,
+          hukamDate: undefined,
+          hukamType: "SSRD",
+          restrainingOrder: "no",
+          ownerRelations: initialOwnerRelations,
+        };
+      });
+      
+      setNondhDetailData(initialData);
+      
+      // Clear additional states when initializing fresh
+      setOwnerTransfers({});
+      setTransferEqualDistribution({});
+      setAffectedNondhDetails({});
     }
   }
-}, [nondhs]);
+}, [nondhs, nondhDetailData.length]); // Watch for changes in nondhs or length mismatch
 
-  const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
-    setNondhDetailData((prev) => prev.map((detail) => (detail.id === id ? { ...detail, ...updates } : detail)))
-  }
+  const updateNondhDetail = useCallback((id: string, updates: Partial<NondhDetail>) => {
+  setNondhDetailData((prev) => {
+    return prev.map((detail) => {
+      if (detail.id === id) {
+        return { 
+          ...detail, 
+          ...updates,
+          ...(updates.ownerRelations && { ownerRelations: updates.ownerRelations })
+        };
+      }
+      return detail;
+    });
+  });
+}, []);
 
   const toggleCollapse = (detailId: string) => {
     setCollapsedNondhs(prev => {
@@ -1000,82 +1142,107 @@ useEffect(() => {
     }
   }
 
-  const addOwnerRelation = (detailId: string) => {
-    const detail = nondhDetailData.find((d) => d.id === detailId)
-    if (detail) {
-      const newRelation = {
-        id: Date.now().toString(),
-        ownerName: "",
-        sNo: detail.sNo,
-        area: { value: 0, unit: "sq_m" },
-        tenure: "Navi",
-        isValid: true
-      }
-      const updatedRelations = [...detail.ownerRelations, newRelation]
-      updateNondhDetail(detailId, { ownerRelations: updatedRelations })
-      
-      // Auto-distribute if equal distribution is enabled
-      if (equalDistribution[detailId] && updatedRelations.length > 1) {
-        const oldOwnerArea = updatedRelations[0]?.area?.value || 0
-        const newOwnersCount = updatedRelations.length - 1
-        const equalArea = oldOwnerArea / newOwnersCount
-        
-        const redistributed = updatedRelations.map((relation, index) => {
-          if (index === 0) return relation
-          return { ...relation, area: { ...relation.area, value: equalArea } }
-        })
-        
-        updateNondhDetail(detailId, { ownerRelations: redistributed })
-      }
-    }
-  }
-
-  const removeOwnerRelation = (detailId: string, relationId: string) => {
-    const detail = nondhDetailData.find((d) => d.id === detailId)
-    if (detail) {
-      const updatedRelations = detail.ownerRelations.filter((r) => r.id !== relationId)
-      updateNondhDetail(detailId, { ownerRelations: updatedRelations })
-      
-      // Auto-redistribute if equal distribution is enabled
-      if (equalDistribution[detailId] && updatedRelations.length > 1) {
-        const oldOwnerArea = updatedRelations[0]?.area?.value || 0
-        const newOwnersCount = updatedRelations.length - 1
-        const equalArea = oldOwnerArea / newOwnersCount
-        
-        const redistributed = updatedRelations.map((relation, index) => {
-          if (index === 0) return relation
-          return { ...relation, area: { ...relation.area, value: equalArea } }
-        })
-        
-        updateNondhDetail(detailId, { ownerRelations: redistributed })
-      }
-    }
-  }
+  // Update the addOwnerRelation function to properly handle Vechand type
+const addOwnerRelation = (detailId: string) => {
+  console.log('addOwnerRelation called for:', detailId);
+  const detail = nondhDetailData.find((d) => d.id === detailId)
+  console.log('Found detail:', detail);
   
-
-  const updateOwnerRelation = (detailId: string, relationId: string, updates: any) => {
-    const detail = nondhDetailData.find((d) => d.id === detailId)
-    if (detail) {
-      const updatedRelations = detail.ownerRelations.map((relation) =>
-        relation.id === relationId ? { ...relation, ...updates } : relation,
-      )
-      updateNondhDetail(detailId, { ownerRelations: updatedRelations })
+  if (detail) {
+    const newRelation = {
+      id: Date.now().toString() + Math.random(), // Add randomness for uniqueness
+      ownerName: "",
+      sNo: detail.sNo,
+      area: { value: 0, unit: "sq_m" },
+      tenure: "Navi",
+      isValid: true
+    }
+    const updatedRelations = [...detail.ownerRelations, newRelation]
+    console.log('Updated relations:', updatedRelations);
+    
+    updateNondhDetail(detail.id, { ownerRelations: updatedRelations })
+    
+    // Auto-distribute if equal distribution is enabled
+    if (equalDistribution[detailId] && updatedRelations.length > 1) {
+      // For Vechand, get old owner area from previous owners data
+      let oldOwnerArea = 0;
+      if (detail.type === "Vechand" && detail.oldOwner) {
+        const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
+        const selectedOldOwner = previousOwners.find(owner => owner.name === detail.oldOwner);
+        oldOwnerArea = selectedOldOwner?.area?.value || 0;
+      } else {
+        // For other types, use the first owner's area
+        oldOwnerArea = updatedRelations[0]?.area?.value || 0;
+      }
       
-      // Validate area constraints for Varsai
-      if (detail.type === "Varsai" && !equalDistribution[detailId]) {
-        const oldOwnerArea = updatedRelations[0]?.area?.value || 0
-        const newOwnersTotal = updatedRelations.slice(1).reduce((sum, r) => sum + (r.area?.value || 0), 0)
+      const newOwnersCount = updatedRelations.filter(rel => 
+        rel.ownerName !== detail.oldOwner
+      ).length;
+      
+      if (newOwnersCount > 0) {
+        const equalArea = oldOwnerArea / newOwnersCount;
         
-        if (newOwnersTotal > oldOwnerArea) {
-          toast({
-            title: "Area validation error",
-            description: "Total area for new owners cannot exceed old owner's area",
-            variant: "destructive"
-          })
-        }
+        const redistributed = updatedRelations.map((relation) => {
+          // Don't modify old owner area for Vechand type
+          if (detail.type === "Vechand" && relation.ownerName === detail.oldOwner) {
+            return relation;
+          }
+          return { ...relation, area: { ...relation.area, value: equalArea } };
+        });
+        
+        updateNondhDetail(detail.id, { ownerRelations: redistributed });
+      }
+    }
+  } else {
+    console.log('Detail not found for ID:', detailId);
+  }
+}
+
+ const removeOwnerRelation = (detailId: string, relationId: string) => {
+  const detail = nondhDetailData.find((d) => d.id === detailId) // Changed from nondhId to id
+  if (detail) {
+    const updatedRelations = detail.ownerRelations.filter((r) => r.id !== relationId)
+    updateNondhDetail(detail.id, { ownerRelations: updatedRelations })
+    
+    // Auto-redistribute if equal distribution is enabled
+    if (equalDistribution[detail.id] && updatedRelations.length > 1) {
+      const oldOwnerArea = updatedRelations[0]?.area?.value || 0
+      const newOwnersCount = updatedRelations.length - 1
+      const equalArea = oldOwnerArea / newOwnersCount
+      
+      const redistributed = updatedRelations.map((relation, index) => {
+        if (index === 0) return relation
+        return { ...relation, area: { ...relation.area, value: equalArea } }
+      })
+      
+      updateNondhDetail(detail.id, { ownerRelations: redistributed })
+    }
+  }
+}
+
+const updateOwnerRelation = (detailId: string, relationId: string, updates: any) => {
+  const detail = nondhDetailData.find((d) => d.id === detailId) // Changed from nondhId to id
+  if (detail) {
+    const updatedRelations = detail.ownerRelations.map((relation) =>
+      relation.id === relationId ? { ...relation, ...updates } : relation,
+    )
+    updateNondhDetail(detail.id, { ownerRelations: updatedRelations })
+    
+    // Validate area constraints for Varsai
+    if (detail.type === "Varsai" && !equalDistribution[detail.id]) {
+      const oldOwnerArea = updatedRelations[0]?.area?.value || 0
+      const newOwnersTotal = updatedRelations.slice(1).reduce((sum, r) => sum + (r.area?.value || 0), 0)
+      
+      if (newOwnersTotal > oldOwnerArea) {
+        toast({
+          title: "Area validation error",
+          description: "Total area for new owners cannot exceed old owner's area",
+          variant: "destructive"
+        })
       }
     }
   }
+}
 
 const getPrimarySNoType = (affectedSNos: string[]): string => {
   if (!affectedSNos || affectedSNos.length === 0) return 's_no';
@@ -1243,11 +1410,6 @@ const updateValidityChain = () => {
   });
 };
 
-const handleHukamTypeChange = (detailId: string, hukamType: string) => {
-  // First update the hukam type
-  updateNondhDetail(detailId, { hukamType });
-};
-
 const updateHukamValidityChain = (detailId: string) => {
   const detail = nondhDetailData.find(d => d.id === detailId);
   if (!detail || !detail.affectedNondhNo) return;
@@ -1363,9 +1525,14 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
     }
   }
 
-  const renderOwnerSelectionFields = (detail: NondhDetail) => {
+ const renderOwnerSelectionFields = (detail: NondhDetail) => {
   const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
   
+  if (detail.type === "Vechand") {
+    console.log('Vechand detail ownerRelations:', detail.ownerRelations);
+    console.log('Vechand detail:', detail);
+  }
+
   // For Hakkami - get previous owners for both dropdowns
   const hakkamiPreviousOwners = detail.type === "Hakkami" 
     ? getPreviousOwners(detail.sNo, detail.nondhId)
@@ -1373,177 +1540,328 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
 
   return (
     <div className="space-y-4">
-      {/* Old Owner Field - shown for all types except Varsai */}
-        <div className="space-y-2">
-          <Label>Old Owner *</Label>
-          <Select
-            value={detail.oldOwner}
-            onValueChange={(value) => {
-              updateNondhDetail(detail.id, { oldOwner: value });
-              if (detail.status === 'invalid') {
-                updateValidityChain(detail.id, value, false);
-              } else {
-                updateValidityChain(detail.id, value, true);
-              }
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select Old Owner" />
-            </SelectTrigger>
-            <SelectContent>
-              {previousOwners.map((owner, index) => (
-                <SelectItem key={`${owner.name}_${index}`} value={owner.nondhId}>
-                  {owner.name} ({owner.area.value} {owner.area.unit})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-
-      {/* Special handling for Hakkami */}
-      {detail.type === "Hakkami" && (
-        <div className="space-y-2">
-          <Label>New Owner *</Label>
-          <Select
-            value={detail.ownerRelations[0]?.ownerName || ''}
-            onValueChange={(value) => {
-              if (detail.ownerRelations.length === 0) {
-                addOwnerRelation(detail.id);
-              }
-              updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { 
-                ownerName: value 
-              });
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select New Owner" />
-            </SelectTrigger>
-            <SelectContent>
-              {hakkamiPreviousOwners.map((owner, index) => (
-                <SelectItem key={`new_${owner.name}_${index}`} value={owner.name}>
-                  {owner.name} ({owner.area.value} {owner.area.unit})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      {/* Special handling for Vechand */}
+      {/* SD Date and Amount fields for Vechand */}
       {detail.type === "Vechand" && (
-        <div className="space-y-2">
-          <Label>New Owner *</Label>
-          <Input
-            value={detail.ownerRelations[0]?.ownerName || ''}
-            onChange={(e) => {
-              if (detail.ownerRelations.length === 0) {
-                addOwnerRelation(detail.id);
-              }
-              updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { 
-                ownerName: e.target.value 
-              });
-            }}
-            placeholder="Enter new owner name"
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>SD Date</Label>
+            <Input
+              type="date"
+              value={detail.sdDate || ''}
+              onChange={(e) => updateNondhDetail(detail.id, { sdDate: e.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Amount</Label>
+            <Input
+              type="number"
+              value={detail.amount || ''}
+              onChange={(e) => updateNondhDetail(detail.id, { amount: parseFloat(e.target.value) || 0 })}
+              placeholder="Enter amount"
+            />
+          </div>
         </div>
       )}
 
-      {/* Equal distribution checkbox - shown for Hayati and Varsai */}
-      {(detail.type === "Hayati_ma_hakh_dakhal" || detail.type === "Varsai") && (
+      {/* Old Owner Field - shown for all types */}
+      <div className="space-y-2">
+        <Label>Old Owner *</Label>
+        <Select
+          value={detail.oldOwner}
+          onValueChange={(value) => {
+            // Find the selected owner from previous owners
+            const selectedOwner = previousOwners.find(owner => 
+              owner.name === value
+            );
+            
+            if (selectedOwner) {
+              // For Hakkami, replace owner relations with old owner only
+              if (detail.type === "Hakkami") {
+                const oldOwnerRelation = {
+                  id: Date.now().toString(),
+                  ownerName: selectedOwner.name,
+                  sNo: detail.sNo,
+                  area: selectedOwner.area,
+                  tenure: "Navi",
+                  isValid: true
+                };
+                
+                updateNondhDetail(detail.id, { 
+                  oldOwner: selectedOwner.name,
+                  ownerRelations: [oldOwnerRelation] 
+                });
+              } else {
+                // For Vechand, Hayati, Varsai - only update oldOwner field
+                // Keep the existing new owner relations (don't add old owner to relations)
+                updateNondhDetail(detail.id, { 
+                  oldOwner: selectedOwner.name
+                });
+              }
+              
+              if (detail.status === 'invalid') {
+                updateValidityChain(detail.id, selectedOwner.name, false);
+              } else {
+                updateValidityChain(detail.id, selectedOwner.name, true);
+              }
+            }
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select Old Owner" />
+          </SelectTrigger>
+          <SelectContent>
+            {previousOwners.map((owner, index) => (
+              <SelectItem key={`${owner.name}_${index}`} value={owner.name}>
+                {owner.name} ({owner.area.value} {owner.area.unit})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Hakkami Section */}
+      {detail.type === "Hakkami" && (
+        <div className="space-y-4">
+          {/* Equal distribution checkbox */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id={`equal_dist_${detail.id}`}
+              checked={equalDistribution[detail.id] || false}
+              onCheckedChange={(checked) => {
+                setEqualDistribution(prev => ({ ...prev, [detail.id]: checked }));
+                
+                if (checked) {
+                  const oldOwnerRelation = detail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+                  const oldOwnerArea = oldOwnerRelation?.area?.value || 0;
+                  
+                  // Get only new owners (excluding old owner)
+                  const newOwners = detail.ownerRelations.filter(rel => 
+                    rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
+                  );
+                  const newOwnersCount = newOwners.length;
+                  
+                  if (newOwnersCount > 0) {
+                    const equalArea = oldOwnerArea / newOwnersCount;
+                    
+                    const updatedRelations = detail.ownerRelations.map((relation) => {
+                      if (relation.ownerName === detail.oldOwner) {
+                        return relation; // Keep old owner area unchanged
+                      }
+                      return { ...relation, area: { ...relation.area, value: equalArea } };
+                    });
+                    
+                    updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+                  }
+                }
+              }}
+            />
+            <Label htmlFor={`equal_dist_${detail.id}`}>Equal Distribution of Land</Label>
+          </div>
+
+          {/* Available Previous Owners as Checkboxes for NEW owners only */}
+          <div className="space-y-2">
+            <Label>Select New Owners *</Label>
+            <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
+              {hakkamiPreviousOwners
+                .filter(owner => owner.name !== detail.oldOwner) // Exclude the selected old owner
+                .map((owner, index) => {
+                  const isSelected = detail.ownerRelations.some(rel => 
+                    rel.ownerName === owner.name && rel.ownerName !== detail.oldOwner
+                  );
+                  
+                  return (
+                    <div key={`hakkami_${owner.name}_${index}`} className="flex items-center space-x-2 mb-2">
+                      <Checkbox
+                        id={`hakkami_owner_${index}`}
+                        checked={isSelected}
+                        onCheckedChange={(checked) => {
+                          const oldOwnerRelation = detail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+                          const oldOwnerArea = oldOwnerRelation?.area?.value || 0;
+                          
+                          let updatedRelations = [...detail.ownerRelations];
+                          
+                          if (checked) {
+                            // Add new owner relation
+                            const newRelation = {
+                              id: Date.now().toString(),
+                              ownerName: owner.name,
+                              sNo: detail.sNo,
+                              area: { value: 0, unit: owner.area.unit },
+                              tenure: "Navi",
+                              isValid: true
+                            };
+                            
+                            updatedRelations.push(newRelation);
+                          } else {
+                            // Remove owner relation (only if not the old owner)
+                            updatedRelations = updatedRelations.filter(rel => 
+                              rel.ownerName !== owner.name || rel.ownerName === detail.oldOwner
+                            );
+                          }
+                          
+                          updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+                          
+                          // Auto-distribute if equal distribution is enabled
+                          if (equalDistribution[detail.id] && oldOwnerRelation) {
+                            const newOwnersCount = updatedRelations.filter(rel => 
+                              rel.ownerName !== detail.oldOwner
+                            ).length;
+                            
+                            if (newOwnersCount > 0) {
+                              const equalArea = oldOwnerArea / newOwnersCount;
+                              
+                              const redistributed = updatedRelations.map(relation => {
+                                if (relation.ownerName === detail.oldOwner) {
+                                  return relation; // Keep old owner area unchanged
+                                }
+                                return { ...relation, area: { ...relation.area, value: equalArea } };
+                              });
+                              
+                              updateNondhDetail(detail.id, { ownerRelations: redistributed });
+                            }
+                          }
+                        }}
+                      />
+                      <Label htmlFor={`hakkami_owner_${index}`} className="flex-1">
+                        {owner.name} ({owner.area.value} {owner.area.unit})
+                      </Label>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          {/* Area Distribution for NEW Owners Only */}
+          {detail.ownerRelations.filter(rel => 
+            rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
+          ).length > 0 && (
+            <div className="space-y-3">
+              <Label>Area Distribution for New Owners</Label>
+              
+              {/* Show new owners with editable areas */}
+              {detail.ownerRelations
+                .filter(rel => rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner)
+                .map((relation) => (
+                  <div key={relation.id} className="flex items-center gap-3 p-2 border rounded">
+                    <span className="min-w-0 flex-1 font-medium">{relation.ownerName}</span>
+                    <div className="flex-shrink-0">
+                      {areaFields({
+                        area: relation.area,
+                        onChange: (newArea) => updateOwnerRelation(detail.id, relation.id, { area: newArea }),
+                        disabled: equalDistribution[detail.id]
+                      })}
+                    </div>
+                  </div>
+                ))}
+              
+              {/* Area validation display */}
+              <div className="text-sm text-muted-foreground">
+                {(() => {
+                  const oldOwnerRelation = detail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+                  const oldOwnerArea = oldOwnerRelation?.area?.value || 0;
+                  const newOwnersTotal = detail.ownerRelations
+                    .filter(rel => rel.ownerName !== detail.oldOwner)
+                    .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+                  const remaining = oldOwnerArea - newOwnersTotal;
+                  
+                  return (
+                    <div className={`p-2 rounded ${remaining < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                      Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+                      {remaining < 0 && " (⚠️ Exceeds old owner area!)"}
+                      {remaining > 0 && " (Old owner retains remaining area)"}
+                      {equalDistribution[detail.id] && ` (Equal distribution: ${(oldOwnerArea / detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length).toFixed(2)} each)`}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Equal distribution checkbox - shown for Hayati, Varsai, and Vechand */}
+      {(detail.type === "Hayati_ma_hakh_dakhal" || detail.type === "Varsai" || detail.type === "Vechand") && (
         <div className="flex items-center space-x-2">
           <Checkbox
             id={`equal_dist_${detail.id}`}
             checked={equalDistribution[detail.id] || false}
-            onCheckedChange={(checked) => toggleEqualDistribution(detail.id, checked as boolean)}
+            onCheckedChange={(checked) => {
+              setEqualDistribution(prev => ({ ...prev, [detail.id]: checked }));
+              
+              if (checked) {
+                // Get old owner area from previous owners data, not from ownerRelations
+                const selectedOldOwner = previousOwners.find(owner => owner.name === detail.oldOwner);
+                const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+                
+                // Get only new owners (excluding any potential old owner that might be in relations)
+                const newOwners = detail.ownerRelations.filter(rel => 
+                  rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
+                );
+                const newOwnersCount = newOwners.length;
+                
+                if (newOwnersCount > 0) {
+                  const equalArea = oldOwnerArea / newOwnersCount;
+                  
+                  const updatedRelations = detail.ownerRelations.map((relation) => {
+                    // Don't modify old owner area (it shouldn't be in relations anyway)
+                    if (relation.ownerName === detail.oldOwner) {
+                      return relation;
+                    }
+                    return { ...relation, area: { ...relation.area, value: equalArea } };
+                  });
+                  
+                  updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+                }
+              }
+            }}
           />
           <Label htmlFor={`equal_dist_${detail.id}`}>Equal Distribution of Land</Label>
         </div>
       )}
 
-      {/* Owner Details Section */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <Label>
-            {detail.type === "Varsai" || detail.type === "Hayati_ma_hakh_dakhal" ? "New Owner Details" : "Owner Details"}
-          </Label>
-          <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
-            <Plus className="w-4 h-4 mr-2" />
-            {detail.type === "Varsai" || detail.type === "Hayati_ma_hakh_dakhal" ? "Add New Owner" : "Add Owner"}
-          </Button>
-        </div>
+      {/* Owner Details Section for Hayati, Varsai, and Vechand */}
+      {(detail.type === "Varsai" || detail.type === "Hayati_ma_hakh_dakhal" || detail.type === "Vechand") && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <Label>New Owner Details</Label>
+            <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add New Owner
+            </Button>
+          </div>
 
-        {detail.ownerRelations.map((relation, index) => (
-          <Card key={relation.id} className="p-3">
-            <div className="flex justify-between items-center mb-3">
-              <h4 className="font-medium">
-                {detail.type === "Varsai" 
-                  ? `New Owner ${index + 1}`
-                  : index === 0 
-                    ? (detail.type === "Hakkami" || detail.type === "Vechand") 
-                      ? "New Owner" 
-                      : "Old Owner"
-                    : `New Owner ${index}`}
-              </h4>
-              {index > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => removeOwnerRelation(detail.id, relation.id)}
-                  className="text-red-600"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Owner Name Field - disabled for Hakkami new owner */}
-              <div className="space-y-2">
-                <Label>Owner Name</Label>
-                {detail.type === "Hakkami" && index === 0 ? (
-                  <Input
-                    value={relation.ownerName}
-                    disabled
-                    placeholder="Selected from dropdown"
-                  />
-                ) : (
-                  <Input
-                    value={relation.ownerName}
-                    onChange={(e) => updateOwnerRelation(
-                      detail.id, 
-                      relation.id, 
-                      { ownerName: e.target.value }
-                    )}
-                    placeholder="Enter owner name"
-                  />
+          {detail.ownerRelations.map((relation, index) => (
+            <Card key={relation.id} className="p-3">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-medium">New Owner {index + 1}</h4>
+                {detail.ownerRelations.length > 1 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => removeOwnerRelation(detail.id, relation.id)}
+                    className="text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 )}
               </div>
 
-              {/* Area Field */}
-              <div className="space-y-2">
-                <Label>Area</Label>
-                {areaFields({
-    area: relation.area,
-    onChange: (newArea) => updateOwnerRelation(
-      detail.id, 
-      relation.id, 
-      { area: newArea }
-    )
-  })}
-              </div>
+              {/* Owner Name and Tenure in one row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                <div className="space-y-2">
+                  <Label>Owner Name</Label>
+                  <Input
+                    value={relation.ownerName}
+                    onChange={(e) => updateOwnerRelation(detail.id, relation.id, { ownerName: e.target.value })}
+                    placeholder="Enter new owner name"
+                  />
+                </div>
 
-              {/* Tenure Field - shown for all except Vechand */}
-              {(detail.type !== "Varsai" && detail.type !== "Hayati_ma_hakh_dakhal") && detail.type !== "Vechand" && detail.type !== "Hakkami" && (
                 <div className="space-y-2">
                   <Label>Tenure</Label>
                   <Select
                     value={relation.tenure || "Navi"}
-                    onValueChange={(value) => updateOwnerRelation(
-                      detail.id, 
-                      relation.id, 
-                      { tenure: value }
-                    )}
+                    onValueChange={(value) => updateOwnerRelation(detail.id, relation.id, { tenure: value })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -1557,17 +1875,52 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-            </div>
-          </Card>
-        ))}
-      </div>
+              </div>
+
+              {/* Area in next row */}
+              <div className="space-y-2">
+                <Label>Area</Label>
+                {areaFields({
+                  area: relation.area,
+                  onChange: (newArea) => updateOwnerRelation(detail.id, relation.id, { area: newArea }),
+                  disabled: equalDistribution[detail.id]
+                })}
+              </div>
+            </Card>
+          ))}
+          
+          {/* Show remaining area info */}
+          <div className="text-sm text-muted-foreground p-2 bg-gray-50 rounded">
+            {(() => {
+              // Get old owner area from previous owners data
+              const selectedOldOwner = previousOwners.find(owner => owner.name === detail.oldOwner);
+              const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+              
+              const newOwnersTotal = detail.ownerRelations
+                .filter(rel => rel.ownerName !== detail.oldOwner)
+                .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+              const remaining = oldOwnerArea - newOwnersTotal;
+              
+              return (
+                <div className={`p-2 rounded ${remaining < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                  Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+                  {remaining < 0 && " (⚠️ Exceeds old owner area!)"}
+                  {remaining > 0 && " (Old owner retains remaining area)"}
+                  {equalDistribution[detail.id] && ` (Equal distribution: ${(oldOwnerArea / detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length).toFixed(2)} each)`}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
   const renderTypeSpecificFields = (detail: NondhDetail) => {
-   if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami"].includes(detail.type)) {
+
+  // Handle other types that need owner selection
+  if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechand"].includes(detail.type)) {
     return renderOwnerSelectionFields(detail);
   }
 
@@ -1657,21 +2010,34 @@ case "Vehchani":
 case "Bojo":
   return (
     <div className="space-y-4">
-      {/* Owner Details Section */}
+      {/* Owner Details Section - Compact like Kabjedaar */}
       <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <Label>Owner Details</Label>
+          <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Owner
+          </Button>
+        </div>
+
         {detail.ownerRelations.map((relation, index) => (
-          <Card key={relation.id} className="p-4">
-            <div className="flex justify-between items-center mb-4">
+          <Card key={relation.id} className="p-3">
+            <div className="flex justify-between items-center mb-3">
               <h4 className="font-medium">Owner {index + 1}</h4>
               {detail.ownerRelations.length > 1 && (
-                <Button variant="outline" size="sm" onClick={() => removeOwnerRelation(detail.id, relation.id)} className="text-red-600">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeOwnerRelation(detail.id, relation.id)}
+                  className="text-red-600"
+                >
                   <Trash2 className="w-4 h-4" />
                 </Button>
               )}
             </div>
-            
-            <div className="space-y-4">
-              {/* Owner Name */}
+
+            {/* Compact layout like Kabjedaar */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label>Owner Name</Label>
                 <Input
@@ -1680,14 +2046,55 @@ case "Bojo":
                   placeholder="Enter owner name"
                 />
               </div>
-
-              {/* Area Fields - Full width below name */}
               <div className="space-y-2">
                 <Label>Area</Label>
-                {areaFields({
-                  area: relation.area,
-                  onChange: (newArea) => updateOwnerRelation(detail.id, relation.id, { area: newArea })
-                })}
+                <div className="flex gap-2 items-center">
+                  <Input
+                    type="number"
+                    value={relation.area.value || 0}
+                    onChange={(e) => {
+                      const newValue = parseFloat(e.target.value) || 0;
+                      updateOwnerRelation(detail.id, relation.id, { 
+                        area: { ...relation.area, value: newValue } 
+                      });
+                    }}
+                    className="w-20"
+                    min="0"
+                    step="0.01"
+                  />
+                  <Select
+                    value={relation.area.unit}
+                    onValueChange={(value) => updateOwnerRelation(detail.id, relation.id, { 
+                      area: { ...relation.area, unit: value } 
+                    })}
+                  >
+                    <SelectTrigger className="w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sq_m">Sq. M</SelectItem>
+                      <SelectItem value="acre_guntha">Acre-Guntha</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Tenure</Label>
+                <Select
+                  value={relation.tenure || "Navi"}
+                  onValueChange={(value) => updateOwnerRelation(detail.id, relation.id, { tenure: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenureTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </Card>
@@ -1819,16 +2226,16 @@ case "Bojo":
                 </div>
               </div>
 
-              {affected.status === "invalid" && (
-                <div className="space-y-2 mt-4">
-                  <Label>Invalid Reason *</Label>
-                  <Input
-                    value={affected.invalidReason || ''}
-                    onChange={(e) => updateAffectedNondh(detail.id, affected.id, { invalidReason: e.target.value })}
-                    placeholder="Enter reason for invalidation"
-                  />
-                </div>
-              )}
+              <div className="space-y-2 mt-4">
+  <Label>
+    Reason {affected.status === "invalid" ? "*" : "(Optional)"}
+  </Label>
+  <Input
+    value={affected.invalidReason || ''}
+    onChange={(e) => updateAffectedNondh(detail.id, affected.id, { invalidReason: e.target.value })}
+    placeholder={affected.status === "invalid" ? "Enter reason for invalidation" : "Enter reason (optional)"}
+  />
+</div>
             </Card>
           );
         })}
@@ -2149,81 +2556,7 @@ case "Bojo":
       )}
     </div>
   )
-  case "Vechand":
-      return (
-        <div className="space-y-4">
-          {/* SD Date and Amount fields */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>SD Date</Label>
-              <Input
-                type="date"
-                value={detail.sdDate || ''}
-                onChange={(e) => updateNondhDetail(detail.id, { sdDate: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Amount</Label>
-              <Input
-                type="number"
-                value={detail.amount || ''}
-                onChange={(e) => updateNondhDetail(detail.id, { amount: parseFloat(e.target.value) || 0 })}
-                placeholder="Enter amount"
-              />
-            </div>
-          </div>
-
-          {/* Previous owner selection */}
-          <div className="space-y-2">
-            <Label>Old Owner *</Label>
-            <Select
-              value={detail.oldOwner}
-              onValueChange={(value) => updateNondhDetail(detail.id, { oldOwner: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Old Owner" />
-              </SelectTrigger>
-              <SelectContent>
-                {getPreviousOwners(detail.sNo, detail.nondhId).map((owner, index) => (
-                  <SelectItem key={`${owner.name}_${index}`} value={owner.name}>
-                    {owner.name} ({owner.area.value} {owner.area.unit})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* New Owner input */}
-          <div className="space-y-2">
-            <Label>New Owner *</Label>
-            <Input
-              value={detail.ownerRelations[0]?.ownerName || ''}
-              onChange={(e) => {
-                if (detail.ownerRelations.length === 0) {
-                  addOwnerRelation(detail.id);
-                }
-                updateOwnerRelation(detail.id, detail.ownerRelations[0]?.id, { 
-                  ownerName: e.target.value 
-                });
-              }}
-              placeholder="Enter new owner name"
-            />
-          </div>
-
-          {/* Area field for new owner */}
-          <div className="space-y-2">
-            <Label>New Owner Area</Label>
-            {detail.ownerRelations.length > 0 && areaFields({
-              area: detail.ownerRelations[0]?.area || { value: 0, unit: 'sq_m' },
-              onChange: (newArea) => updateOwnerRelation(
-                detail.id, 
-                detail.ownerRelations[0]?.id, 
-                { area: newArea }
-              )
-            })}
-          </div>
-        </div>
-      )
+  
       default:
         return (
           <div className="space-y-4">
@@ -2325,13 +2658,14 @@ const handleGanotChange = (detailId: string, ganot: string) => {
   }
 };
   const handleSubmit = async () => {
-    // Save current state to step data before submitting
-   updateStepData({
-  nondhDetails: nondhDetailData,
-  ownerTransfers,
-  transferEqualDistribution,
-  affectedNondhDetails
-} as any);
+    // Force save current state to step data immediately before submitting
+   const immediateStepData = {
+    nondhDetails: nondhDetailData,
+    ownerTransfers,
+    transferEqualDistribution,
+    affectedNondhDetails
+  };
+  updateStepData(immediateStepData);
   // Update validity chain for all nondhs first
   nondhDetailData.forEach(detail => {
     if (detail.status === 'invalid') {
@@ -2456,79 +2790,87 @@ if (!validation.isValid) {
       if (detailsDeleteError) throw detailsDeleteError;
     }
 
-    // 4. Insert new nondh details 
+    // Insert new nondh details 
     const { data: insertedDetails, error: insertError } = await supabase
-    .from('nondh_details')
-    .insert(validNondhDetails.map(detail => ({
-      nondh_id: detail.nondhId,
-      s_no: detail.sNo || nondhs.find(n => n.id === detail.nondhId)?.affectedSNos[0] || '',
-      type: detail.type,
-      reason: detail.reason || null,
-      date: detail.date || null,
-      vigat: detail.vigat || null,
-      status: detail.status,
-      invalid_reason: detail.status === 'invalid' ? (detail.invalidReason || null) : null,
-      old_owner: detail.oldOwner || null,
-      show_in_output: detail.showInOutput !== false,
-      has_documents: detail.hasDocuments || false,
-      doc_upload_url: detail.docUpload || null,
-      hukam_status: detail.hukamStatus || 'valid',
-      hukam_invalid_reason: detail.hukamInvalidReason || null,
-      affected_nondh_no: detail.affectedNondhNo || null,
-      ganot: detail.ganot || null // Add ganot field
-    })))
+  .from('nondh_details')
+  .insert(validNondhDetails.map(detail => ({
+    nondh_id: detail.nondhId,
+    s_no: detail.sNo || nondhs.find(n => n.id === detail.nondhId)?.affectedSNos[0] || '',
+    type: detail.type,
+    reason: detail.reason || null,
+    date: detail.date || null,
+    hukam_date: detail.hukamDate || null,
+    hukam_type: detail.hukamType || 'SSRD',
+    vigat: detail.vigat || null,
+    status: detail.status,
+    invalid_reason: detail.status === 'invalid' ? (detail.invalidReason || null) : null,
+    old_owner: detail.oldOwner || null,
+    show_in_output: detail.showInOutput !== false,
+    has_documents: detail.hasDocuments || false,
+    doc_upload_url: detail.docUpload || null,
+    hukam_status: detail.hukamStatus || 'valid',
+    hukam_invalid_reason: detail.hukamInvalidReason || null,
+    affected_nondh_details: affectedNondhDetails[detail.id] && affectedNondhDetails[detail.id].length > 0 
+      ? JSON.stringify(affectedNondhDetails[detail.id].map(a => ({
+          nondhNo: a.nondhNo,
+          status: a.status,
+          invalidReason: a.invalidReason || null
+        }))) 
+      : null,
+    ganot: detail.ganot || null,
+    restraining_order: detail.restrainingOrder || 'no',
+    sd_date: detail.sdDate || null,
+    amount: detail.amount || null
+  })))
+  .select();
+
+if (insertError) throw insertError;
+
+    // Prepare owner relations data
+    const ownerRelationsToInsert = validNondhDetails.flatMap(detail => {
+  const insertedDetail = insertedDetails.find(d => 
+    d.nondh_id === detail.nondhId && 
+    d.s_no === detail.sNo
+  );
+  
+  if (!insertedDetail) return [];
+
+  return detail.ownerRelations
+    .filter(relation => relation.ownerName.trim() !== "")
+    .map(relation => {
+      const isAcreGuntha = relation.area.unit === 'acre_guntha';
+      const acres = isAcreGuntha ? Math.floor(relation.area.value || 0) : null;
+      const gunthas = isAcreGuntha ? ((relation.area.value || 0) % 1) * 40 : null;
+      const square_meters = isAcreGuntha ? null : (relation.area.value || 0);
+
+      return {
+        nondh_detail_id: insertedDetail.id,
+        owner_name: relation.ownerName.trim(),
+        s_no: relation.sNo || detail.sNo,
+        acres,
+        gunthas,
+        square_meters,
+        area_unit: relation.area.unit === 'acre_guntha' ? 'acre_guntha' : 'sq_m',
+        tenure: relation.tenure || 'Navi',
+        is_valid: relation.isValid !== false
+      };
+    });
+});
+
+    //  Insert owner relations in batch
+    if (ownerRelationsToInsert.length > 0) {
+  const { data: insertedRelations, error: relationsError } = await supabase
+    .from('nondh_owner_relations')
+    .insert(ownerRelationsToInsert)
     .select();
 
-    if (insertError) throw insertError;
+  if (relationsError) {
+    console.error('Owner relations insert error:', relationsError);
+    throw relationsError;
+  }
+}
 
-    // 5. Prepare owner relations data
-    const ownerRelationsToInsert = validNondhDetails.flatMap(detail => {
-      const insertedDetail = insertedDetails.find(d => 
-        d.nondh_id === detail.nondhId && 
-        d.s_no === detail.sNo
-      );
-      
-      if (!insertedDetail) return [];
-
-      return detail.ownerRelations
-        .filter(relation => relation.ownerName.trim() !== "")
-        .map(relation => {
-          const isAcreGuntha = relation.area.unit === 'acre_guntha';
-          const acres = isAcreGuntha ? Math.floor(relation.area.value || 0) : null;
-          const gunthas = isAcreGuntha ? ((relation.area.value || 0) % 1) * 40 : null;
-          const square_meters = isAcreGuntha ? null : (relation.area.value || 0);
-
-          return {
-            nondh_detail_id: insertedDetail.id,
-            owner_name: relation.ownerName.trim(),
-            s_no: relation.sNo || detail.sNo,
-            acres,
-            gunthas,
-            square_meters,
-            area_unit: relation.area.unit === 'acre_guntha' ? 'acre_guntha' : 'sq_m',
-            tenure: relation.tenure || 'Navi',
-            is_valid: relation.isValid !== false,
-            hukam_type: relation.hukamType || 'SSRD',
-            hukam_date: relation.hukamDate || null,
-            restraining_order: relation.restrainingOrder === 'yes'
-          };
-        });
-    });
-
-    // 6. Insert owner relations in batch
-    if (ownerRelationsToInsert.length > 0) {
-      const { data: insertedRelations, error: relationsError } = await supabase
-        .from('nondh_owner_relations')
-        .insert(ownerRelationsToInsert)
-        .select();
-
-      if (relationsError) {
-        console.error('Owner relations insert error:', relationsError);
-        throw relationsError;
-      }
-    }
-
-    // 7. Update local state
+    // Update local state
     const updatedDetails = validNondhDetails.map(detail => {
       const insertedDetail = insertedDetails.find(d => 
         d.nondh_id === detail.nondhId && d.s_no === detail.sNo
@@ -2717,14 +3059,7 @@ if (!validation.isValid) {
   <Label>Nondh Type *</Label>
   <Select
     value={detail.type}
-    onValueChange={(value) => {
-      updateNondhDetail(detail.id, { type: value });
-      
-      // Initialize default affected nondh for Hukam type
-      if (value === "Hukam" && (!affectedNondhDetails[detail.id] || affectedNondhDetails[detail.id].length === 0)) {
-        addAffectedNondh(detail.id);
-      }
-    }}
+    onValueChange={(value) => handleTypeChange(detail.id, value)}
   >
     <SelectTrigger>
       <SelectValue />
@@ -2739,27 +3074,53 @@ if (!validation.isValid) {
   </Select>
 </div>
   <div className="space-y-2">
-    <Label>Date *</Label>
-    <Input
-      type="date"
-      value={detail.date || ''}
-      onChange={(e) => updateNondhDetail(detail.id, { date: e.target.value })}
-    />
-  </div>
+  <Label>Date *</Label>
+  <Input
+    type="date"
+    value={detail.date || ''}
+    min={getMinDateForNondh(sortedNondh.id)}
+    max={getMaxDateForNondh(sortedNondh.id)}
+    onChange={(e) => {
+      const newDate = e.target.value;
+      if (isValidNondhDateOrder(sortedNondh.id, newDate)) {
+        updateNondhDetail(detail.id, { date: newDate });
+      } else {
+        toast({
+          title: "Invalid Date",
+          description: "Nondh dates must be in ascending order",
+          variant: "destructive"
+        });
+      }
+    }}
+  />
+</div>
 </div>
 
 {/* Move Hukam Date and Type here for Hukam type */}
 {detail.type === "Hukam" && (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
     <div className="space-y-2">
-      <Label>Hukam Date *</Label>
-      <Input
-        type="date"
-        value={detail.hukamDate || ''}
-        onChange={(e) => updateNondhDetail(detail.id, { hukamDate: e.target.value })}
-        className="w-full"
-      />
-    </div>
+  <Label>Hukam Date *</Label>
+  <Input
+    type="date"
+    value={detail.hukamDate || ''}
+    min={getMinDateForNondh(sortedNondh.id)}
+    max={getMaxDateForNondh(sortedNondh.id)}
+    onChange={(e) => {
+      const newDate = e.target.value;
+      if (isValidNondhDateOrder(sortedNondh.id, newDate)) {
+        updateNondhDetail(detail.id, { hukamDate: newDate });
+      } else {
+        toast({
+          title: "Invalid Hukam Date",
+          description: "Hukam dates must follow nondh date order",
+          variant: "destructive"
+        });
+      }
+    }}
+    className="w-full"
+  />
+</div>
     <div className="space-y-2">
       <Label>Hukam Type</Label>
       <Select
@@ -2838,17 +3199,15 @@ if (!validation.isValid) {
     </Select>
   </div>
   
-  {/* Move reason field below status */}
-  {detail.status === "invalid" && (
-    <div className="space-y-2">
-      <Label>Reason *</Label>
-      <Input
-        value={detail.invalidReason}
-        onChange={(e) => updateNondhDetail(detail.id, { invalidReason: e.target.value })}
-        placeholder="Enter reason for rejection"
-      />
-    </div>
-  )}
+  {/* Reason field - always shown, mandatory only for invalid status */}
+  <div className="space-y-2">
+    <Label>Reason {detail.status === "invalid" ? "*" : "(Optional)"}</Label>
+    <Input
+      value={detail.invalidReason || ''}
+      onChange={(e) => updateNondhDetail(detail.id, { invalidReason: e.target.value })}
+      placeholder="Enter reason"
+    />
+  </div>
 </div>
 
               <div className="space-y-4 mb-4">
