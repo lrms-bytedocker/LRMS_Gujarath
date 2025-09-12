@@ -112,6 +112,8 @@ export interface NondhDetail {
     area: { value: number; unit: AreaUnit }
     tenure: string
     isValid: boolean
+      surveyNumber?: string
+  surveyNumberType?: string
   }>
   dbId?: string
 }

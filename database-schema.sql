@@ -128,6 +128,8 @@ CREATE TABLE nondh_owner_relations (
     nondh_detail_id UUID REFERENCES nondh_details(id) ON DELETE CASCADE,
     owner_name VARCHAR(255) NOT NULL,
     s_no VARCHAR(255) NOT NULL,
+    survey_number VARCHAR(255),
+    survey_number_type VARCHAR(50) CHECK (survey_number_type IN ('s_no', 'block_no', 're_survey_no')),
     acres NUMERIC,
     gunthas NUMERIC,
     square_meters NUMERIC,
