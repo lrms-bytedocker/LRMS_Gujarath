@@ -613,6 +613,77 @@ const updateAffectedNondh = (detailId: string, affectedId: string, updates: any)
   }));
 };
 
+const updateAffectedNondhValidityChain = (detailId: string, affectedNondhNo: string, newStatus: string) => {
+  const allSortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Find the affected nondh by number
+  const affectedNondhIndex = allSortedNondhs.findIndex(n => 
+    safeNondhNumber(n).toString() === affectedNondhNo
+  );
+  
+  if (affectedNondhIndex === -1) return;
+
+  // Update the affected nondh's status to match what was selected
+  const affectedNondhId = allSortedNondhs[affectedNondhIndex].id;
+  const affectedDetail = nondhDetailData.find(d => d.nondhId === affectedNondhId);
+  
+  if (affectedDetail) {
+    // Create updated state immediately for processing
+    const updatedNondhDetailData = nondhDetailData.map(detail => 
+      detail.id === affectedDetail.id 
+        ? { ...detail, status: newStatus }
+        : detail
+    );
+    
+    // Update the actual state
+    updateNondhDetail(affectedDetail.id, { status: newStatus });
+    
+    // Process validity chain with the updated data
+    processValidityChainFromNondh(affectedNondhIndex, newStatus, updatedNondhDetailData);
+  }
+};
+
+const processValidityChainFromNondh = (startIndex: number, changedStatus: string, updatedData: NondhDetail[]) => {
+  const allSortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Create a map for faster lookup
+  const nondhDetailMap = new Map();
+  updatedData.forEach(detail => {
+    nondhDetailMap.set(detail.nondhId, detail);
+  });
+  
+  // Process all nondhs that come before the changed nondh (inclusive of the changed one for counting)
+  for (let i = 0; i < startIndex; i++) {
+    const nondh = allSortedNondhs[i];
+    const detail = nondhDetailMap.get(nondh.id);
+    
+    if (detail) {
+      // Count invalid nondhs that come after this one (including the changed one)
+      let invalidCount = 0;
+      for (let j = i + 1; j <= startIndex; j++) {
+        const laterNondh = allSortedNondhs[j];
+        const laterDetail = nondhDetailMap.get(laterNondh.id);
+        if (laterDetail?.status === 'invalid') {
+          invalidCount++;
+        }
+      }
+      
+      const shouldBeValid = invalidCount % 2 === 0;
+      
+      // Only update if validity needs to change
+      const currentValidity = detail.ownerRelations.every(r => r.isValid);
+      if (currentValidity !== shouldBeValid) {
+        const updatedRelations = detail.ownerRelations.map(relation => ({
+          ...relation,
+          isValid: shouldBeValid
+        }));
+        
+        updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+      }
+    }
+  }
+};
+
 const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, currentSNos: string[]) => {
   // Get all nondhs sorted using the same logic as display
   const allSortedNondhs = [...nondhs].sort(sortNondhs);
@@ -875,6 +946,7 @@ const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; error
     
     // Type-specific validations
     switch (detail.type) {
+      case "Vehchani":
       case "Varsai":
       case "Hakkami": 
       case "Vechand":
@@ -918,7 +990,7 @@ const handleTypeChange = (detailId: string, newType: string) => {
   if (!detail) return;
 
   // If changing to Vechand, Varsai, or Hayati and no owner relations exist, initialize one
-  if (["Vechand", "Varsai", "Hayati_ma_hakh_dakhal"].includes(newType) && detail.ownerRelations.length === 0) {
+  if (["Vechand", "Varsai", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(newType) && detail.ownerRelations.length === 0) {
     const newRelation = {
       id: Date.now().toString() + Math.random(),
       ownerName: "",
@@ -1451,7 +1523,7 @@ const updateHukamValidityChain = (detailId: string) => {
     }
   });
 };
-  // Get previous owners for dropdown (Varsai, Hakkami, Vechand, Hayati_ma_hakh_dakhal)
+  // Get previous owners for dropdown (Varsai, Hakkami, Vechand, Vehchani, Hayati_ma_hakh_dakhal)
 const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   // First, get the current nondh to understand what S.Nos it affects
   const currentNondh = nondhs.find(n => n.id === currentNondhId);
@@ -1491,7 +1563,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
       });
       
       return hasMatchingSNo && 
-             ["Varsai", "Hakkami", "Vechand", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type);
+             ["Varsai", "Hakkami", "Vechand", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(d.type);
     })
     .sort((a, b) => {
       const nondhA = nondhs.find(n => n.id === a.nondhId);
@@ -1920,7 +1992,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   const renderTypeSpecificFields = (detail: NondhDetail) => {
 
   // Handle other types that need owner selection
-  if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechand"].includes(detail.type)) {
+  if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechand", "Vehchani"].includes(detail.type)) {
     return renderOwnerSelectionFields(detail);
   }
 
@@ -2006,7 +2078,6 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
         )
 case "Durasti":
 case "Promulgation":
-case "Vehchani": 
 case "Bojo":
   return (
     <div className="space-y-4">
@@ -2207,10 +2278,17 @@ case "Bojo":
                   <Label>Hukam Status</Label>
                   <Select
                     value={affected.status}
-                    onValueChange={(value) => updateAffectedNondh(detail.id, affected.id, { 
-                      status: value,
-                      invalidReason: value === "invalid" ? affected.invalidReason : ""
-                    })}
+                    onValueChange={(value) => {
+  updateAffectedNondh(detail.id, affected.id, { 
+    status: value,
+    invalidReason: value === "invalid" ? affected.invalidReason : ""
+  });
+  
+  // Update validity chain based on this change
+  if (affected.nondhNo) {
+    updateAffectedNondhValidityChain(detail.id, affected.nondhNo, value);
+  }
+}}
                   >
                     <SelectTrigger>
                       <SelectValue />

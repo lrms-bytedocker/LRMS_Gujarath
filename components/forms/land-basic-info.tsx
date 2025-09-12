@@ -19,7 +19,13 @@ const initialFormData: LandBasicInfo = {
   district: "",
   taluka: "",
   village: "",
-  area: { value: 0, unit: "sq_m" },
+  area: { 
+    value: 0, 
+    unit: "sq_m",
+    acres: 0,
+    gunthas: 0,
+    square_meters: 0
+  },
   sNoType: "s_no",
   sNo: "",
   isPromulgation: false,
@@ -40,7 +46,479 @@ interface ValidationErrors {
   blockNo?: string
   reSurveyNo?: string
   integrated712?: string
+  area?: string
 }
+
+const GUNTHAS_PER_ACRE = 40;
+const SQM_PER_GUNTHA = 101.1714; // Approx 1 guntha = 101.1714 sq meters
+const SQM_PER_ACRE = SQM_PER_GUNTHA * GUNTHAS_PER_ACRE; // Approx 1 acre = 4046.856 sq meters
+
+
+type AreaUnit = "acre" | "guntha" | "sq_m";
+
+interface AreaFieldsProps {
+  area: { 
+    value: number; 
+    unit: 'acre_guntha' | 'sq_m';
+    acres?: number;
+    gunthas?: number;
+    square_meters?: number;
+  };
+  onChange: (area: { 
+    value: number; 
+    unit: 'acre_guntha' | 'sq_m';
+    acres?: number;
+    gunthas?: number;
+    square_meters?: number;
+  }) => void;
+  disabled?: boolean;
+}
+
+const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
+  // Define constants
+  const SQM_PER_GUNTHA = 101.17;
+  const SQM_PER_ACRE = 4046.86;
+  const GUNTHAS_PER_ACRE = 40;
+
+  // Helper functions for conversions
+  const convertToSquareMeters = (value: number, unit: string) => {
+    if (unit === "acre") return value * SQM_PER_ACRE;
+    if (unit === "guntha") return value * SQM_PER_GUNTHA;
+    return value;
+  };
+
+  const convertFromSquareMeters = (sqm: number, unit: string) => {
+    if (unit === "acre") return sqm / SQM_PER_ACRE;
+    if (unit === "guntha") return sqm / SQM_PER_GUNTHA;
+    return sqm;
+  };
+
+  // Define workingArea at component level
+  const workingArea = area || { unit: "acre_guntha", value: 0, acres: 0, gunthas: 0 };
+
+  // Calculate display values based on current state - exactly like your working example
+  const displayValues = (() => {
+    if (workingArea.unit === "sq_m") {
+      return {
+        sq_m: workingArea.value,
+        acres: workingArea.value ? Math.floor(convertFromSquareMeters(workingArea.value, "acre")) : undefined,
+        gunthas: workingArea.value ? Math.round(convertFromSquareMeters(workingArea.value, "guntha") % 40) : undefined
+      };
+    } else {
+      const calculatedSqm = workingArea.sq_m || ((workingArea.acres || 0) * SQM_PER_ACRE + (workingArea.gunthas || 0) * SQM_PER_GUNTHA);
+      return {
+        sq_m: calculatedSqm ? parseFloat(calculatedSqm.toFixed(2)) : calculatedSqm, // Round to 2 decimal places
+        acres: workingArea.acres ? Math.floor(workingArea.acres) : workingArea.acres,
+        gunthas: workingArea.gunthas ? Math.round(workingArea.gunthas) : workingArea.gunthas
+      };
+    }
+  })();
+
+  const handleSqmChange = (value: string) => {
+    if (value === "") {
+      onChange({
+        ...workingArea,
+        value: undefined,
+        acres: undefined,
+        gunthas: undefined,
+        sq_m: undefined
+      });
+      return;
+    }
+
+    const num = parseFloat(value);
+    if (!isNaN(num)) {
+      const totalAcres = convertFromSquareMeters(num, "acre");
+      const acres = Math.floor(totalAcres);
+      const remainingGuntha = Math.round((totalAcres - acres) * 40);
+      
+      if (workingArea.unit === "sq_m") {
+        // Square meter is primary
+        onChange({
+          ...workingArea,
+          value: num,
+          acres,
+          gunthas: remainingGuntha
+        });
+      } else {
+        // Square meter is secondary - update acre/guntha values
+        onChange({
+          ...workingArea,
+          unit: "acre_guntha",
+          acres,
+          gunthas: remainingGuntha,
+          sq_m: parseFloat(num.toFixed(2)) // Round to 2 decimal places
+        });
+      }
+    }
+  };
+
+  const handleAcreChange = (value: string) => {
+    if (value === "") {
+      onChange({
+        ...workingArea,
+        acres: undefined,
+        gunthas: workingArea.gunthas,
+        value: workingArea.unit === "sq_m" ? (workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : undefined) : workingArea.value,
+        sq_m: workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : undefined
+      });
+      return;
+    }
+
+    const num = parseFloat(value);
+    if (!isNaN(num)) {
+      if (workingArea.unit === "sq_m") {
+        const newSqm = convertToSquareMeters(num, "acre") + 
+                      (displayValues.gunthas ? convertToSquareMeters(displayValues.gunthas, "guntha") : 0);
+        onChange({
+          ...workingArea,
+          value: newSqm,
+          acres: num,
+          gunthas: displayValues.gunthas
+        });
+      } else {
+        onChange({
+          ...workingArea,
+          unit: "acre_guntha",
+          acres: num,
+          sq_m: parseFloat((convertToSquareMeters(num, "acre") + 
+               (workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : 0)).toFixed(2))
+        });
+      }
+    }
+  };
+
+  const handleGunthaChange = (value: string) => {
+    if (value === "") {
+      onChange({
+        ...workingArea,
+        gunthas: undefined,
+        acres: workingArea.acres,
+        value: workingArea.unit === "sq_m" ? (workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : undefined) : workingArea.value,
+        sq_m: workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : undefined
+      });
+      return;
+    }
+
+    const num = parseFloat(value);
+    if (!isNaN(num)) {
+      if (num >= 40) {
+        // Handle guntha >= 40 like in your working example
+        return;
+      }
+      
+      if (workingArea.unit === "sq_m") {
+        const newSqm = (displayValues.acres ? convertToSquareMeters(displayValues.acres, "acre") : 0) + 
+                      convertToSquareMeters(num, "guntha");
+        onChange({
+          ...workingArea,
+          value: newSqm,
+          acres: displayValues.acres,
+          gunthas: num
+        });
+      } else {
+        onChange({
+          ...workingArea,
+          unit: "acre_guntha",
+          gunthas: num,
+          sq_m: parseFloat(((workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : 0) +
+               convertToSquareMeters(num, "guntha")).toFixed(2))
+        });
+      }
+    }
+  };
+
+  const formatValue = (value: number | undefined): string => {
+    return value === undefined ? "" : value.toString();
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* On mobile: Stack all fields vertically */}
+      <div className="md:hidden space-y-4">
+        {/* Unit Selector */}
+        <div className="space-y-2 w-full">
+          <Label>Unit</Label>
+          <Select
+            value={workingArea.unit}
+            onValueChange={(unit) => {
+              const newUnit = unit as AreaUnit;
+              if (newUnit === "sq_m") {
+                // Convert to sq_m mode - preserve the sq_m value
+                const sqmValue = displayValues.sq_m || 0;
+                onChange({ 
+                  ...workingArea, 
+                  unit: "sq_m",
+                  value: sqmValue,
+                  acres: displayValues.acres,
+                  gunthas: displayValues.gunthas
+                });
+              } else {
+                // Convert to acre_guntha mode - preserve acre/guntha values
+                onChange({ 
+                  ...workingArea, 
+                  unit: "acre_guntha",
+                  acres: displayValues.acres || 0,
+                  gunthas: displayValues.gunthas || 0,
+                  sq_m: displayValues.sq_m
+                });
+              }
+            }}
+          >
+            <SelectTrigger className="w-full px-1.5">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="acre_guntha">Acre-Guntha</SelectItem>
+              <SelectItem value="sq_m">Square Meters</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Primary Field */}
+        {workingArea.unit === "sq_m" ? (
+          <div className="space-y-2 w-full">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formatValue(displayValues.sq_m)}
+              onChange={(e) => handleSqmChange(e.target.value)}
+              placeholder="Enter square meters"
+              className="w-full"
+              disabled={disabled}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 w-full">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.acres)}
+                onChange={(e) => handleAcreChange(e.target.value)}
+                placeholder="Enter acres"
+                className="w-full"
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2 w-full">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39"
+                step="1"
+                value={formatValue(displayValues.gunthas)}
+                onChange={(e) => handleGunthaChange(e.target.value)}
+                placeholder="Enter gunthas (0-39)"
+                className="w-full"
+                disabled={disabled}
+                onKeyDown={(e) => {
+                  if (e.key === 'e' || e.key === '-' || e.key === '+') {
+                    e.preventDefault();
+                  }
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Secondary Fields */}
+        {workingArea.unit === "sq_m" ? (
+          <>
+            <div className="space-y-2 w-full">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.acres)}
+                onChange={(e) => handleAcreChange(e.target.value)}
+                placeholder="Enter or view acres"
+                className="w-full bg-blue-50 border-blue-200"
+              />
+            </div>
+            <div className="space-y-2 w-full">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39"
+                step="1"
+                value={formatValue(displayValues.gunthas)}
+                onChange={(e) => handleGunthaChange(e.target.value)}
+                placeholder="Enter gunthas (0-39)"
+                className="w-full bg-blue-50 border-blue-200"
+                onKeyDown={(e) => {
+                  if (e.key === 'e' || e.key === '-' || e.key === '+') {
+                    e.preventDefault();
+                  }
+                }}
+              />
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2 w-full">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formatValue(displayValues.sq_m)}
+              onChange={(e) => handleSqmChange(e.target.value)}
+              placeholder="Enter or view sq. meters"
+              className="w-full bg-blue-50 border-blue-200"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* On desktop: Original single-row layout with better spacing */}
+      <div className="hidden md:flex items-end gap-6">
+        {/* Unit Selector */}
+        <div className="space-y-2 w-[140px] flex-shrink-0">
+          <Label>Unit</Label>
+          <Select
+            value={workingArea.unit}
+            onValueChange={(unit) => {
+              const newUnit = unit as AreaUnit;
+              if (newUnit === "sq_m") {
+                // Convert to sq_m mode - preserve the sq_m value
+                const sqmValue = displayValues.sq_m || 0;
+                onChange({ 
+                  ...workingArea, 
+                  unit: "sq_m",
+                  value: sqmValue,
+                  acres: displayValues.acres,
+                  gunthas: displayValues.gunthas
+                });
+              } else {
+                // Convert to acre_guntha mode - preserve acre/guntha values
+                onChange({ 
+                  ...workingArea, 
+                  unit: "acre_guntha",
+                  acres: displayValues.acres || 0,
+                  gunthas: displayValues.gunthas || 0,
+                  sq_m: displayValues.sq_m
+                });
+              }
+            }}
+          >
+            <SelectTrigger className="w-[140px] px-1.5">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="acre_guntha">Acre-Guntha</SelectItem>
+              <SelectItem value="sq_m">Square Meters</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Primary Fields */}
+        {workingArea.unit === "sq_m" ? (
+          <div className="space-y-2 min-w-[150px] flex-1">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formatValue(displayValues.sq_m)}
+              onChange={(e) => handleSqmChange(e.target.value)}
+              placeholder="Enter square meters"
+              className="w-full"
+            />
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 min-w-[120px] flex-1">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.acres)}
+                onChange={(e) => handleAcreChange(e.target.value)}
+                placeholder="Enter acres"
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-2 min-w-[100px] flex-1">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39"
+                step="1"
+                value={formatValue(displayValues.gunthas)}
+                onChange={(e) => handleGunthaChange(e.target.value)}
+                placeholder="Enter gunthas (0-39)"
+                className="w-full"
+                onKeyDown={(e) => {
+                  if (e.key === 'e' || e.key === '-' || e.key === '+') {
+                    e.preventDefault();
+                  }
+                }}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Secondary Fields */}
+        {workingArea.unit === "sq_m" ? (
+          <>
+            <div className="space-y-2 min-w-[120px] flex-1">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.acres)}
+                onChange={(e) => handleAcreChange(e.target.value)}
+                placeholder="Enter or view acres"
+                className="w-full bg-blue-50 border-blue-200"
+              />
+            </div>
+            <div className="space-y-2 min-w-[100px] flex-1">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39"
+                step="1"
+                value={formatValue(displayValues.gunthas)}
+                onChange={(e) => handleGunthaChange(e.target.value)}
+                placeholder="Enter gunthas (0-39)"
+                className="w-full bg-blue-50 border-blue-200"
+                onKeyDown={(e) => {
+                  if (e.key === 'e' || e.key === '-' || e.key === '+') {
+                    e.preventDefault();
+                  }
+                }}
+              />
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2 min-w-[150px] flex-1">
+            <Label>Square Meters</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={formatValue(displayValues.sq_m)}
+              onChange={(e) => handleSqmChange(e.target.value)}
+              placeholder="Enter or view sq. meters"
+              className="w-full bg-blue-50 border-blue-200"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default function LandBasicInfoComponent() {
   const { 
@@ -124,44 +602,60 @@ export default function LandBasicInfoComponent() {
     setValidationErrors(updatedErrors)
   }, [formData, updateStepData, validationErrors])
 
-  // Validation function
-  const validateForm = (): boolean => {
-    const errors: ValidationErrors = {}
-    let isValid = true
+  // Validation function with proper area validation for both unit types
+const validateForm = (): boolean => {
+  const errors: ValidationErrors = {}
+  let isValid = true
 
-    if (!formData.district) {
-      errors.district = "Please select a district"
-      isValid = false
-    }
-
-    if (!formData.taluka) {
-      errors.taluka = "Please select a taluka"
-      isValid = false
-    }
-
-    if (!formData.village) {
-      errors.village = "Please select a village"
-      isValid = false
-    }
-
-    if (!formData.blockNo) {
-      errors.blockNo = "Please enter Block No"
-      isValid = false
-    }
-
-    if (formData.isPromulgation && !formData.reSurveyNo) {
-      errors.reSurveyNo = "Please enter Re Survey No (required for Promulgation)"
-      isValid = false
-    }
-
-    if (!formData.integrated712) {
-      errors.integrated712 = "Please upload Integrated 7/12 Document"
-      isValid = false
-    }
-
-    setValidationErrors(errors)
-    return isValid
+  if (!formData.district) {
+    errors.district = "Please select a district"
+    isValid = false
   }
+
+  if (!formData.taluka) {
+    errors.taluka = "Please select a taluka"
+    isValid = false
+  }
+
+  if (!formData.village) {
+    errors.village = "Please select a village"
+    isValid = false
+  }
+
+  if (!formData.blockNo) {
+    errors.blockNo = "Please enter Block No"
+    isValid = false
+  }
+
+  if (formData.isPromulgation && !formData.reSurveyNo) {
+    errors.reSurveyNo = "Please enter Re Survey No (required for Promulgation)"
+    isValid = false
+  }
+
+  if (!formData.integrated712) {
+    errors.integrated712 = "Please upload Integrated 7/12 Document"
+    isValid = false
+  }
+
+  // Validate area based on unit type
+  const hasValidArea = (() => {
+    if (formData.area.unit === 'sq_m') {
+      return formData.area.value && formData.area.value > 0;
+    } else if (formData.area.unit === 'acre_guntha') {
+      return (formData.area.acres && formData.area.acres > 0) || 
+             (formData.area.gunthas && formData.area.gunthas > 0);
+    }
+    return false;
+  })();
+
+  if (!hasValidArea) {
+    errors.area = "Please enter a valid area"
+    isValid = false
+  }
+
+  setValidationErrors(errors)
+  return isValid
+}
 
   // Handlers for cascading selects
   const handleDistrictChange = (value: string) => {
@@ -236,75 +730,86 @@ export default function LandBasicInfoComponent() {
   }
 
   // Submission
-  const handleSubmit = async () => {
-    // Validate all required fields
-    if (!validateForm()) {
-      return
-    }
-
-    setLoading(true)
-    try {
-      // Map form data to database schema - use default values for required fields
-      const landRecordData = {
-        district: formData.district,
-        taluka: formData.taluka,
-        village: formData.village,
-        area_value: formData.area.value || 0, // Default value
-        area_unit: formData.area.unit || 'sq_m', // Default unit
-        s_no_type: formData.sNoType || 's_no', // Default type
-        s_no: formData.sNo || formData.blockNo, // Use blockNo as fallback for s_no
-        is_promulgation: formData.isPromulgation || false,
-        block_no: formData.blockNo,
-        re_survey_no: formData.reSurveyNo || null,
-        integrated_712: formData.integrated712 || null,
-        integrated_712_filename: formData.integrated712FileName || null,
-        current_step: 1,
-        status: 'draft'
-      }
-
-      // Add ID if updating existing record
-      if (landBasicInfo?.id) {
-        landRecordData.id = landBasicInfo.id
-      }
-
-      const { data: result, error } = await LandRecordService.saveLandRecord(landRecordData)
-      
-      if (error) throw error
-
-      // Update context with the saved data
-      const updatedInfo: LandBasicInfo = {
-        id: result.id,
-        district: formData.district, 
-        taluka: formData.taluka, 
-        village: formData.village, 
-        area: formData.area, 
-        sNoType: formData.sNoType, 
-        sNo: formData.sNo,
-        isPromulgation: formData.isPromulgation, 
-        blockNo: formData.blockNo, 
-        reSurveyNo: formData.reSurveyNo, 
-        integrated712: formData.integrated712,
-        integrated712FileName: formData.integrated712FileName
-      }
-
-      setLandBasicInfo(updatedInfo)
-      
-      // Update step data
-      updateStepData({
-        landBasicInfo: updatedInfo
-      })
-
-      setHasUnsavedChanges(currentStep, false)
-      toast({ title: "Land basic info saved successfully" })
-      setCurrentStep(2)
-      
-    } catch (error) {
-      console.error('Error saving land record:', error)
-      toast({ title: "Error saving data", variant: "destructive" })
-    } finally {
-      setLoading(false)
-    }
+const handleSubmit = async () => {
+  // Validate all required fields
+  if (!validateForm()) {
+    return
   }
+
+  setLoading(true)
+  try {
+    // Always save square meters value, regardless of unit chosen
+    let areaValueInSqm = 0;
+    
+    if (formData.area.unit === 'acre_guntha') {
+      // Use the calculated sq_m value from AreaFields component
+      areaValueInSqm = formData.area.sq_m || 0;
+    } else if (formData.area.unit === 'sq_m') {
+      // Use the value directly for sq_m unit
+      areaValueInSqm = formData.area.value || 0;
+    }
+
+    // Map form data to database schema - use default values for required fields
+    const landRecordData = {
+      district: formData.district,
+      taluka: formData.taluka,
+      village: formData.village,
+      area_value: areaValueInSqm, // Always save sqm value
+      area_unit: 'sq_m', // Always save as sq_m in database
+      s_no_type: formData.sNoType || 's_no', // Default type
+      s_no: formData.sNo || formData.blockNo, // Use blockNo as fallback for s_no
+      is_promulgation: formData.isPromulgation || false,
+      block_no: formData.blockNo,
+      re_survey_no: formData.reSurveyNo || null,
+      integrated_712: formData.integrated712 || null,
+      integrated_712_filename: formData.integrated712FileName || null,
+      current_step: 1,
+      status: 'draft'
+    }
+
+    // Add ID if updating existing record
+    if (landBasicInfo?.id) {
+      landRecordData.id = landBasicInfo.id
+    }
+
+    const { data: result, error } = await LandRecordService.saveLandRecord(landRecordData)
+    
+    if (error) throw error
+
+    // Update context with the saved data
+    const updatedInfo: LandBasicInfo = {
+      id: result.id,
+      district: formData.district, 
+      taluka: formData.taluka, 
+      village: formData.village, 
+      area: formData.area, // Keep original area object with user's chosen unit
+      sNoType: formData.sNoType, 
+      sNo: formData.sNo,
+      isPromulgation: formData.isPromulgation, 
+      blockNo: formData.blockNo, 
+      reSurveyNo: formData.reSurveyNo, 
+      integrated712: formData.integrated712,
+      integrated712FileName: formData.integrated712FileName
+    }
+
+    setLandBasicInfo(updatedInfo)
+    
+    // Update step data
+    updateStepData({
+      landBasicInfo: updatedInfo
+    })
+
+    setHasUnsavedChanges(currentStep, false)
+    toast({ title: "Land basic info saved successfully" })
+    setCurrentStep(2)
+    
+  } catch (error) {
+    console.error('Error saving land record:', error)
+    toast({ title: "Error saving data", variant: "destructive" })
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <Card>
@@ -365,6 +870,19 @@ export default function LandBasicInfoComponent() {
             )}
           </div>
         </div>
+
+{/* Area Fields */}
+<div className="space-y-2">
+  <Label>Land Area *</Label>
+  <AreaFields
+    area={formData.area}
+    onChange={(newArea) => updateFormField({ area: newArea })}
+    disabled={loading}
+  />
+  {validationErrors.area && (
+    <p className="text-sm text-red-600">{validationErrors.area}</p>
+  )}
+</div>
 
         {/* Promulgation Display */}
         {formData.village && formData.isPromulgation !== null && (
