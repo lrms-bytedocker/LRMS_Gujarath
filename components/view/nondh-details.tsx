@@ -94,8 +94,7 @@ export default function NondhDetails() {
 
         // Fetch nondh details WITH relations in one query
         addDebugLog("Fetching nondh details with relations...")
-       // Replace the detailData fetch with:
-const { data: detailData, error: detailError } = await LandRecordService.getNondhDetailsWithRelations(recordId);
+        const { data: detailData, error: detailError } = await LandRecordService.getNondhDetailsWithRelations(recordId);
         addDebugLog(`Details fetch result - Data: ${JSON.stringify(detailData)}, Error: ${JSON.stringify(detailError)}`)
         
         if (detailError) {
@@ -106,42 +105,51 @@ const { data: detailData, error: detailError } = await LandRecordService.getNond
         addDebugLog(`Raw detail data length: ${(detailData || []).length}`)
 
         // Transform the data for the view
-const transformedDetails = (detailData || []).map((detail: any) => {
-  return {
-    id: detail.id,
-    nondhId: detail.nondh_id,
-    sNo: detail.s_no,
-    type: detail.type,
-    reason: detail.reason || "",
-    date: detail.date || "",
-    vigat: detail.vigat || "",
-    status: detail.status || "valid",
-    invalidReason: detail.invalid_reason || "",
-    showInOutput: detail.show_in_output !== false,
-    hasDocuments: detail.has_documents || false,
-    docUpload: detail.doc_upload_url || "",
-    oldOwner: detail.old_owner || "",
-    hukamStatus: detail.hukam_status || "valid",
-    hukamInvalidReason: detail.hukam_invalid_reason || "",
-    affectedNondhNo: detail.affected_nondh_no || "",
-    ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
-      id: rel.id,
-      ownerName: rel.owner_name,
-      sNo: rel.s_no,
-      area: {
-        value: rel.area_value,
-        unit: rel.area_unit,
-        acres: rel.acres,
-        gunthas: rel.gunthas
-      },
-      tenure: rel.tenure || "Navi",
-      hukamType: rel.hukam_type || "",
-      hukamDate: rel.hukam_date || "",
-      restrainingOrder: rel.restraining_order ? 'yes' : 'no',
-      isValid: rel.is_valid !== false
-    }))
-  };
-});
+        const transformedDetails = (detailData || []).map((detail: any) => {
+          return {
+            id: detail.id,
+            nondhId: detail.nondh_id,
+            sNo: detail.s_no,
+            type: detail.type,
+            reason: detail.reason || "",
+            date: detail.date || "",
+            vigat: detail.vigat || "",
+            status: detail.status || "valid",
+            invalidReason: detail.invalid_reason || "",
+            showInOutput: detail.show_in_output !== false,
+            hasDocuments: detail.has_documents || false,
+            docUpload: detail.doc_upload_url || "",
+            oldOwner: detail.old_owner || "",
+            hukamStatus: detail.hukam_status || "valid",
+            hukamInvalidReason: detail.hukam_invalid_reason || "",
+            // Add new fields
+            hukamDate: detail.hukam_date || "",
+            hukamType: detail.hukam_type || "SSRD",
+            ganot: detail.ganot || "",
+            restrainingOrder: detail.restraining_order || "no",
+            sdDate: detail.sd_date || "",
+            amount: detail.amount || null,
+            affectedNondhDetails: detail.affected_nondh_details 
+              ? JSON.parse(detail.affected_nondh_details) 
+              : [],
+            ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
+              id: rel.id,
+              ownerName: rel.owner_name,
+              sNo: rel.s_no,
+             area: {
+  value: rel.square_meters || (rel.acres * SQM_PER_ACRE + rel.gunthas * SQM_PER_GUNTHA),
+  unit: rel.area_unit as 'acre_guntha' | 'sq_m',
+  acres: rel.acres,
+  gunthas: rel.gunthas
+},
+              tenure: rel.tenure || "Navi",
+              isValid: rel.is_valid !== false,
+              // Add new fields for owner relations
+              surveyNumber: rel.survey_number || "",
+              surveyNumberType: rel.survey_number_type || "s_no"
+            }))
+          };
+        });
 
         addDebugLog(`Transformed ${transformedDetails.length} details`)
         setNondhDetails(transformedDetails);
@@ -225,56 +233,156 @@ const transformedDetails = (detailData || []).map((detail: any) => {
     return sNoTypes;
   }
 
-  const getPrimarySNoType = (affectedSNos: string[]) => {
-  const sNoTypes = getSNoTypesFromSlabs();
-  // Find the most specific type among all affected S.Nos
-  const types = affectedSNos.map(sNo => sNoTypes.get(sNo) || 's_no');
+const getPrimarySNoType = (affectedSNos: string[]): string => {
+  if (!affectedSNos || affectedSNos.length === 0) return 's_no';
   
-  if (types.includes('re_survey_no')) return 're_survey_no';
-  if (types.includes('block_no')) return 'block_no';
-  return 's_no';
-}
+  // Priority order: s_no > block_no > re_survey_no
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+  
+  // Parse the stringified JSON objects to get the actual types
+  const types = affectedSNos.map(sNoStr => {
+    try {
+      const parsed = JSON.parse(sNoStr);
+      return parsed.type || 's_no';
+    } catch (e) {
+      return 's_no'; // fallback
+    }
+  });
+  
+  // Find the highest priority type present
+  for (const type of priorityOrder) {
+    if (types.includes(type)) {
+      return type;
+    }
+  }
+  
+  return 's_no'; // default
+};
 
-const sortNondhs = (a: any, b: any): number => {
-  // Get primary types
-  const aType = getPrimarySNoType(a.affected_s_nos || []);
-  const bType = getPrimarySNoType(b.affected_s_nos || []);
+  const sortNondhs = (a: any, b: any): number => {
+  // Get primary types from affected_s_nos
+  const aType = getPrimarySNoType(a.affected_s_nos);
+  const bType = getPrimarySNoType(b.affected_s_nos);
 
-  // Priority order (reverse of what we had before)
-  const priorityOrder = ['re_survey_no', 'block_no', 's_no'];
+  // Priority order: s_no > block_no > re_survey_no
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
   const aPriority = priorityOrder.indexOf(aType);
   const bPriority = priorityOrder.indexOf(bType);
 
-  // First sort by primary type
+  // First sort by primary type priority
   if (aPriority !== bPriority) return aPriority - bPriority;
 
-  // For same type, sort by first affected S.No numerically
-  const aFirstSNo = (a.affected_s_nos && a.affected_s_nos[0]) || '';
-  const bFirstSNo = (b.affected_s_nos && b.affected_s_nos[0]) || '';
-  
-  // Numeric comparison for S.Nos
-  const aNum = parseInt(aFirstSNo, 10) || 0;
-  const bNum = parseInt(bFirstSNo, 10) || 0;
-  if (aNum !== bNum) return aNum - bNum;
-
-  // Finally sort by nondh number if S.Nos are same
-  return getNondhNumber(a) - getNondhNumber(b);
+  // Within same type group, sort by nondh number (ascending)
+  const aNum = parseInt(a.number.toString()) || 0;
+  const bNum = parseInt(b.number.toString()) || 0;
+  return aNum - bNum;
 };
+  const formatArea = (area: { value: number, unit: string, acres?: number, gunthas?: number }) => {
+    if (!area) return "N/A";
+    
+    if (area.unit === 'acre_guntha' && area.acres !== undefined && area.gunthas !== undefined) {
+      return `${area.acres} acres ${area.gunthas} gunthas`;
+    } else if (area.unit === 'sq_m') {
+      return `${area.value} sq.m`;
+    } else if (area.unit === 'acre') {
+      return `${area.value} acres`;
+    } else if (area.unit === 'guntha') {
+      return `${area.value} gunthas`;
+    }
+    return `${area.value} ${area.unit}`;
+  };
 
-  const formatArea = (area: { value: number, unit: string }) => {
-  if (!area) return "N/A";
-  
-  if (area.unit === 'sq_m') {
-    return `${area.value} sq.m`;
-  } else if (area.unit === 'acre') {
-    return `${area.value} acres`;
-  } else if (area.unit === 'guntha') {
-    return `${area.value} gunthas`;
-  }
-  return "N/A";
-};
+  const renderTypeSpecificDetails = (detail: any) => {
+    return (
+      <div className="space-y-4">
+        {/* Vechand specific fields */}
+        {detail.type === "Vechand" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {detail.sdDate && (
+              <div>
+                <Label>SD Date</Label>
+                <p className="mt-1">{detail.sdDate}</p>
+              </div>
+            )}
+            {detail.amount && (
+              <div>
+                <Label>Amount</Label>
+                <p className="mt-1">{detail.amount}</p>
+              </div>
+            )}
+          </div>
+        )}
 
-  
+        {/* Old Owner for transfer types */}
+        {(["Varsai", "Hakkami", "Vechand", "Vehchani", "Hayati_ma_hakh_dakhal"].includes(detail.type)) && detail.oldOwner && (
+          <div>
+            <Label>Old Owner</Label>
+            <p className="mt-1">{detail.oldOwner}</p>
+          </div>
+        )}
+
+        {/* Hukam specific fields */}
+        {detail.type === "Hukam" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {detail.hukamDate && (
+                <div>
+                  <Label>Hukam Date</Label>
+                  <p className="mt-1">{detail.hukamDate}</p>
+                </div>
+              )}
+              <div>
+                <Label>Hukam Type</Label>
+                <p className="mt-1">{detail.hukamType}</p>
+              </div>
+            </div>
+
+            {detail.ganot && (
+              <div>
+                <Label>Ganot</Label>
+                <p className="mt-1">{detail.ganot}</p>
+              </div>
+            )}
+
+            <div>
+              <Label>Restraining Order</Label>
+              <p className="mt-1">{detail.restrainingOrder === 'yes' ? 'Yes' : 'No'}</p>
+            </div>
+
+            {/* Affected Nondh Details */}
+            {detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0 && (
+              <div>
+                <Label>Affected Nondh Details</Label>
+                <div className="mt-2 space-y-2">
+                  {detail.affectedNondhDetails.map((affected: any, index: number) => (
+                    <Card key={index} className="p-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div>
+                          <Label className="text-sm">Nondh Number</Label>
+                          <p className="text-sm">{affected.nondhNo || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <Label className="text-sm">Status</Label>
+                          <p className="text-sm">{affected.status || 'valid'}</p>
+                        </div>
+                        {affected.invalidReason && (
+                          <div>
+                            <Label className="text-sm">Reason</Label>
+                            <p className="text-sm">{affected.invalidReason}</p>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <Card>
@@ -285,22 +393,12 @@ const sortNondhs = (a: any, b: any): number => {
           <div className="flex justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
-          
-          {/* Debug Information */}
-          <Card className="p-4 bg-yellow-50 border-yellow-200">
-            <h4 className="font-semibold text-yellow-800 mb-2">Debug Information</h4>
-            <div className="space-y-1 text-sm text-yellow-700 max-h-40 overflow-y-auto">
-              {debugLogs.map((log, index) => (
-                <div key={index} className="font-mono text-xs">{log}</div>
-              ))}
-            </div>
-          </Card>
+         
         </CardContent>
       </Card>
     )
   }
 
-  // Show debug info even when loaded
   const hasData = nondhs.length > 0 || nondhDetails.length > 0 || documents712.length > 0;
 
   return (
@@ -319,56 +417,11 @@ const sortNondhs = (a: any, b: any): number => {
           </Card>
         )}
 
-        {/* 7/12 Documents Table */}
-{/* {documents712.length > 0 && (
-  <Card className="p-4">
-    <h3 className="text-lg font-semibold mb-4">Available 7/12 Documents</h3>
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Year Range</TableHead>
-          <TableHead>S.No Type</TableHead>
-          <TableHead>S.No</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Area</TableHead>
-          <TableHead>Action</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {documents712.map((doc, index) => (
-          <TableRow key={index}>
-            <TableCell>{doc.year}</TableCell>
-            <TableCell>
-              {doc.s_no_type === 'block_no' ? 'Block No' : 
-               doc.s_no_type === 're_survey_no' ? 'Resurvey No' : 'Survey No'}
-            </TableCell>
-            <TableCell>{doc.s_no}</TableCell>
-            <TableCell>
-              {doc.type === 'main' ? 'Main' : 
-               doc.type === 'paiky' ? 'Paiky' : 'Ekatrikaran'}
-            </TableCell>
-            <TableCell>{formatArea(doc.area)}</TableCell>
-            <TableCell>
-              <Button size="sm" variant="outline" asChild>
-                <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                  <Eye className="w-4 h-4 mr-2" />
-                  View
-                </a>
-              </Button>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  </Card>
-)} */}
-
         {/* Nondh Details */}
         {nondhs
           .sort(sortNondhs)
           .map(nondh => {
             const detail = nondhDetails.find(d => d.nondhId === nondh.id)
-            // Don't call addDebugLog here - it causes infinite re-renders
             
             if (!detail) {
               return (
@@ -391,30 +444,52 @@ const sortNondhs = (a: any, b: any): number => {
                         Nondh No: {nondh.number}
                       </h3>
                       <Badge variant={detail.status === 'invalid' ? 'destructive' : 'default'}>
-                        {statusTypes.find(s => s.value === detail.status)?.label || 'Unknown'}
+                        {detail.status === 'invalid' ? 'Radd' : 
+                         detail.status === 'nullified' ? 'Nullified' : 'Valid'}
                       </Badge>
+                      <span className="text-sm px-2 py-1 bg-blue-100 dark:bg-blue-900 rounded-full">
+                        {detail.type}
+                      </span>
                     </div>
                     <div className="mt-2">
                       <h4 className="text-sm font-medium text-muted-foreground">
                         Affected Survey Numbers:
                       </h4>
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {nondh.affected_s_nos?.map((sNo: string) => {
-                          const type = getPrimarySNoType([sNo])
-                          const typeLabel = 
-                            type === 'block_no' ? 'Block No' :
-                            type === 're_survey_no' ? 'Resurvey No' : 'Survey No'
-                          
-                          return (
-                            <span 
-                              key={sNo} 
-                              className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm flex items-center gap-1"
-                            >
-                              <span className="font-medium">{typeLabel}:</span>
-                              <span>{sNo}</span>
-                            </span>
-                          )
-                        })}
+                        {nondh.affected_s_nos?.map((sNoData: any, index: number) => {
+  let sNoNumber, sNoType;
+  
+  try {
+    if (typeof sNoData === 'string') {
+      const parsed = JSON.parse(sNoData);
+      sNoNumber = parsed.number;
+      sNoType = parsed.type;
+    } else if (typeof sNoData === 'object' && sNoData.number) {
+      sNoNumber = sNoData.number;
+      sNoType = sNoData.type;
+    } else {
+      sNoNumber = sNoData.toString();
+      sNoType = 's_no';
+    }
+  } catch (e) {
+    sNoNumber = sNoData.toString();
+    sNoType = 's_no';
+  }
+
+  const typeLabel = 
+    sNoType === 'block_no' ? 'Block No' :
+    sNoType === 're_survey_no' ? 'Resurvey No' : 'Survey No'
+  
+  return (
+    <span 
+      key={`${sNoNumber}-${index}`}
+      className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm flex items-center gap-1"
+    >
+      <span className="font-medium">{typeLabel}:</span>
+      <span>{sNoNumber}</span>
+    </span>
+  )
+})}
                       </div>
                     </div>
                   </div>
@@ -452,25 +527,35 @@ const sortNondhs = (a: any, b: any): number => {
                         </div>
                         <div>
                           <Label>Status</Label>
-                          <p className="mt-1">{statusTypes.find(s => s.value === detail.status)?.label || 'Unknown'}</p>
+                          <p className="mt-1">
+                            {detail.status === 'invalid' ? 'Radd' : 
+                             detail.status === 'nullified' ? 'Nullified' : 'Valid'}
+                          </p>
                         </div>
-                        {detail.status === "invalid" && (
+                        {detail.status === "invalid" && detail.invalidReason && (
                           <div>
                             <Label>Invalid Reason</Label>
-                            <p className="mt-1">{detail.invalidReason || 'N/A'}</p>
+                            <p className="mt-1">{detail.invalidReason}</p>
                           </div>
                         )}
                       </div>
 
-                      <div className="space-y-2 mb-4">
-                        <Label>Reason</Label>
-                        <p className="mt-1">{detail.reason || 'N/A'}</p>
-                      </div>
+                      {detail.reason && (
+                        <div className="space-y-2 mb-4">
+                          <Label>Reason</Label>
+                          <p className="mt-1">{detail.reason}</p>
+                        </div>
+                      )}
 
-                      <div className="space-y-2 mb-4">
-                        <Label>Vigat</Label>
-                        <p className="mt-1">{detail.vigat || 'N/A'}</p>
-                      </div>
+                      {detail.vigat && (
+                        <div className="space-y-2 mb-4">
+                          <Label>Vigat</Label>
+                          <p className="mt-1">{detail.vigat}</p>
+                        </div>
+                      )}
+
+                      {/* Type-specific fields */}
+                      {renderTypeSpecificDetails(detail)}
 
                       {detail.hasDocuments && detail.docUpload && (
                         <div className="space-y-2 mb-4">
@@ -490,7 +575,12 @@ const sortNondhs = (a: any, b: any): number => {
                         {detail.ownerRelations?.length > 0 ? (
                           detail.ownerRelations.map((relation: any, index: number) => (
                             <Card key={index} className="p-4">
-                              <h4 className="font-medium mb-3">Owner {index + 1}</h4>
+                              <div className="flex justify-between items-start mb-3">
+                                <h4 className="font-medium">Owner {index + 1}</h4>
+                                {!relation.isValid && (
+                                  <Badge variant="destructive">Invalid</Badge>
+                                )}
+                              </div>
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                   <Label>Owner Name</Label>
@@ -504,6 +594,22 @@ const sortNondhs = (a: any, b: any): number => {
                                   <Label>Tenure</Label>
                                   <p className="mt-1">{relation.tenure || 'N/A'}</p>
                                 </div>
+                                {/* Survey number fields for Durasti/Promulgation */}
+                                {relation.surveyNumber && (
+                                  <>
+                                    <div>
+                                      <Label>Survey Number</Label>
+                                      <p className="mt-1">{relation.surveyNumber}</p>
+                                    </div>
+                                    <div>
+                                      <Label>Survey Number Type</Label>
+                                      <p className="mt-1">
+                                        {relation.surveyNumberType === 'block_no' ? 'Block No' :
+                                         relation.surveyNumberType === 're_survey_no' ? 'Resurvey No' : 'Survey No'}
+                                      </p>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             </Card>
                           ))

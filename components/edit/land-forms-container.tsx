@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Circle, Loader2 } from "lucide-react";
 import { useLandRecord } from "@/contexts/land-record-context";
-import { LandRecordService } from "@/lib/supabase-enhanced";
+import { LandRecordService } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useStepFormData } from "@/hooks/use-step-form-data";
 

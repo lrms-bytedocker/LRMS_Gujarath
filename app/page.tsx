@@ -613,23 +613,23 @@ export default function LandMaster() {
   const villages = ["all", ...new Set(lands.map((land) => land.village))];
 
   // Filter lands based on search and filters
-  const filteredLands = lands.filter((land) => {
-    const matchesSearch =
-      land.block_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      land.re_survey_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      land.district.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      land.taluka.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      land.village.toLowerCase().includes(searchTerm.toLowerCase());
+const filteredLands = lands.filter((land) => {
+  const matchesSearch =
+    (land.block_no?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (land.re_survey_no?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (land.district?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (land.taluka?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+    (land.village?.toLowerCase() || '').includes(searchTerm.toLowerCase());
 
-    const matchesDistrict =
-      districtFilter === "all" || land.district === districtFilter;
-    const matchesTaluka =
-      talukaFilter === "all" || land.taluka === talukaFilter;
-    const matchesVillage =
-      villageFilter === "all" || land.village === villageFilter;
+  const matchesDistrict =
+    districtFilter === "all" || land.district === districtFilter;
+  const matchesTaluka =
+    talukaFilter === "all" || land.taluka === talukaFilter;
+  const matchesVillage =
+    villageFilter === "all" || land.village === villageFilter;
 
-    return matchesSearch && matchesDistrict && matchesTaluka && matchesVillage;
-  });
+  return matchesSearch && matchesDistrict && matchesTaluka && matchesVillage;
+});
 
   const handleAddNewLand = () => {
     router.push("/land-master/forms");

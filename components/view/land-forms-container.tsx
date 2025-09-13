@@ -11,10 +11,8 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Circle, Loader2 } from "lucide-react";
+import { CheckCircle, Circle } from "lucide-react";
 import { useLandRecord } from "@/contexts/land-record-context";
-import { LandRecordService } from "@/lib/supabase-enhanced";
-import { useToast } from "@/hooks/use-toast";
 import { useStepFormData } from "@/hooks/use-step-form-data";
 
 // Import your form components
@@ -38,12 +36,10 @@ export function ViewFormsContainer() {
     currentStep,
     setCurrentStep,
     landBasicInfo,
-    hasUnsavedChanges,
     formData,
     recordId,
-    setFormData,
   } = useLandRecord();
-  const { toast } = useToast();
+
   console.log('ViewFormsContainer rendered');
   console.log('Record ID from context:', recordId);
 
@@ -51,7 +47,6 @@ export function ViewFormsContainer() {
   const currentStepFormData = useStepFormData(currentStep);
 
   const [activeStep, setActiveStep] = useState(currentStep);
-  const [isSaving, setIsSaving] = useState(false);
 
   const steps: FormStep[] = [
     {
@@ -104,7 +99,6 @@ export function ViewFormsContainer() {
 
   // Handle step changes
   const handleStepChange = useCallback(async (newStep: number) => {
-    // No dialog box, just proceed directly
     setActiveStep(newStep);
     setCurrentStep(newStep);
     return true;
@@ -124,34 +118,6 @@ export function ViewFormsContainer() {
       await handleStepChange(steps[currentIndex - 1].id);
     }
   }, [activeStep, handleStepChange, steps]);
-
-  const handleSubmitAll = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      const combinedData = {
-        ...formData,
-        current_step: activeStep,
-        status: "completed",
-      };
-
-      const { data, error } = await LandRecordService.saveLandRecord(combinedData);
-      if (error) throw error;
-      
-      // Mark all steps as saved
-      steps.forEach(step => {
-        const stepFormData = useStepFormData(step.id);
-        stepFormData.markAsSaved();
-      });
-      
-      toast({ title: "All forms submitted successfully!" });
-      localStorage.setItem("currentLandRecordId", data.id);
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Error submitting forms", variant: "destructive" });
-    } finally {
-      setIsSaving(false);
-    }
-  }, [activeStep, formData, steps, toast]);
 
   // Render current step with its saved data
   const renderStep = useCallback(() => {
@@ -302,40 +268,20 @@ export function ViewFormsContainer() {
                 <Button
                   variant="outline"
                   onClick={handlePrevious}
-                  disabled={isFirstStep || isSaving}
+                  disabled={isFirstStep}
                   className="order-2 sm:order-1"
                 >
                   Previous
                 </Button>
 
                 <div className="flex gap-2 order-1 sm:order-2">
-                  {isLastStep ? (
-                    <Button
-                      onClick={handleSubmitAll}
-                      disabled={isSaving}
-                      className="flex items-center gap-2 w-full sm:w-auto"
-                    >
-                      {isSaving ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle className="h-4 w-4" />
-                          Submit All Forms
-                        </>
-                      )}
-                    </Button>
-                  ) : (
-                    <Button 
-                      onClick={handleNext} 
-                      disabled={isSaving}
-                      className="w-full sm:w-auto"
-                    >
-                      Next
-                    </Button>
-                  )}
+                  <Button 
+                    onClick={handleNext} 
+                    disabled={isLastStep}
+                    className="w-full sm:w-auto"
+                  >
+                    {isLastStep ? "Viewing Complete" : "Next"}
+                  </Button>
                 </div>
               </div>
             </CardContent>
