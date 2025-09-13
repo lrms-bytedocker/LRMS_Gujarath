@@ -37,9 +37,12 @@ export default function LandBasicInfoComponent() {
             taluka: data.taluka || "",
             village: data.village || "",
             area: { 
-              value: data.area_value || 0, 
-              unit: data.area_unit || "sq_m" 
-            },
+  value: data.area_value || 0, 
+  unit: data.area_unit || "sq_m",
+  acres: data.area_unit === 'acre' ? data.area_value : undefined,
+  gunthas: data.area_unit === 'guntha' ? data.area_value : undefined,
+  square_meters: data.area_unit === 'sq_m' ? data.area_value : undefined
+},
             sNoType: data.s_no_type || "s_no",
             sNo: data.s_no || "",
             isPromulgation: data.is_promulgation || false,
@@ -126,6 +129,16 @@ export default function LandBasicInfoComponent() {
             <p className="text-base font-semibold">{landData.village}</p>
           </div>
         </div>
+
+{/* Area Display */}
+<div className="space-y-2">
+  <Label className="text-sm font-medium text-muted-foreground">Land Area</Label>
+  <div className="flex items-center gap-4">
+    <p className="text-base font-semibold">
+      {landData.area.value} {landData.area.unit === 'sq_m' ? 'sq meters' : landData.area.unit}
+    </p>
+  </div>
+</div>
 
         {/* Survey Numbers */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

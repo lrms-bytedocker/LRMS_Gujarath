@@ -5,7 +5,10 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 
 export interface AreaInput {
   value: number
-  unit: "acre" | "guntha" | "sq_m"
+  unit: "acre_guntha" | "sq_m"
+  acres?: number
+  gunthas?: number
+  square_meters?: number
 }
 
 export interface LandBasicInfo {
@@ -109,6 +112,8 @@ export interface NondhDetail {
     area: { value: number; unit: AreaUnit }
     tenure: string
     isValid: boolean
+      surveyNumber?: string
+  surveyNumberType?: string
   }>
   dbId?: string
 }

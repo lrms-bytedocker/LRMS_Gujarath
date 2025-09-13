@@ -613,26 +613,87 @@ const updateAffectedNondh = (detailId: string, affectedId: string, updates: any)
   }));
 };
 
+const updateAffectedNondhValidityChain = (detailId: string, affectedNondhNo: string, newStatus: string) => {
+  const allSortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Find the affected nondh by number
+  const affectedNondhIndex = allSortedNondhs.findIndex(n => 
+    safeNondhNumber(n).toString() === affectedNondhNo
+  );
+  
+  if (affectedNondhIndex === -1) return;
+
+  // Update the affected nondh's status to match what was selected
+  const affectedNondhId = allSortedNondhs[affectedNondhIndex].id;
+  const affectedDetail = nondhDetailData.find(d => d.nondhId === affectedNondhId);
+  
+  if (affectedDetail) {
+    // Create updated state immediately for processing
+    const updatedNondhDetailData = nondhDetailData.map(detail => 
+      detail.id === affectedDetail.id 
+        ? { ...detail, status: newStatus }
+        : detail
+    );
+    
+    // Update the actual state
+    updateNondhDetail(affectedDetail.id, { status: newStatus });
+    
+    // Process validity chain with the updated data
+    processValidityChainFromNondh(affectedNondhIndex, newStatus, updatedNondhDetailData);
+  }
+};
+
+const processValidityChainFromNondh = (startIndex: number, changedStatus: string, updatedData: NondhDetail[]) => {
+  const allSortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Create a map for faster lookup
+  const nondhDetailMap = new Map();
+  updatedData.forEach(detail => {
+    nondhDetailMap.set(detail.nondhId, detail);
+  });
+  
+  // Process all nondhs that come before the changed nondh (inclusive of the changed one for counting)
+  for (let i = 0; i < startIndex; i++) {
+    const nondh = allSortedNondhs[i];
+    const detail = nondhDetailMap.get(nondh.id);
+    
+    if (detail) {
+      // Count invalid nondhs that come after this one (including the changed one)
+      let invalidCount = 0;
+      for (let j = i + 1; j <= startIndex; j++) {
+        const laterNondh = allSortedNondhs[j];
+        const laterDetail = nondhDetailMap.get(laterNondh.id);
+        if (laterDetail?.status === 'invalid') {
+          invalidCount++;
+        }
+      }
+      
+      const shouldBeValid = invalidCount % 2 === 0;
+      
+      // Only update if validity needs to change
+      const currentValidity = detail.ownerRelations.every(r => r.isValid);
+      if (currentValidity !== shouldBeValid) {
+        const updatedRelations = detail.ownerRelations.map(relation => ({
+          ...relation,
+          isValid: shouldBeValid
+        }));
+        
+        updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+      }
+    }
+  }
+};
+
 const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, currentSNos: string[]) => {
   // Get all nondhs sorted using the same logic as display
   const allSortedNondhs = [...nondhs].sort(sortNondhs);
   const currentIndex = allSortedNondhs.findIndex(n => n.id === currentNondhId);
   
   if (ganotType === "2nd Right") {
-    // For 2nd Right, return all owners from nondhs that come BEFORE current nondh with matching S.Nos
+    // For 2nd Right, return all owners from nondhs that come BEFORE current nondh
     const previousNondhs = allSortedNondhs.slice(0, currentIndex);
     
     return previousNondhs
-      .filter(nondh => 
-        nondh.affectedSNos.some(sNoStr => {
-          try {
-            const parsed = JSON.parse(sNoStr);
-            return currentSNos.includes(parsed.number);
-          } catch (e) {
-            return currentSNos.includes(sNoStr);
-          }
-        })
-      )
       .flatMap(nondh => {
         const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
         if (!detail) return [];
@@ -657,23 +718,13 @@ const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, c
       .filter(owner => owner.name.trim() !== '');
       
   } else if (ganotType === "1st Right") {
-    // Similar logic for 1st Right...
     const previousNondhs = allSortedNondhs.slice(0, currentIndex);
     
     // Get old owners (excluding 2nd Right from Hukam)
     const oldOwners = previousNondhs
       .filter(nondh => {
         const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
-        const hasMatchingSNos = nondh.affectedSNos.some(sNoStr => {
-          try {
-            const parsed = JSON.parse(sNoStr);
-            return currentSNos.includes(parsed.number);
-          } catch (e) {
-            return currentSNos.includes(sNoStr);
-          }
-        });
-        
-        return hasMatchingSNos && !(detail?.type === "Hukam" && detail?.ganot === "2nd Right");
+        return !(detail?.type === "Hukam" && detail?.ganot === "2nd Right");
       })
       .flatMap(nondh => {
         const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
@@ -703,16 +754,7 @@ const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, c
     const newOwners = previousNondhs
       .filter(nondh => {
         const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
-        const hasMatchingSNos = nondh.affectedSNos.some(sNoStr => {
-          try {
-            const parsed = JSON.parse(sNoStr);
-            return currentSNos.includes(parsed.number);
-          } catch (e) {
-            return currentSNos.includes(sNoStr);
-          }
-        });
-        
-        return hasMatchingSNos && detail?.type === "Hukam" && detail?.ganot === "2nd Right";
+        return detail?.type === "Hukam" && detail?.ganot === "2nd Right";
       })
       .flatMap(nondh => {
         const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
@@ -875,6 +917,7 @@ const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; error
     
     // Type-specific validations
     switch (detail.type) {
+      case "Vehchani":
       case "Varsai":
       case "Hakkami": 
       case "Vechand":
@@ -918,7 +961,7 @@ const handleTypeChange = (detailId: string, newType: string) => {
   if (!detail) return;
 
   // If changing to Vechand, Varsai, or Hayati and no owner relations exist, initialize one
-  if (["Vechand", "Varsai", "Hayati_ma_hakh_dakhal"].includes(newType) && detail.ownerRelations.length === 0) {
+  if (["Vechand", "Varsai", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(newType) && detail.ownerRelations.length === 0) {
     const newRelation = {
       id: Date.now().toString() + Math.random(),
       ownerName: "",
@@ -1451,22 +1494,8 @@ const updateHukamValidityChain = (detailId: string) => {
     }
   });
 };
-  // Get previous owners for dropdown (Varsai, Hakkami, Vechand, Hayati_ma_hakh_dakhal)
+  // Get previous owners for dropdown (Varsai, Hakkami, Vechand, Vehchani, Hayati_ma_hakh_dakhal)
 const getPreviousOwners = (sNo: string, currentNondhId: string) => {
-  // First, get the current nondh to understand what S.Nos it affects
-  const currentNondh = nondhs.find(n => n.id === currentNondhId);
-  if (!currentNondh) return [];
-
-  // Extract all S.No numbers that the current nondh affects
-  const currentAffectedSNos = currentNondh.affectedSNos.map(sNoStr => {
-    try {
-      const parsed = JSON.parse(sNoStr);
-      return parsed.number;
-    } catch (e) {
-      return sNoStr;
-    }
-  });
-
   // Get all nondhs sorted by priority
   const allSortedNondhs = [...nondhs].sort(sortNondhs);
   const currentIndex = allSortedNondhs.findIndex(n => n.id === currentNondhId);
@@ -1480,18 +1509,8 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
       const nondh = previousNondhs.find(n => n.id === d.nondhId);
       if (!nondh) return false;
       
-      // Check if this previous nondh affects any of the same S.Nos as current nondh
-      const hasMatchingSNo = nondh.affectedSNos.some(sNoStr => {
-        try {
-          const parsed = JSON.parse(sNoStr);
-          return currentAffectedSNos.includes(parsed.number);
-        } catch (e) {
-          return currentAffectedSNos.includes(sNoStr);
-        }
-      });
-      
-      return hasMatchingSNo && 
-             ["Varsai", "Hakkami", "Vechand", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type);
+      // Include all relevant nondh types, no S.No filtering
+      return ["Varsai", "Hakkami", "Vechand", "Vehchani", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type);
     })
     .sort((a, b) => {
       const nondhA = nondhs.find(n => n.id === a.nondhId);
@@ -1920,7 +1939,7 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   const renderTypeSpecificFields = (detail: NondhDetail) => {
 
   // Handle other types that need owner selection
-  if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechand"].includes(detail.type)) {
+  if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechand", "Vehchani"].includes(detail.type)) {
     return renderOwnerSelectionFields(detail);
   }
 
@@ -2006,7 +2025,104 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
         )
 case "Durasti":
 case "Promulgation":
-case "Vehchani": 
+  return (
+    <div className="space-y-4">
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <Label>Owner Details with Survey Numbers</Label>
+          <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Owner
+          </Button>
+        </div>
+
+        {detail.ownerRelations.map((relation, index) => (
+          <Card key={relation.id} className="p-3">
+            <div className="flex justify-between items-center mb-3">
+              <h4 className="font-medium">Owner {index + 1}</h4>
+              {detail.ownerRelations.length > 1 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeOwnerRelation(detail.id, relation.id)}
+                  className="text-red-600"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+
+            {/* Owner Name - Full width */}
+            <div className="space-y-2 mb-3">
+              <Label>Owner Name</Label>
+              <Input
+                value={relation.ownerName}
+                onChange={(e) => updateOwnerRelation(detail.id, relation.id, { ownerName: e.target.value })}
+                placeholder="Enter owner name"
+              />
+            </div>
+
+            {/* Survey Number and Type in one row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+              <div className="space-y-2">
+                <Label>Survey Number</Label>
+                <Input
+                  value={relation.surveyNumber || ''}
+                  onChange={(e) => updateOwnerRelation(detail.id, relation.id, { surveyNumber: e.target.value })}
+                  placeholder="Enter survey number"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Survey Number Type</Label>
+                <Select
+                  value={relation.surveyNumberType || 's_no'}
+                  onValueChange={(value) => updateOwnerRelation(detail.id, relation.id, { surveyNumberType: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="s_no">Survey No</SelectItem>
+                    <SelectItem value="block_no">Block No</SelectItem>
+                    <SelectItem value="re_survey_no">Re-survey No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Area and Tenure in one row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Area</Label>
+                {areaFields({
+                  area: relation.area,
+                  onChange: (newArea) => updateOwnerRelation(detail.id, relation.id, { area: newArea })
+                })}
+              </div>
+              <div className="space-y-2">
+                <Label>Tenure</Label>
+                <Select
+                  value={relation.tenure || "Navi"}
+                  onValueChange={(value) => updateOwnerRelation(detail.id, relation.id, { tenure: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenureTypes.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
 case "Bojo":
   return (
     <div className="space-y-4">
@@ -2207,10 +2323,17 @@ case "Bojo":
                   <Label>Hukam Status</Label>
                   <Select
                     value={affected.status}
-                    onValueChange={(value) => updateAffectedNondh(detail.id, affected.id, { 
-                      status: value,
-                      invalidReason: value === "invalid" ? affected.invalidReason : ""
-                    })}
+                    onValueChange={(value) => {
+  updateAffectedNondh(detail.id, affected.id, { 
+    status: value,
+    invalidReason: value === "invalid" ? affected.invalidReason : ""
+  });
+  
+  // Update validity chain based on this change
+  if (affected.nondhNo) {
+    updateAffectedNondhValidityChain(detail.id, affected.nondhNo, value);
+  }
+}}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -2852,7 +2975,9 @@ if (insertError) throw insertError;
         square_meters,
         area_unit: relation.area.unit === 'acre_guntha' ? 'acre_guntha' : 'sq_m',
         tenure: relation.tenure || 'Navi',
-        is_valid: relation.isValid !== false
+        is_valid: relation.isValid !== false,
+        survey_number: relation.surveyNumber || null,
+        survey_number_type: relation.surveyNumberType || null
       };
     });
 });
