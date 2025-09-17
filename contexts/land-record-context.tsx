@@ -94,6 +94,7 @@ export interface NondhDetail {
   hukamInvalidReason?: string
   affectedNondhNo?: string
   ganot?: string
+  tenure?: string
   restrainingOrder?: 'yes' | 'no'
   ownerTransfers?: Array<{
     id: string
@@ -110,7 +111,6 @@ export interface NondhDetail {
     ownerName: string
     sNo: string
     area: { value: number; unit: AreaUnit }
-    tenure: string
     isValid: boolean
       surveyNumber?: string
   surveyNumberType?: string

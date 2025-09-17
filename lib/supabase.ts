@@ -1057,39 +1057,39 @@ if (data?.error) {
 }
 
   // Get nondh details with owner relations
-static async getNondhDetailsWithRelations(landRecordId: string) {
-  console.log(`[SERVICE] getNondhDetailsWithRelations called with landRecordId: ${landRecordId}`);
-  
-  try {
-    // First get all nondhs for this land record
-    const { data: nondhs, error: nondhError } = await supabase
-      .from('nondhs')
-      .select('id')
-      .eq('land_record_id', landRecordId);
+  static async getNondhDetailsWithRelations(landRecordId: string) {
+    console.log(`[SERVICE] getNondhDetailsWithRelations called with landRecordId: ${landRecordId}`);
+    
+    try {
+      // First get all nondhs for this land record
+      const { data: nondhs, error: nondhError } = await supabase
+        .from('nondhs')
+        .select('id')
+        .eq('land_record_id', landRecordId);
 
-    if (nondhError) throw nondhError;
-    if (!nondhs || nondhs.length === 0) return { data: [], error: null };
+      if (nondhError) throw nondhError;
+      if (!nondhs || nondhs.length === 0) return { data: [], error: null };
 
-    // Extract valid UUIDs
-    const nondhIds = nondhs.map(n => n.id).filter(id => 
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
-    );
+      // Extract valid UUIDs
+      const nondhIds = nondhs.map(n => n.id).filter(id => 
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      );
 
-    // Then get details for these nondh IDs
-    const { data, error } = await supabase
-      .from('nondh_details')
-      .select(`
-        *,
-        owner_relations: nondh_owner_relations!nondh_detail_id(*)
-      `)
-      .in('nondh_id', nondhIds);
+      // Then get details for these nondh IDs
+      const { data, error } = await supabase
+        .from('nondh_details')
+        .select(`
+          *,
+          owner_relations: nondh_owner_relations!nondh_detail_id(*)
+        `)
+        .in('nondh_id', nondhIds);
 
-    return { data, error };
-  } catch (error) {
-    console.error('[SERVICE] Error in getNondhDetailsWithRelations:', error);
-    return { data: null, error };
+      return { data, error };
+    } catch (error) {
+      console.error('[SERVICE] Error in getNondhDetailsWithRelations:', error);
+      return { data: null, error };
+    }
   }
-}
 static async get712Documents(landRecordId: string) {
   console.log(`[SERVICE] Fetching 7/12 docs for land record: ${landRecordId}`);
   
@@ -1148,13 +1148,17 @@ static async get712Documents(landRecordId: string) {
 
   // Update a nondh detail
   static async updateNondhDetail(id: string, updates: any) {
-    return await supabase
-      .from('nondh_details')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-  }
+  const { data, error } = await supabase
+    .from('nondh_details')
+    .update(updates)
+    .eq('id', id)
+    .select();  // Remove .single() to handle multiple cases
+
+  if (error) throw error;
+  
+  // Return the first updated record or null if none were updated
+  return { data: data && data.length > 0 ? data[0] : null, error: null };
+}
 
   // Create a new owner relation
   static async createNondhOwnerRelation(data: any) {

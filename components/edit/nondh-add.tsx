@@ -40,33 +40,65 @@ export default function NondhAdd() {
   const [originalNondhs, setOriginalNondhs] = useState<Nondh[]>([])
   const [isDataLoaded, setIsDataLoaded] = useState(false)
 
-  // Get all unique S.Nos from slabs with their types
+  // Get unique S.Nos from all slabs AND unused ones from step 1
   const getAllSNos = useCallback(() => {
-    const sNosMap = new Map<string, string>(); // Map<number, type>
+    const sNos = new Map<string, { type: "s_no" | "block_no" | "re_survey_no" }>();
     
+    // Add S.Nos from year slabs (step 2)
     yearSlabs.forEach((slab) => {
       if (slab.sNo.trim() !== "") {
-        sNosMap.set(slab.sNo, slab.sNoType || 'S.No.');
+        sNos.set(slab.sNo, { type: slab.sNoType });
       }
+      
       slab.paikyEntries.forEach((entry) => {
         if (entry.sNo.trim() !== "") {
-          sNosMap.set(entry.sNo, entry.sNoType || 'S.No.');
+          sNos.set(entry.sNo, { type: entry.sNoType });
         }
-      })
+      });
+      
       slab.ekatrikaranEntries.forEach((entry) => {
         if (entry.sNo.trim() !== "") {
-          sNosMap.set(entry.sNo, entry.sNoType || 'S.No.');
+          sNos.set(entry.sNo, { type: entry.sNoType });
         }
-      })
-    })
-
-
-    // Convert to array of unique entries
-    return Array.from(sNosMap.entries()).map(([number, type]) => ({
-      type,
+      });
+    });
+    
+    // Add unused S.Nos from step 1 (landBasicInfo)
+    if (landBasicInfo) {
+      // Get all S.Nos currently used in step 2
+      const usedSNos = new Set(Array.from(sNos.keys()));
+      
+      // Check Survey Numbers from step 1
+      if (landBasicInfo.sNo && landBasicInfo.sNo.trim() !== "") {
+        const surveyNos = landBasicInfo.sNo.split(',').map(s => s.trim()).filter(s => s !== "");
+        surveyNos.forEach(sNo => {
+          if (!usedSNos.has(sNo)) {
+            sNos.set(sNo, { type: "s_no" });
+          }
+        });
+      }
+      
+      // Check Block Number from step 1
+      if (landBasicInfo.blockNo && landBasicInfo.blockNo.trim() !== "") {
+        if (!usedSNos.has(landBasicInfo.blockNo)) {
+          sNos.set(landBasicInfo.blockNo, { type: "block_no" });
+        }
+      }
+      
+      // Check Re-survey Number from step 1
+      if (landBasicInfo.reSurveyNo && landBasicInfo.reSurveyNo.trim() !== "") {
+        if (!usedSNos.has(landBasicInfo.reSurveyNo)) {
+          sNos.set(landBasicInfo.reSurveyNo, { type: "re_survey_no" });
+        }
+      }
+    }
+    
+    // Convert to array format expected by the component
+    return Array.from(sNos.entries()).map(([number, { type }]) => ({
+      type: type === "s_no" ? "S.No." : type === "block_no" ? "Block No." : "Re-survey No.",
       number
     }));
-  }, [yearSlabs])
+  }, [yearSlabs, landBasicInfo])
 
   // Fetch existing nondh data
   useEffect(() => {
@@ -108,26 +140,27 @@ export default function NondhAdd() {
 
     fetchNondhs();
   }, [recordId, toast]);
+
   // Add this useEffect hook to your component
-useEffect(() => {
-  console.log('Current nondhs state:', JSON.stringify(nondhs, null, 2));
-  
-  // Log the affectedSNos structure for each nondh
-  nondhs.forEach((nondh, index) => {
-    console.log(`Nondh ${index + 1} affectedSNos:`, {
-      rawValue: nondh.affectedSNos,
-      type: Array.isArray(nondh.affectedSNos) ? 'array' : typeof nondh.affectedSNos,
-      contents: Array.isArray(nondh.affectedSNos) 
-        ? nondh.affectedSNos.map(item => ({
-            value: item,
-            type: typeof item,
-            isObject: typeof item === 'object',
-            number: typeof item === 'object' ? item.number : null
-          }))
-        : null
+  useEffect(() => {
+    console.log('Current nondhs state:', JSON.stringify(nondhs, null, 2));
+    
+    // Log the affectedSNos structure for each nondh
+    nondhs.forEach((nondh, index) => {
+      console.log(`Nondh ${index + 1} affectedSNos:`, {
+        rawValue: nondh.affectedSNos,
+        type: Array.isArray(nondh.affectedSNos) ? 'array' : typeof nondh.affectedSNos,
+        contents: Array.isArray(nondh.affectedSNos) 
+          ? nondh.affectedSNos.map(item => ({
+              value: item,
+              type: typeof item,
+              isObject: typeof item === 'object',
+              number: typeof item === 'object' ? item.number : null
+            }))
+          : null
+      });
     });
-  });
-}, [nondhs]); // This will run whenever nondhs state changes
+  }, [nondhs]); // This will run whenever nondhs state changes
 
   // Check if form has changes
   const hasChanges = !isEqual(nondhs, originalNondhs)
@@ -163,14 +196,14 @@ useEffect(() => {
 
   // Add a new nondh
   const addNondh = () => {
-  setNondhs(prev => [
-    ...prev,
-    {
-      ...initialNondhData,
-      id: generateUUID()
-    }
-  ])
-}
+    setNondhs(prev => [
+      ...prev,
+      {
+        ...initialNondhData,
+        id: generateUUID()
+      }
+    ])
+  }
 
   // Remove a nondh
   const removeNondh = (id: string) => {
@@ -181,47 +214,47 @@ useEffect(() => {
 
   // Handle S.No selection
   const handleSNoSelection = (nondhId: string, sNo: string, sNoType: "s_no" | "block_no" | "re_survey_no", checked: boolean) => {
-  const nondh = nondhs.find((n) => n.id === nondhId)
-  if (nondh) {
-    let updatedSNos = [...nondh.affectedSNos]
-    if (checked) {
-      // Check if this sNo already exists in any format
-      const alreadyExists = updatedSNos.some(item => {
-        try {
-          if (typeof item === 'string') {
-            const parsed = JSON.parse(item);
-            return parsed.number === sNo;
-          } else if (typeof item === 'object' && item.number) {
-            return item.number === sNo;
+    const nondh = nondhs.find((n) => n.id === nondhId)
+    if (nondh) {
+      let updatedSNos = [...nondh.affectedSNos]
+      if (checked) {
+        // Check if this sNo already exists in any format
+        const alreadyExists = updatedSNos.some(item => {
+          try {
+            if (typeof item === 'string') {
+              const parsed = JSON.parse(item);
+              return parsed.number === sNo;
+            } else if (typeof item === 'object' && item.number) {
+              return item.number === sNo;
+            }
+            return item === sNo;
+          } catch {
+            return item === sNo;
           }
-          return item === sNo;
-        } catch {
-          return item === sNo;
+        });
+        
+        if (!alreadyExists) {
+          updatedSNos.push({ number: sNo, type: sNoType })
         }
-      });
-      
-      if (!alreadyExists) {
-        updatedSNos.push({ number: sNo, type: sNoType })
+      } else {
+        // Remove by matching the number in any format
+        updatedSNos = updatedSNos.filter((item) => {
+          try {
+            if (typeof item === 'string') {
+              const parsed = JSON.parse(item);
+              return parsed.number !== sNo;
+            } else if (typeof item === 'object' && item.number) {
+              return item.number !== sNo;
+            }
+            return item !== sNo;
+          } catch {
+            return item !== sNo;
+          }
+        });
       }
-    } else {
-      // Remove by matching the number in any format
-      updatedSNos = updatedSNos.filter((item) => {
-        try {
-          if (typeof item === 'string') {
-            const parsed = JSON.parse(item);
-            return parsed.number !== sNo;
-          } else if (typeof item === 'object' && item.number) {
-            return item.number !== sNo;
-          }
-          return item !== sNo;
-        } catch {
-          return item !== sNo;
-        }
-      });
+      updateNondh(nondhId, { affectedSNos: updatedSNos })
     }
-    updateNondh(nondhId, { affectedSNos: updatedSNos })
   }
-}
 
   // Handle file upload
   const handleFileUpload = async (file: File, nondhId: string) => {
@@ -309,14 +342,14 @@ useEffect(() => {
     try {
       // Prepare data for upsert
       const nondhsToSave = validNondhs.map(nondh => ({
-  id: nondh.id,
-  land_record_id: recordId,
-  number: nondh.number,
-  s_no_type: nondh.sNoType,
-  affected_s_nos: nondh.affectedSNos,
-  nondh_doc_url: nondh.nondhDoc || null,
-  nondh_doc_filename: nondh.nondhDocFileName || null
-}))
+        id: nondh.id,
+        land_record_id: recordId,
+        number: nondh.number,
+        s_no_type: nondh.sNoType,
+        affected_s_nos: nondh.affectedSNos,
+        nondh_doc_url: nondh.nondhDoc || null,
+        nondh_doc_filename: nondh.nondhDocFileName || null
+      }))
 
       // Use upsert to handle both inserts and updates
       const { error } = await LandRecordService.upsertNondhs(nondhsToSave)
@@ -373,7 +406,6 @@ useEffect(() => {
       <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle>Nondh Information</CardTitle>
-          
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -416,20 +448,25 @@ useEffect(() => {
                   <div key={number} className="flex items-center space-x-2">
                     <Checkbox
                       id={`${nondh.id}_${number}`}
-                     checked={nondh.affectedSNos.some(item => {
-  try {
-    if (typeof item === 'string') {
-      const parsed = JSON.parse(item);
-      return parsed.number === number;
-    } else if (typeof item === 'object' && item.number) {
-      return item.number === number;
-    }
-    return item === number; // fallback for plain string numbers
-  } catch {
-    return item === number;
-  }
-})}
-                      onCheckedChange={(checked) => handleSNoSelection(nondh.id, number, type, checked as boolean)}
+                      checked={nondh.affectedSNos.some(item => {
+                        try {
+                          if (typeof item === 'string') {
+                            const parsed = JSON.parse(item);
+                            return parsed.number === number;
+                          } else if (typeof item === 'object' && item.number) {
+                            return item.number === number;
+                          }
+                          return item === number; // fallback for plain string numbers
+                        } catch {
+                          return item === number;
+                        }
+                      })}
+                      onCheckedChange={(checked) => {
+                        const sNoType = type === "S.No." ? "s_no" : 
+                                      type === "Block No." ? "block_no" : 
+                                      type === "Re-survey No." ? "re_survey_no" : "s_no";
+                        handleSNoSelection(nondh.id, number, sNoType, checked as boolean);
+                      }}
                     />
                     <Label htmlFor={`${nondh.id}_${number}`} className="text-sm">
                       {type} {number}
@@ -438,29 +475,29 @@ useEffect(() => {
                 ))}
               </div>
               {nondh.affectedSNos.length > 0 && (
-  <p className="text-sm text-muted-foreground">
-    Selected: {nondh.affectedSNos.map((item, index) => {
-      try {
-        let sNoObj;
-        if (typeof item === 'string') {
-          sNoObj = JSON.parse(item);
-        } else if (typeof item === 'object' && item.number) {
-          sNoObj = item;
-        } else {
-          // fallback for plain string numbers
-          return `${item} (S.No.)`;
-        }
-        
-        const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
-                          sNoObj.type === "block_no" ? "Block" : 
-                          sNoObj.type === "re_survey_no" ? "Re-survey" : "S.No.";
-        return `${sNoObj.number} (${typeDisplay})`;
-      } catch {
-        return `${item} (S.No.)`;
-      }
-    }).join(", ")}
-  </p>
-)}
+                <p className="text-sm text-muted-foreground">
+                  Selected: {nondh.affectedSNos.map((item, index) => {
+                    try {
+                      let sNoObj;
+                      if (typeof item === 'string') {
+                        sNoObj = JSON.parse(item);
+                      } else if (typeof item === 'object' && item.number) {
+                        sNoObj = item;
+                      } else {
+                        // fallback for plain string numbers
+                        return `${item} (S.No.)`;
+                      }
+                      
+                      const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
+                                        sNoObj.type === "block_no" ? "Block" : 
+                                        sNoObj.type === "re_survey_no" ? "Re-survey" : "S.No.";
+                      return `${sNoObj.number} (${typeDisplay})`;
+                    } catch {
+                      return `${item} (S.No.)`;
+                    }
+                  }).join(", ")}
+                </p>
+              )}
             </div>
 
             {/* Document Upload */}
@@ -527,28 +564,27 @@ useEffect(() => {
         ))}
 
         {/* Add Nondh Button */}
-      <div className="flex flex-col items-center gap-4">
-  <Button 
-    onClick={addNondh} 
-    variant="outline" 
-    className="flex items-center gap-2"
-  >
-    <Plus className="w-4 h-4" />
-    Add Another Nondh
-  </Button>
+        <div className="flex flex-col items-center gap-4">
+          <Button 
+            onClick={addNondh} 
+            variant="outline" 
+            className="flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Another Nondh
+          </Button>
 
-  {hasChanges && (
-    <Button 
-      onClick={handleSave} 
-      disabled={loading} 
-      size="sm" 
-      className="flex items-center gap-2"
-    >
-      {loading ? "Saving..." : "Save & Continue"}
-    </Button>
-  )}
-</div>
-
+          {hasChanges && (
+            <Button 
+              onClick={handleSave} 
+              disabled={loading} 
+              size="sm" 
+              className="flex items-center gap-2"
+            >
+              {loading ? "Saving..." : "Save & Continue"}
+            </Button>
+          )}
+        </div>
 
       </CardContent>
     </Card>

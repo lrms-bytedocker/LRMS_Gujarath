@@ -20,7 +20,7 @@ interface PassbookEntry {
   ownerName: string
   area: number
   sNo: string
-  nondhNumber: number
+  nondhNumber: string
   createdAt: string
 }
 
@@ -376,11 +376,8 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
   }
 };
 
-  const safeNondhNumber = (nondh: any): number => {
-  const numberValue = typeof nondh.number === 'string' 
-    ? parseInt(nondh.number, 10) 
-    : nondh.number;
-  return isNaN(numberValue) ? 0 : numberValue;
+  const safeNondhNumber = (nondh: any): string => {
+  return nondh.number ? nondh.number.toString() : '0';
 };
   useEffect(() => {
     fetchPassbookData()
@@ -510,7 +507,7 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
         ownerName: relation.owner_name || '',
         area,
         sNo: relation.s_no || '',
-        nondhNumber,
+        nondhNumber: nondh ? safeNondhNumber(nondh) : '0',
         createdAt: relation.created_at || '',
         // Add affected S.Nos for filtering
         affectedSNos: nondh ? formatAffectedSNos(nondh.affectedSNos) : relation.s_no || ''
@@ -714,7 +711,7 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
 </div>
           </div>
           
-          {nondh.status === 'invalid' && nondh.invalidReason && (
+          {nondh.invalidReason && (
             <div className="space-y-1">
               <span className="text-muted-foreground text-sm">Reason:</span>
               <div className="text-sm font-medium text-red-600">{nondh.invalidReason}</div>
@@ -935,7 +932,7 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
                             </span>
                           </TableCell>
                           <TableCell className="max-w-xs">
-                            {nondh.status === 'invalid' && nondh.invalidReason ? (
+                            {nondh.invalidReason ? (
                               <span className="text-red-600 text-sm">{nondh.invalidReason}</span>
                             ) : (
                               "-"

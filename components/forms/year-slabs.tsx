@@ -708,71 +708,82 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
 const validateForm = (): boolean => {
   const errors: ValidationErrors = {};
   let isValid = true;
+  const errorMessages: string[] = [];
 
-  slabs.forEach(slab => {
+  slabs.forEach((slab, slabIndex) => {
     const slabErrors: any = {};
+    const slabNumber = slabIndex + 1;
 
     if (slab.startYear === "" || slab.startYear === undefined) {
       slabErrors.startYear = "Please enter start year";
+      errorMessages.push(`Slab ${slabNumber}: Missing start year`);
       isValid = false;
     }
 
     if (!slab.sNo.trim()) {
       slabErrors.sNo = "Please enter S.No/Block No/Re-Survey No";
+      errorMessages.push(`Slab ${slabNumber}: Missing S.No/Block No/Re-Survey No`);
       isValid = false;
     }
 
     // Validate main slab document upload - ONLY if no paiky/ekatrikaran
-if (!slab.paiky && !slab.ekatrikaran && !slab.integrated712) {
-  slabErrors.integrated712 = "Please upload 7/12 document for this slab";
-  isValid = false;
-}
+    if (!slab.paiky && !slab.ekatrikaran && !slab.integrated712) {
+      slabErrors.integrated712 = "Please upload 7/12 document for this slab";
+      errorMessages.push(`Slab ${slabNumber}: Missing 7/12 document`);
+      isValid = false;
+    }
 
     // Validate paiky entries
-if (slab.paiky && slab.paikyEntries && slab.paikyEntries.length > 0) {
-  const paikyErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
-  slab.paikyEntries.forEach((entry, index) => {
-    const entryErrors: any = {};
-    // Add safety check for entry existence
-    if (!entry || !entry.sNo || !entry.sNo.trim()) {
-      entryErrors.sNo = "Please enter S.No";
-      isValid = false;
+    if (slab.paiky && slab.paikyEntries && slab.paikyEntries.length > 0) {
+      const paikyErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+      slab.paikyEntries.forEach((entry, index) => {
+        const entryErrors: any = {};
+        const entryNumber = index + 1;
+        
+        if (!entry || !entry.sNo || !entry.sNo.trim()) {
+          entryErrors.sNo = "Please enter S.No";
+          errorMessages.push(`Slab ${slabNumber}, Paiky Entry ${entryNumber}: Missing S.No`);
+          isValid = false;
+        }
+        if (!entry || !entry.integrated712) {
+          entryErrors.integrated712 = "Please upload 7/12 document";
+          errorMessages.push(`Slab ${slabNumber}, Paiky Entry ${entryNumber}: Missing 7/12 document`);
+          isValid = false;
+        }
+        if (Object.keys(entryErrors).length > 0) {
+          paikyErrors[index] = entryErrors;
+        }
+      });
+      if (Object.keys(paikyErrors).length > 0) {
+        slabErrors.paikyEntries = paikyErrors;
+      }
     }
-    if (!entry || !entry.integrated712) {
-      entryErrors.integrated712 = "Please upload 7/12 document";
-      isValid = false;
-    }
-    if (Object.keys(entryErrors).length > 0) {
-      paikyErrors[index] = entryErrors;
-    }
-  });
-  if (Object.keys(paikyErrors).length > 0) {
-    slabErrors.paikyEntries = paikyErrors;
-  }
-}
 
-// Validate ekatrikaran entries
-if (slab.ekatrikaran && slab.ekatrikaranEntries && slab.ekatrikaranEntries.length > 0) {
-  const ekatrikaranErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
-  slab.ekatrikaranEntries.forEach((entry, index) => {
-    const entryErrors: any = {};
-    // Add safety check for entry existence
-    if (!entry || !entry.sNo || !entry.sNo.trim()) {
-      entryErrors.sNo = "Please enter S.No";
-      isValid = false;
+    // Validate ekatrikaran entries
+    if (slab.ekatrikaran && slab.ekatrikaranEntries && slab.ekatrikaranEntries.length > 0) {
+      const ekatrikaranErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+      slab.ekatrikaranEntries.forEach((entry, index) => {
+        const entryErrors: any = {};
+        const entryNumber = index + 1;
+        
+        if (!entry || !entry.sNo || !entry.sNo.trim()) {
+          entryErrors.sNo = "Please enter S.No";
+          errorMessages.push(`Slab ${slabNumber}, Ekatrikaran Entry ${entryNumber}: Missing S.No`);
+          isValid = false;
+        }
+        if (!entry || !entry.integrated712) {
+          entryErrors.integrated712 = "Please upload 7/12 document";
+          errorMessages.push(`Slab ${slabNumber}, Ekatrikaran Entry ${entryNumber}: Missing 7/12 document`);
+          isValid = false;
+        }
+        if (Object.keys(entryErrors).length > 0) {
+          ekatrikaranErrors[index] = entryErrors;
+        }
+      });
+      if (Object.keys(ekatrikaranErrors).length > 0) {
+        slabErrors.ekatrikaranEntries = ekatrikaranErrors;
+      }
     }
-    if (!entry || !entry.integrated712) {
-      entryErrors.integrated712 = "Please upload 7/12 document";
-      isValid = false;
-    }
-    if (Object.keys(entryErrors).length > 0) {
-      ekatrikaranErrors[index] = entryErrors;
-    }
-  });
-  if (Object.keys(ekatrikaranErrors).length > 0) {
-    slabErrors.ekatrikaranEntries = ekatrikaranErrors;
-  }
-}
 
     if (Object.keys(slabErrors).length > 0) {
       errors[slab.id] = slabErrors;
@@ -780,6 +791,21 @@ if (slab.ekatrikaran && slab.ekatrikaranEntries && slab.ekatrikaranEntries.lengt
   });
 
   setValidationErrors(errors);
+  
+  // Show detailed error message in toast
+  if (!isValid && errorMessages.length > 0) {
+    const detailedMessage = errorMessages.slice(0, 3).join('; ') + 
+      (errorMessages.length > 3 ? `; and ${errorMessages.length - 3} more issues` : '');
+    
+    setTimeout(() => {
+      toast({
+        title: "Validation Failed",
+        description: detailedMessage,
+        variant: "destructive"
+      });
+    }, 100);
+  }
+  
   return isValid;
 };
 
@@ -849,9 +875,26 @@ if (updates.startYear !== undefined || updates.sNo !== undefined || updates.inte
 };
 
 const addSlab = () => {
-  const defaultArea = landBasicInfo?.area 
-    ? toAreaUI(landBasicInfo.area) 
-    : { areaType: "acre_guntha", acre: 0, guntha: 0 };
+  // Determine default area based on previous slab
+let defaultArea;
+if (yearSlabs.length === 0) {
+  // First slab - use landBasicInfo area or default to 0
+  defaultArea = landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { areaType: "sq_m" as AreaTypeUI, sq_m: 0 };
+} else {
+  const previousSlab = toYearSlabUI(yearSlabs[yearSlabs.length - 1]);
+  
+  // Check if previous slab has paiky or ekatrikaran entries
+  const hasPaikyEntries = previousSlab.paiky && previousSlab.paikyEntries && previousSlab.paikyEntries.length > 0;
+  const hasEkatrikaranEntries = previousSlab.ekatrikaran && previousSlab.ekatrikaranEntries && previousSlab.ekatrikaranEntries.length > 0;
+  
+  if (hasPaikyEntries || hasEkatrikaranEntries) {
+    // Previous slab has sub-entries, so don't copy area - use default 0
+    defaultArea = { areaType: "sq_m" as AreaTypeUI, sq_m: 0 };
+  } else {
+    // Previous slab has no sub-entries, copy its area
+    defaultArea = previousSlab.areaUI;
+  }
+}
 
   let startYear, endYear;
   
@@ -1026,12 +1069,6 @@ const handleSaveAndNext = async () => {
     if (!validateForm()) {
   console.log('Validation errors:', validationErrors);
   console.log('Current slabs state:', slabs);
-  // Show a toast to indicate validation failed
-  toast({
-    title: "Validation Failed",
-    description: "Please check all required fields and try again",
-    variant: "destructive"
-  });
   setLoading(false);
   return;
 }

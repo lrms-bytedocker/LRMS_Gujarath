@@ -118,6 +118,7 @@ CREATE TABLE nondh_details (
     affected_nondh_details JSONB,
     ganot VARCHAR(20),
     sd_date DATE,
+    tenure VARCHAR(50) NOT NULL,
     amount DECIMAL(15,2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -134,7 +135,6 @@ CREATE TABLE nondh_owner_relations (
     gunthas NUMERIC,
     square_meters NUMERIC,
     area_unit VARCHAR(10) NOT NULL CHECK (area_unit IN ('acre_guntha', 'sq_m')),
-    tenure VARCHAR(50) NOT NULL,
     is_valid BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
