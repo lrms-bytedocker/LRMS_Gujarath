@@ -71,6 +71,16 @@ interface YearSlabUI {
   collapsed: boolean;
 }
 
+interface ValidationErrors {
+  [slabId: string]: {
+    startYear?: string
+    sNo?: string
+    integrated712?: string
+    paikyEntries?: { [index: number]: { sNo?: string; integrated712?: string } }
+    ekatrikaranEntries?: { [index: number]: { sNo?: string; integrated712?: string } }
+  }
+}
+
 // ---------- End Types ----------
 
 const SNO_TYPES = [
@@ -257,6 +267,7 @@ const [slabUploadedFileNames, setSlabUploadedFileNames] = useState<Record<string
 const [entryUploadedFileNames, setEntryUploadedFileNames] = useState<Record<string, string>>({});
 const [initialLoading, setInitialLoading] = useState(true);
 const [modified, setModified] = useState(false);
+const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 const initialSlabsRef = useRef<YearSlabUI[]>([]);
 
 // Add this function at the top of your component
@@ -337,8 +348,52 @@ const extractFilenameFromUrl = (url: string): string => {
   }
 }
 
-const hasChanges = (currentSlabs: YearSlabUI[]) => {
-  return JSON.stringify(currentSlabs) !== JSON.stringify(initialSlabsRef.current);
+const handleRemoveDocument = async (
+  slabId: string,
+  entryType?: 'paiky' | 'ekatrikaran',
+  entryIndex?: number
+) => {
+  try {
+    if (entryType && entryIndex !== undefined) {
+      // Remove document from specific entry
+      updateSlabEntry(slabId, entryType, entryIndex, {
+        integrated712: ""
+      });
+      
+      // Remove from filename tracking
+      setEntryUploadedFileNames(prev => {
+        const newState = { ...prev };
+        delete newState[`${slabId}_${entryType}_${entryIndex}`];
+        return newState;
+      });
+    } else {
+      // Remove document from main slab
+      updateSlab(slabId, {
+        integrated712: ""
+      });
+      
+      // Remove from filename tracking
+      setSlabUploadedFileNames(prev => {
+        const newState = { ...prev };
+        delete newState[slabId];
+        return newState;
+      });
+    }
+    
+    setModified(true);
+    toast({ 
+      title: "Document removed",
+      description: "Document has been removed successfully"
+    });
+    
+  } catch (error) {
+    console.error('Document removal error:', error);
+    toast({ 
+      title: "Removal failed", 
+      description: error.message,
+      variant: "destructive" 
+    });
+  }
 };
 
 useEffect(() => {
@@ -490,30 +545,30 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
 })();
 
   const handleSqmChange = (value: string) => {
-  if (value === "") {
-    onChange({
-      ...workingArea,
-      sq_m: undefined,
-      acre: undefined,
-      guntha: undefined
-    });
-    return;
-  }
+    if (value === "") {
+      onChange({
+        ...workingArea,
+        sq_m: undefined,
+        acre: undefined,
+        guntha: undefined
+      });
+      return;
+    }
 
-  const num = parseFloat(value);
-  if (!isNaN(num)) {
-    const totalAcres = convertFromSquareMeters(num, "acre");
-    const acres = parseFloat(Math.floor(totalAcres).toFixed(2));
-    const remainingGuntha = parseFloat(Math.round((totalAcres - acres) * 40).toFixed(2));
-    
-    onChange({
-      ...workingArea,
-      sq_m: parseFloat(num.toFixed(2)),
-      acre: acres,
-      guntha: remainingGuntha
-    });
-  }
-};
+    const num = parseFloat(value);
+    if (!isNaN(num)) {
+      const totalAcres = convertFromSquareMeters(num, "acre");
+      const acres = Math.floor(totalAcres);
+      const remainingGuntha = Math.round((totalAcres - acres) * 40);
+      
+      onChange({
+        ...workingArea,
+        sq_m: num,
+        acre: acres,
+        guntha: remainingGuntha
+      });
+    }
+  };
 
   const handleAcreChange = (value: string) => {
     if (value === "") {
@@ -758,7 +813,27 @@ const updateSlab = async (id: string, updates: Partial<YearSlabUI>) => {
   };
 
 const addSlab = async () => {
-  const defaultArea = { areaType: "sq_m" as AreaTypeUI, sq_m: 0 };
+
+// Determine default area based on previous slab
+let defaultArea: AreaUI;
+if (yearSlabs.length === 0) {
+  // First slab - use landBasicInfo area or default to 0
+  defaultArea = landBasicInfo?.area ? toAreaUI(landBasicInfo.area) : { areaType: "sq_m" as AreaTypeUI, sq_m: 0, acre: 0, guntha: 0 };
+} else {
+  const previousSlab = toYearSlabUI(yearSlabs[yearSlabs.length - 1]);
+  
+  // Check if previous slab has paiky or ekatrikaran entries
+  const hasPaikyEntries = previousSlab.paiky && previousSlab.paikyEntries && previousSlab.paikyEntries.length > 0;
+  const hasEkatrikaranEntries = previousSlab.ekatrikaran && previousSlab.ekatrikaranEntries && previousSlab.ekatrikaranEntries.length > 0;
+  
+  if (hasPaikyEntries || hasEkatrikaranEntries) {
+    // Previous slab has sub-entries, assign 0 to all area fields
+    defaultArea = { areaType: "sq_m" as AreaTypeUI, sq_m: 0, acre: 0, guntha: 0 };
+  } else {
+    // Previous slab has no sub-entries, copy its area
+    defaultArea = previousSlab.areaUI;
+  }
+}
 
   let startYear, endYear;
   
@@ -790,13 +865,14 @@ const addSlab = async () => {
     paikyEntries: [],
     ekatrikaran: shouldCopyEkatrikaran,
     ekatrikaranCount: shouldCopyEkatrikaran ? previousSlab.ekatrikaranCount : 0,
-    ekatrikaranEntries: shouldCopyEkatrikaran 
-      ? previousSlab.ekatrikaranEntries.map(entry => ({
-          ...entry,
-          id: generateUUID(),
-          integrated712: ""
-        }))
-      : [],
+   ekatrikaranEntries: shouldCopyEkatrikaran 
+  ? previousSlab.ekatrikaranEntries.map(entry => ({
+      ...entry,
+      id: generateUUID(),
+      integrated712: "",
+      areaUI: { areaType: "sq_m" as AreaTypeUI, sq_m: 0, acre: 0, guntha: 0 }
+    }))
+  : [],
     collapsed: false,
   };
 
@@ -905,28 +981,141 @@ const updateSlabEntry = async (
     
     if (type === "paiky") {
       const updatedEntries = [...(slab.paikyEntries || [])];
+      // Fix: Properly spread the existing entry with updates
       updatedEntries[index] = { 
-        ...(updatedEntries[index] || {}), 
-        ...updates 
+        ...updatedEntries[index], 
+        ...fromSlabEntryUI({...toSlabEntryUI(updatedEntries[index] || {}), ...updates})
       };
       return { ...slab, paikyEntries: updatedEntries };
     } else {
       const updatedEntries = [...(slab.ekatrikaranEntries || [])];
+      // Fix: Properly spread the existing entry with updates
       updatedEntries[index] = { 
-        ...(updatedEntries[index] || {}), 
-        ...updates 
+        ...updatedEntries[index], 
+        ...fromSlabEntryUI({...toSlabEntryUI(updatedEntries[index] || {}), ...updates})
       };
       return { ...slab, ekatrikaranEntries: updatedEntries };
     }
   }));
   setModified(true);
 };
+
+const validateForm = (): boolean => {
+  const errors: ValidationErrors = {};
+  let isValid = true;
+  const errorMessages: string[] = [];
+
+  slabs.forEach((slab, slabIndex) => {
+    const slabErrors: any = {};
+    const slabNumber = slabIndex + 1;
+
+    if (slab.startYear === "" || slab.startYear === undefined) {
+      slabErrors.startYear = "Please enter start year";
+      errorMessages.push(`Slab ${slabNumber}: Missing start year`);
+      isValid = false;
+    }
+
+    if (!slab.sNo.trim()) {
+      slabErrors.sNo = "Please enter S.No/Block No/Re-Survey No";
+      errorMessages.push(`Slab ${slabNumber}: Missing S.No/Block No/Re-Survey No`);
+      isValid = false;
+    }
+
+    // Validate main slab document upload - ONLY if no paiky/ekatrikaran
+    if (!slab.paiky && !slab.ekatrikaran && !slab.integrated712) {
+      slabErrors.integrated712 = "Please upload 7/12 document for this slab";
+      errorMessages.push(`Slab ${slabNumber}: Missing 7/12 document`);
+      isValid = false;
+    }
+
+    // Validate paiky entries
+    if (slab.paiky && slab.paikyEntries && slab.paikyEntries.length > 0) {
+      const paikyErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+      slab.paikyEntries.forEach((entry, index) => {
+        const entryErrors: any = {};
+        const entryNumber = index + 1;
+        
+        if (!entry || !entry.sNo || !entry.sNo.trim()) {
+          entryErrors.sNo = "Please enter S.No";
+          errorMessages.push(`Slab ${slabNumber}, Paiky Entry ${entryNumber}: Missing S.No`);
+          isValid = false;
+        }
+        if (!entry || !entry.integrated712) {
+          entryErrors.integrated712 = "Please upload 7/12 document";
+          errorMessages.push(`Slab ${slabNumber}, Paiky Entry ${entryNumber}: Missing 7/12 document`);
+          isValid = false;
+        }
+        if (Object.keys(entryErrors).length > 0) {
+          paikyErrors[index] = entryErrors;
+        }
+      });
+      if (Object.keys(paikyErrors).length > 0) {
+        slabErrors.paikyEntries = paikyErrors;
+      }
+    }
+
+    // Validate ekatrikaran entries
+    if (slab.ekatrikaran && slab.ekatrikaranEntries && slab.ekatrikaranEntries.length > 0) {
+      const ekatrikaranErrors: { [index: number]: { sNo?: string; integrated712?: string } } = {};
+      slab.ekatrikaranEntries.forEach((entry, index) => {
+        const entryErrors: any = {};
+        const entryNumber = index + 1;
+        
+        if (!entry || !entry.sNo || !entry.sNo.trim()) {
+          entryErrors.sNo = "Please enter S.No";
+          errorMessages.push(`Slab ${slabNumber}, Ekatrikaran Entry ${entryNumber}: Missing S.No`);
+          isValid = false;
+        }
+        if (!entry || !entry.integrated712) {
+          entryErrors.integrated712 = "Please upload 7/12 document";
+          errorMessages.push(`Slab ${slabNumber}, Ekatrikaran Entry ${entryNumber}: Missing 7/12 document`);
+          isValid = false;
+        }
+        if (Object.keys(entryErrors).length > 0) {
+          ekatrikaranErrors[index] = entryErrors;
+        }
+      });
+      if (Object.keys(ekatrikaranErrors).length > 0) {
+        slabErrors.ekatrikaranEntries = ekatrikaranErrors;
+      }
+    }
+
+    if (Object.keys(slabErrors).length > 0) {
+      errors[slab.id] = slabErrors;
+    }
+  });
+
+  setValidationErrors(errors);
+  
+  // Show detailed error message in toast
+  if (!isValid && errorMessages.length > 0) {
+    const detailedMessage = errorMessages.slice(0, 3).join('; ') + 
+      (errorMessages.length > 3 ? `; and ${errorMessages.length - 3} more issues` : '');
+    
+    setTimeout(() => {
+      toast({
+        title: "Validation Failed",
+        description: detailedMessage,
+        variant: "destructive"
+      });
+    }, 100);
+  }
+  
+  return isValid;
+};
+
 const handleSave = async () => {
   if (!recordId) return;
   
   try {
     setLoading(true);
     
+    // Add validation check first
+    if (!validateForm()) {
+      setLoading(false);
+      return;
+    }
+
     // Validate data
     const emptyStartYears = slabs.filter(slab => slab.startYear === "" || slab.startYear === undefined);
     if (emptyStartYears.length > 0) {
@@ -1086,8 +1275,11 @@ const toggleCollapse = (id: string) => {
     }
   }}
   onWheel={(e) => e.currentTarget.blur()}
-  max={slab.endYear}
+   className={validationErrors[slab.id]?.startYear ? "border-red-500" : ""}
 />
+{validationErrors[slab.id]?.startYear && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].startYear}</p>
+)}
   <p className="text-xs text-muted-foreground">
     Must be ≤ end year ({slab.endYear})
   </p>
@@ -1153,8 +1345,11 @@ const toggleCollapse = (id: string) => {
                   <Input
                     value={slab.sNo}
                     onChange={(e) => updateSlab(slab.id, { sNo: e.target.value })}
-                    placeholder="Enter number"
-                  />
+                     className={validationErrors[slab.id]?.sNo ? "border-red-500" : ""}
+/>
+{validationErrors[slab.id]?.sNo && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].sNo}</p>
+)}
                 </div>
                 <div className="space-y-2">
                   <Label>Area Type</Label>
@@ -1185,7 +1380,7 @@ const toggleCollapse = (id: string) => {
 })}
 
                 </div>
-                <div className="space-y-2">
+               <div className="space-y-2">
   <Label>7/12 Document</Label>
   <div className="space-y-2">
     <div className="relative">
@@ -1211,23 +1406,20 @@ const toggleCollapse = (id: string) => {
         <Upload className="w-4 h-4" />
         {loading ? "Uploading..." : "Choose File"}
       </Button>
+      {validationErrors[slab.id]?.integrated712 && (
+        <p className="text-sm text-red-600">{validationErrors[slab.id].integrated712}</p>
+      )}
     </div>
     
-    {slabUploadedFileNames[slab.id] && (
+    {/* Show uploaded filename or extracted filename from URL */}
+    {(slabUploadedFileNames[slab.id] || slab.integrated712) && (
       <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
-        <span className="text-sm text-green-800 truncate flex-1" title={slabUploadedFileNames[slab.id]}>
-          {slabUploadedFileNames[slab.id]}
+        <span className="text-sm text-green-800 truncate flex-1" title={slabUploadedFileNames[slab.id] || extractFilenameFromUrl(slab.integrated712)}>
+          {slabUploadedFileNames[slab.id] || extractFilenameFromUrl(slab.integrated712)}
         </span>
         <button
           type="button"
-          onClick={() => {
-            updateSlab(slab.id, { integrated712: "" });
-            setSlabUploadedFileNames(prev => {
-              const newState = { ...prev };
-              delete newState[slab.id];
-              return newState;
-            });
-          }}
+          onClick={() => handleRemoveDocument(slab.id)}
           className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
           title="Remove file"
         >
@@ -1248,7 +1440,7 @@ const toggleCollapse = (id: string) => {
     )}
   </div>
   <p className="text-xs text-gray-500">
-    Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+    Supported formats: PDF, JPG, JPEG, PNG 
   </p>
 </div>
               </div>
@@ -1480,8 +1672,11 @@ const toggleCollapse = (id: string) => {
                                     sNo: e.target.value,
                                   })
                                 }
-                                placeholder="Enter number"
-                              />
+                                className={validationErrors[slab.id]?.paikyEntries?.[globalIndex]?.sNo ? "border-red-500" : ""}
+/>
+{validationErrors[slab.id]?.paikyEntries?.[globalIndex]?.sNo && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].paikyEntries[globalIndex].sNo}</p>
+)}
                             </div>
                             <div>
                               <Label>Area Type</Label>
@@ -1517,79 +1712,74 @@ const toggleCollapse = (id: string) => {
   })}
 
                             </div>
-                           <div className="space-y-2">
-            <Label>7/12 Document</Label>
-            <div className="space-y-2">
-              <div className="relative">
-                <input
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      handleEntryFileUpload(
-                        file, 
-                        slab.id, 
-                        'paiky',
-                        globalIndex // Using the properly calculated index
-                      );
-                      e.target.value = '';
-                    }
-                  }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  disabled={loading}
-                />
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  disabled={loading}
-                  className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
-                >
-                  <Upload className="w-4 h-4" />
-                  {loading ? "Uploading..." : "Choose File"}
-                </Button>
-              </div>
-              
-              {entryUploadedFileNames[`${slab.id}_paiky_${globalIndex}`] && (
-                <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
-                  <span className="text-sm text-green-800 truncate flex-1">
-                    {entryUploadedFileNames[`${slab.id}_paiky_${globalIndex}`]}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateSlabEntry(slab.id, 'paiky', globalIndex, {
-                        integrated712: ""
-                      });
-                      setEntryUploadedFileNames(prev => {
-                        const newState = {...prev};
-                        delete newState[`${slab.id}_paiky_${globalIndex}`];
-                        return newState;
-                      });
-                    }}
-                    className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
-                    title="Remove file"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
-              
-              {entry.integrated712 && (
-                <a 
-                  href={entry.integrated712} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-block text-sm text-blue-600 hover:underline"
-                >
-                  View Document
-                </a>
-              )}
-            </div>
-            <p className="text-xs text-gray-500">
-              Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
-            </p>
-          </div>
+               <div className="space-y-2">
+  <Label>7/12 Document</Label>
+  <div className="space-y-2">
+    <div className="relative">
+      <input
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleEntryFileUpload(
+              file, 
+              slab.id, 
+              'paiky',
+              globalIndex
+            );
+            e.target.value = '';
+          }
+        }}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        disabled={loading}
+      />
+      <Button 
+        type="button" 
+        variant="outline" 
+        disabled={loading}
+        className="flex items-center gap-2 bg-blue-600 text-white border-blue-600 hover:bg-blue-700 disabled:opacity-50 w-full"
+      >
+        <Upload className="w-4 h-4" />
+        {loading ? "Uploading..." : "Choose File"}
+      </Button>
+      {validationErrors[slab.id]?.paikyEntries?.[globalIndex]?.integrated712 && (
+        <p className="text-sm text-red-600">{validationErrors[slab.id].paikyEntries[globalIndex].integrated712}</p>
+      )}
+    </div>
+    
+    {/* Show uploaded filename or extracted filename from URL */}
+    {(entryUploadedFileNames[`${slab.id}_paiky_${globalIndex}`] || entry.integrated712) && (
+      <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+        <span className="text-sm text-green-800 truncate flex-1">
+          {entryUploadedFileNames[`${slab.id}_paiky_${globalIndex}`] || extractFilenameFromUrl(entry.integrated712)}
+        </span>
+        <button
+          type="button"
+          onClick={() => handleRemoveDocument(slab.id, 'paiky', globalIndex)}
+          className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
+          title="Remove file"
+        >
+          ×
+        </button>
+      </div>
+    )}
+    
+    {entry.integrated712 && (
+      <a 
+        href={entry.integrated712} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="inline-block text-sm text-blue-600 hover:underline"
+      >
+        View Document
+      </a>
+    )}
+  </div>
+  <p className="text-xs text-gray-500">
+    Supported formats: PDF, JPG, JPEG, PNG 
+  </p>
+</div>
         </div>
       </Card>
     );
@@ -1758,8 +1948,11 @@ const toggleCollapse = (id: string) => {
                   sNo: e.target.value,
                 })
               }
-              placeholder="Enter number"
-            />
+                className={validationErrors[slab.id]?.ekatrikaranEntries?.[globalIndex]?.sNo ? "border-red-500" : ""}
+              />
+              {validationErrors[slab.id]?.ekatrikaranEntries?.[globalIndex]?.sNo && (
+                <p className="text-sm text-red-600">{validationErrors[slab.id].ekatrikaranEntries[globalIndex].sNo}</p>
+              )}
           </div>
           <div>
             <Label>Area Type</Label>
@@ -1823,32 +2016,27 @@ const toggleCollapse = (id: string) => {
                   <Upload className="w-4 h-4" />
                   {loading ? "Uploading..." : "Choose File"}
                 </Button>
+                {validationErrors[slab.id]?.ekatrikaranEntries?.[globalIndex]?.integrated712 && (
+  <p className="text-sm text-red-600">{validationErrors[slab.id].ekatrikaranEntries[globalIndex].integrated712}</p>
+)}
               </div>
               
-              {entryUploadedFileNames[`${slab.id}_ekatrikaran_${globalIndex}`] && (
-                <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
-                  <span className="text-sm text-green-800 truncate flex-1">
-                    {entryUploadedFileNames[`${slab.id}_ekatrikaran_${globalIndex}`]}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateSlabEntry(slab.id, 'ekatrikaran', globalIndex, {
-                        integrated712: ""
-                      });
-                      setEntryUploadedFileNames(prev => {
-                        const newState = {...prev};
-                        delete newState[`${slab.id}_ekatrikaran_${globalIndex}`];
-                        return newState;
-                      });
-                    }}
-                    className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
-                    title="Remove file"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
+              {/* Show uploaded filename or extracted filename from URL */}
+{(entryUploadedFileNames[`${slab.id}_ekatrikaran_${globalIndex}`] || entry.integrated712) && (
+  <div className="flex items-center justify-between px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+    <span className="text-sm text-green-800 truncate flex-1">
+      {entryUploadedFileNames[`${slab.id}_ekatrikaran_${globalIndex}`] || extractFilenameFromUrl(entry.integrated712)}
+    </span>
+    <button
+      type="button"
+      onClick={() => handleRemoveDocument(slab.id, 'ekatrikaran', globalIndex)}
+      className="ml-2 text-green-600 hover:text-green-800 text-lg leading-none flex-shrink-0"
+      title="Remove file"
+    >
+      ×
+    </button>
+  </div>
+)}
               
               {entry.integrated712 && (
                 <a 
@@ -1862,7 +2050,7 @@ const toggleCollapse = (id: string) => {
               )}
             </div>
             <p className="text-xs text-gray-500">
-              Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+              Supported formats: PDF, JPG, JPEG, PNG 
             </p>
           </div>
         </div>

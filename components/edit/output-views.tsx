@@ -221,28 +221,31 @@ const formatDate = (dateString: string): string => {
 };
 
   // Sorting function for nondhs
-  const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail): number => {
+   const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail): number => {
+  // Get the nondh objects for the details
   const nondhA = nondhs.find(n => n.id === a.nondhId);
   const nondhB = nondhs.find(n => n.id === b.nondhId);
   
   if (!nondhA || !nondhB) return 0;
   
-  // Get primary types from affected_s_nos
-  const aType = getPrimarySNoType(nondhA.affected_s_nos);
-  const bType = getPrimarySNoType(nondhB.affected_s_nos);
-
+  // Use the same getPrimarySNoType function for consistency
+  const typeA = getPrimarySNoType(nondhA.affectedSNos);
+  const typeB = getPrimarySNoType(nondhB.affectedSNos);
+  
   // Priority order: s_no > block_no > re_survey_no
   const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
-  const aPriority = priorityOrder.indexOf(aType);
-  const bPriority = priorityOrder.indexOf(bType);
-
-  // First sort by primary type priority
-  if (aPriority !== bPriority) return aPriority - bPriority;
-
-  // Within same type group, sort by nondh number (ascending)
-  const aNum = parseInt(nondhA.number.toString()) || 0;
-  const bNum = parseInt(nondhB.number.toString()) || 0;
-  return aNum - bNum;
+  const priorityA = priorityOrder.indexOf(typeA);
+  const priorityB = priorityOrder.indexOf(typeB);
+  
+  // First sort by type priority
+  if (priorityA !== priorityB) {
+    return priorityA - priorityB;
+  }
+  
+  // Within same type group, sort only by nondh number (ascending)
+  const aNondhNo = parseInt(nondhA.number.toString()) || 0;
+  const bNondhNo = parseInt(nondhB.number.toString()) || 0;
+  return aNondhNo - bNondhNo;
 };
 
   // Helper function to get status display name
@@ -594,12 +597,13 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
           </div>
         </div>
         
-        {nondh.status === 'invalid' && nondh.invalidReason && (
-          <div className="space-y-1">
-            <span className="text-muted-foreground text-sm">Reason:</span>
-            <div className="text-sm font-medium text-red-600">{nondh.invalidReason}</div>
-          </div>
-        )}
+        // In the renderQueryListCard function, update the reason display:
+{nondh.invalidReason ? (
+  <div className="space-y-1">
+    <span className="text-muted-foreground text-sm">Reason:</span>
+    <div className="text-sm font-medium">{nondh.invalidReason}</div>
+  </div>
+) : null}
         
         {nondh.vigat && nondh.vigat !== '-' && (
           <div className="space-y-1">
@@ -827,13 +831,13 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
                               {getStatusDisplayName(nondh.status)}
                             </span>
                           </TableCell>
-                          <TableCell className="max-w-xs">
-                            {nondh.status === 'invalid' && nondh.invalidReason ? (
-                              <span className="text-red-600 text-sm">{nondh.invalidReason}</span>
-                            ) : (
-                              "-"
-                            )}
-                          </TableCell>
+<TableCell className="max-w-xs">
+  {nondh.invalidReason ? (
+    <span className="text-sm">{nondh.invalidReason}</span>
+  ) : (
+    "-"
+  )}
+</TableCell>
                           <TableCell className="max-w-xs truncate">{nondh.vigat || "-"}</TableCell>
                           <TableCell>
                             {nondh.affectedSNos || nondh.sNo}

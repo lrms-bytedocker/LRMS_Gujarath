@@ -108,149 +108,169 @@ export default function YearSlabs() {
               </div>
             </div>
 
-            {/* Main Slab Info */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">S.No Type</Label>
-                <p className="text-base font-semibold">
-                  {slab.sNoType === 's_no' ? 'Survey No' : 
-                   slab.sNoType === 'block_no' ? 'Block No' : 'Re-Survey No'}
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">Number</Label>
-                <p className="text-base font-semibold">{slab.sNo}</p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-muted-foreground">Area</Label>
-                <p className="text-base font-semibold">
-                  {slab.area.unit === 'sq_m' 
-                    ? `${slab.area.value} sq.m` 
-                    : slab.area.unit === 'acre'
-                      ? `${slab.area.value} acres`
-                      : `${slab.area.value} guntha`}
-                </p>
-              </div>
-            </div>
-
-            {/* Document Display */}
-            {slab.integrated712 && (
-              <div className="space-y-2 mb-4">
-                <Label className="text-sm font-medium text-muted-foreground">7/12 Document</Label>
-                <div className="flex items-center gap-3 p-3 border rounded-lg bg-blue-50">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-blue-900">
-                      {slab.integrated712.split('/').pop() || 'Document'}
+            {/* Main Slab Info - Only show if no paiky or ekatrikaran entries */}
+            {!(slab.paiky && slab.paikyEntries?.length > 0) && !(slab.ekatrikaran && slab.ekatrikaranEntries?.length > 0) && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-muted-foreground">S.No Type</Label>
+                    <p className="text-base font-semibold">
+                      {slab.sNoType === 's_no' ? 'Survey No' : 
+                       slab.sNoType === 'block_no' ? 'Block No' : 'Re-Survey No'}
                     </p>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => window.open(slab.integrated712, '_blank')}
-                    className="flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-100"
-                  >
-                    <Eye className="w-4 h-4" />
-                    View
-                  </Button>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-muted-foreground">Number</Label>
+                    <p className="text-base font-semibold">{slab.sNo}</p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-muted-foreground">Area</Label>
+                    <p className="text-base font-semibold">
+                      {slab.area.unit === 'sq_m' 
+                        ? `${slab.area.value} sq.m` 
+                        : slab.area.unit === 'acre'
+                          ? `${slab.area.value} acres`
+                          : `${slab.area.value} guntha`}
+                    </p>
+                  </div>
                 </div>
-              </div>
+
+                {/* Document Display */}
+                {slab.integrated712 && (
+                  <div className="space-y-2 mb-4">
+                    <Label className="text-sm font-medium text-muted-foreground">7/12 Document</Label>
+                    <div className="flex items-center gap-3 p-3 border rounded-lg bg-blue-50">
+                      <FileText className="w-5 h-5 text-blue-600" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-blue-900">
+                          {slab.integrated712.split('/').pop() || 'Document'}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.open(slab.integrated712, '_blank')}
+                        className="flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-100"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Paiky Section */}
+            {/* Paiky Section - Only show entry-specific data */}
             {slab.paiky && slab.paikyEntries?.length > 0 && (
               <div className="border-t pt-4 mt-4">
                 <h4 className="font-medium mb-3">Paiky Entries ({slab.paikyEntries.length})</h4>
                 <div className="space-y-4">
                   {slab.paikyEntries.map((entry, entryIndex) => (
-                    <div key={entryIndex} className="p-3 border rounded-lg">
+                    <div key={`paiky-${entryIndex}`} className="p-3 border rounded-lg bg-green-50">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-green-700">Paiky Entry {entryIndex + 1}</span>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
                           <Label className="text-sm font-medium text-muted-foreground">S.No Type</Label>
-                          <p className="text-sm">
+                          <p className="text-sm font-semibold">
                             {entry.sNoType === 's_no' ? 'Survey No' : 
                              entry.sNoType === 'block_no' ? 'Block No' : 'Re-Survey No'}
                           </p>
                         </div>
                         <div>
                           <Label className="text-sm font-medium text-muted-foreground">Number</Label>
-                          <p className="text-sm">{entry.sNo}</p>
+                          <p className="text-sm font-semibold">{entry.sNo}</p>
                         </div>
                         <div>
                           <Label className="text-sm font-medium text-muted-foreground">Area</Label>
-                          <p className="text-sm">
-                            {entry.area.unit === 'sq_m' 
+                          <p className="text-sm font-semibold">
+                            {entry.area?.unit === 'sq_m' 
                               ? `${entry.area.value} sq.m` 
-                              : entry.area.unit === 'acre'
+                              : entry.area?.unit === 'acre'
                                 ? `${entry.area.value} acres`
-                                : `${entry.area.value} guntha`}
+                                : entry.area?.unit === 'guntha'
+                                  ? `${entry.area.value} guntha`
+                                  : 'N/A'}
                           </p>
                         </div>
-                        {entry.integrated712 && (
-                          <div className="md:col-span-3">
-                            <Label className="text-sm font-medium text-muted-foreground">Document</Label>
+                      </div>
+                      {entry.integrated712 && (
+                        <div className="mt-3 pt-3 border-t">
+                          <Label className="text-sm font-medium text-muted-foreground">Document</Label>
+                          <div className="flex items-center gap-3 mt-1">
+                            <FileText className="w-4 h-4 text-green-600" />
                             <Button
                               variant="link"
                               size="sm"
                               onClick={() => window.open(entry.integrated712, '_blank')}
-                              className="p-0 h-auto text-blue-600"
+                              className="p-0 h-auto text-green-600 hover:text-green-800"
                             >
                               View 7/12 Document
                             </Button>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Ekatrikaran Section */}
+            {/* Ekatrikaran Section - Only show entry-specific data */}
             {slab.ekatrikaran && slab.ekatrikaranEntries?.length > 0 && (
               <div className="border-t pt-4 mt-4">
                 <h4 className="font-medium mb-3">Ekatrikaran Entries ({slab.ekatrikaranEntries.length})</h4>
                 <div className="space-y-4">
                   {slab.ekatrikaranEntries.map((entry, entryIndex) => (
-                    <div key={entryIndex} className="p-3 border rounded-lg">
+                    <div key={`ekatrikaran-${entryIndex}`} className="p-3 border rounded-lg bg-orange-50">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-orange-700">Ekatrikaran Entry {entryIndex + 1}</span>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
                           <Label className="text-sm font-medium text-muted-foreground">S.No Type</Label>
-                          <p className="text-sm">
+                          <p className="text-sm font-semibold">
                             {entry.sNoType === 's_no' ? 'Survey No' : 
                              entry.sNoType === 'block_no' ? 'Block No' : 'Re-Survey No'}
                           </p>
                         </div>
                         <div>
                           <Label className="text-sm font-medium text-muted-foreground">Number</Label>
-                          <p className="text-sm">{entry.sNo}</p>
+                          <p className="text-sm font-semibold">{entry.sNo}</p>
                         </div>
                         <div>
                           <Label className="text-sm font-medium text-muted-foreground">Area</Label>
-                          <p className="text-sm">
-                            {entry.area.unit === 'sq_m' 
+                          <p className="text-sm font-semibold">
+                            {entry.area?.unit === 'sq_m' 
                               ? `${entry.area.value} sq.m` 
-                              : entry.area.unit === 'acre'
+                              : entry.area?.unit === 'acre'
                                 ? `${entry.area.value} acres`
-                                : `${entry.area.value} guntha`}
+                                : entry.area?.unit === 'guntha'
+                                  ? `${entry.area.value} guntha`
+                                  : 'N/A'}
                           </p>
                         </div>
-                        {entry.integrated712 && (
-                          <div className="md:col-span-3">
-                            <Label className="text-sm font-medium text-muted-foreground">Document</Label>
+                      </div>
+                      {entry.integrated712 && (
+                        <div className="mt-3 pt-3 border-t">
+                          <Label className="text-sm font-medium text-muted-foreground">Document</Label>
+                          <div className="flex items-center gap-3 mt-1">
+                            <FileText className="w-4 h-4 text-orange-600" />
                             <Button
                               variant="link"
                               size="sm"
                               onClick={() => window.open(entry.integrated712, '_blank')}
-                              className="p-0 h-auto text-blue-600"
+                              className="p-0 h-auto text-orange-600 hover:text-orange-800"
                             >
                               View 7/12 Document
                             </Button>
-                          </div>
-                        )}
-                      </div>
+                            </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

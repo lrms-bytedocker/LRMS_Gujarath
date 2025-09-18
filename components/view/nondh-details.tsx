@@ -3,37 +3,13 @@ import React from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Eye, ChevronDown, ChevronUp, Badge } from "lucide-react"
 import { useLandRecord } from "@/contexts/land-record-context"
 import { useToast } from "@/hooks/use-toast"
 import { LandRecordService } from "@/lib/supabase"
-import { record } from 'zod'
-
-const nondhTypes = [
-  "Kabjedaar",
-  "Ekatrikaran",
-  "Varsai",
-  "Hayati_ma_hakh_dakhal",
-  "Hakkami",
-  "Vechand",
-  "Durasti",
-  "Promulgation",
-  "Hukam",
-  "Vehchani",
-  "Bojo",
-  "Other",
-]
-
-const statusTypes = [
-  { value: "valid", label: "Valid" },
-  { value: "invalid", label: "Invalid" },
-  { value: "nullified", label: "Nullified" }
-]
 
 const SQM_PER_GUNTHA = 101.17;
 const SQM_PER_ACRE = 4046.86;
-const GUNTHAS_PER_ACRE = 40;
 
 export default function NondhDetails() {
   const { landBasicInfo, yearSlabs, recordId } = useLandRecord()
@@ -60,6 +36,20 @@ export default function NondhDetails() {
       debugLogs.forEach(log => console.log(log))
     }
   }, [debugLogs])
+
+  // Helper function to get status label
+  const getStatusLabel = (status: string): string => {
+    switch (status) {
+      case 'valid':
+        return 'Pramaanik'
+      case 'nullified':
+        return 'Na Manjoor'
+      case 'invalid':
+        return 'Radd'
+      default:
+        return 'Pramaanik'
+    }
+  }
 
   React.useEffect(() => {
     addDebugLog("NondhDetails component mounted")
@@ -122,7 +112,7 @@ export default function NondhDetails() {
             oldOwner: detail.old_owner || "",
             hukamStatus: detail.hukam_status || "valid",
             hukamInvalidReason: detail.hukam_invalid_reason || "",
-            // Add new fields
+            tenure: detail.tenure || "Navi",
             hukamDate: detail.hukam_date || "",
             hukamType: detail.hukam_type || "SSRD",
             ganot: detail.ganot || "",
@@ -142,7 +132,6 @@ export default function NondhDetails() {
   acres: rel.acres,
   gunthas: rel.gunthas
 },
-              tenure: rel.tenure || "Navi",
               isValid: rel.is_valid !== false,
               // Add new fields for owner relations
               surveyNumber: rel.survey_number || "",
@@ -363,7 +352,7 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                         </div>
                         <div>
                           <Label className="text-sm">Status</Label>
-                          <p className="text-sm">{affected.status || 'valid'}</p>
+                          <p className="text-sm">{getStatusLabel(affected.status || 'valid')}</p>
                         </div>
                         {affected.invalidReason && (
                           <div>
@@ -443,9 +432,8 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                       <h3 className="text-lg font-semibold">
                         Nondh No: {nondh.number}
                       </h3>
-                      <Badge variant={detail.status === 'invalid' ? 'destructive' : 'default'}>
-                        {detail.status === 'invalid' ? 'Radd' : 
-                         detail.status === 'nullified' ? 'Nullified' : 'Valid'}
+                      <Badge variant={detail.status === 'invalid' ? 'destructive' : detail.status === 'nullified' ? 'secondary' : 'default'}>
+                        {getStatusLabel(detail.status)}
                       </Badge>
                       <span className="text-sm px-2 py-1 bg-blue-100 dark:bg-blue-900 rounded-full">
                         {detail.type}
@@ -527,18 +515,19 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                         </div>
                         <div>
                           <Label>Status</Label>
-                          <p className="mt-1">
-                            {detail.status === 'invalid' ? 'Radd' : 
-                             detail.status === 'nullified' ? 'Nullified' : 'Valid'}
-                          </p>
+                          <p className="mt-1">{getStatusLabel(detail.status)}</p>
                         </div>
-                        {detail.status === "invalid" && detail.invalidReason && (
-                          <div>
-                            <Label>Invalid Reason</Label>
-                            <p className="mt-1">{detail.invalidReason}</p>
-                          </div>
-                        )}
                       </div>
+
+                      {/* Show reason/invalid reason for all statuses */}
+                      {detail.invalidReason && (
+                        <div className="space-y-2 mb-4">
+                          <Label>
+                            {detail.status === 'invalid' ? 'Invalid Reason' : 'Reason'}
+                          </Label>
+                          <p className="mt-1">{detail.invalidReason}</p>
+                        </div>
+                      )}
 
                       {detail.reason && (
                         <div className="space-y-2 mb-4">
@@ -556,6 +545,11 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
 
                       {/* Type-specific fields */}
                       {renderTypeSpecificDetails(detail)}
+
+                      <div className="space-y-2 mb-6">
+                        <Label>Tenure</Label>
+                        <p className="mt-1">{detail.tenure || 'Navi'}</p>
+                      </div>
 
                       {detail.hasDocuments && detail.docUpload && (
                         <div className="space-y-2 mb-4">
@@ -578,7 +572,7 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                               <div className="flex justify-between items-start mb-3">
                                 <h4 className="font-medium">Owner {index + 1}</h4>
                                 {!relation.isValid && (
-                                  <Badge variant="destructive">Invalid</Badge>
+                                  <Badge variant="destructive">Radd</Badge>
                                 )}
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -589,10 +583,6 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                                 <div>
                                   <Label>Area</Label>
                                   <p className="mt-1">{formatArea(relation.area)}</p>
-                                </div>
-                                <div>
-                                  <Label>Tenure</Label>
-                                  <p className="mt-1">{relation.tenure || 'N/A'}</p>
                                 </div>
                                 {/* Survey number fields for Durasti/Promulgation */}
                                 {relation.surveyNumber && (
