@@ -979,7 +979,7 @@ const handleSubmit = async () => {
             <p className="text-sm text-red-600">{validationErrors.integrated712}</p>
           )}
           <p className="text-xs text-gray-500">
-            Supported formats: PDF, JPG, JPEG, PNG (Max 10MB)
+            Supported formats: PDF, JPG, JPEG, PNG 
           </p>
         </div>
 
