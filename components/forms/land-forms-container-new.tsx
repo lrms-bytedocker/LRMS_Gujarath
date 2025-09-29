@@ -12,7 +12,6 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, Circle } from "lucide-react";
 
-// Import your actual forms from LRMS_Forms-main
 import LandBasicInfoComponent from "./land-basic-info";
 import YearSlabs from "./year-slabs";
 import Panipatrak from "./panipatrak";
@@ -26,7 +25,7 @@ interface FormStep {
 }
 
 export function LandFormsContainer() {
-  const { currentStep, setCurrentStep } = useLandRecord(); // Use currentStep from context
+  const { currentStep, setCurrentStep } = useLandRecord();
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
 
   const steps: FormStep[] = [
