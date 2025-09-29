@@ -6,17 +6,21 @@ export default function Page() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="flex flex-col lg:flex-row items-center justify-center gap-8 w-full max-w-4xl">
         {/* Sign In Box */}
-        
-          <SignIn 
-            path="/sign-in"
-            routing="path"
-            signUpUrl="/sign-up"
-            afterSignInUrl="/"
-          />
+        <SignIn
+          path="/sign-in"
+          routing="path"
+          signUpUrl={undefined} // disables sign-up link navigation
+          appearance={{
+            elements: {
+              footerAction: { display: 'none' }, // hides the "Don't have an account?" message
+            },
+          }}
+          afterSignInUrl="/"
+        />
      
 
         {/* Vertical Divider - Hidden on mobile */}
-        <div className="h-px w-full lg:h-64 lg:w-px bg-gray-200"></div>
+        {/* <div className="h-px w-full lg:h-64 lg:w-px bg-gray-200"></div> */}
 
         {/* Sign Up Prompt */}
         {/* <div className="bg-white p-6 sm:p-8 rounded-lg shadow-md border w-full lg:w-[320px] text-center">

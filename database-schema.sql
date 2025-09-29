@@ -166,3 +166,148 @@ CREATE POLICY "Allow all operations on panipatraks" ON panipatraks FOR ALL USING
 CREATE POLICY "Allow all operations on panipatrak_farmers" ON panipatrak_farmers FOR ALL USING (true);
 CREATE POLICY "Allow all operations on nondhs" ON nondhs FOR ALL USING (true);
 CREATE POLICY "Allow all operations on nondh_details" ON nondh_details FOR ALL USING (true);
+
+-- Stored Procedures, execute in the SQL editor
+-- 1ST FUNCTION: Insert or Update Panipatraks and associated farmers
+CREATE OR REPLACE FUNCTION public.update_panipatraks(
+  p_land_record_id uuid,
+  panipatraks_data jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  result jsonb;
+  pani_data jsonb;
+  farmer_data jsonb;
+  pani_id uuid;
+  existing_pani_id uuid;
+BEGIN
+  -- Start transaction
+  BEGIN
+    -- Loop through each panipatrak
+    FOR pani_data IN SELECT * FROM jsonb_array_elements(panipatraks_data)
+    LOOP
+      -- Check if panipatrak already exists
+      SELECT id INTO existing_pani_id
+      FROM public.panipatraks 
+      WHERE land_record_id = p_land_record_id 
+        AND year_slab_id = (pani_data->>'slabId')::uuid
+        AND year = (pani_data->>'year')::integer;
+      
+      IF existing_pani_id IS NOT NULL THEN
+        -- Update existing panipatrak
+        pani_id := existing_pani_id;
+        -- Delete existing farmers for this panipatrak
+        DELETE FROM public.panipatrak_farmers WHERE panipatrak_id = pani_id;
+      ELSE
+        -- Insert new panipatrak
+        INSERT INTO public.panipatraks (
+          land_record_id,
+          year_slab_id,
+          s_no,
+          year,
+          created_at
+        ) VALUES (
+          p_land_record_id,
+          (pani_data->>'slabId')::uuid,
+          pani_data->>'sNo',
+          (pani_data->>'year')::integer,
+          NOW()
+        ) RETURNING id INTO pani_id;
+      END IF;
+      
+      -- Insert farmers
+      IF pani_data->'farmers' IS NOT NULL THEN
+        FOR farmer_data IN SELECT * FROM jsonb_array_elements(pani_data->'farmers')
+        LOOP
+          INSERT INTO public.panipatrak_farmers (
+            panipatrak_id,
+            name,
+            area_value,
+            area_unit,
+            paiky_number,
+            ekatrikaran_number
+          ) VALUES (
+            pani_id,
+            TRIM(farmer_data->>'name'),
+            (farmer_data->'area'->>'value')::numeric,
+            COALESCE(farmer_data->'area'->>'unit', 'sq_m'),
+            NULLIF(TRIM(farmer_data->>'paikyNumber'), '')::integer,
+            NULLIF(TRIM(farmer_data->>'ekatrikaranNumber'), '')::integer
+          );
+        END LOOP;
+      END IF;
+    END LOOP;
+    
+    RETURN jsonb_build_object('success', true, 'message', 'Panipatraks updated successfully');
+    
+  EXCEPTION
+    WHEN OTHERS THEN
+      RAISE NOTICE 'Error in update_panipatraks: %', SQLERRM;
+      RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+  END;
+END;
+$$;
+
+-- 2ND FUNCTION: Get valid owner relations with latest records
+CREATE OR REPLACE FUNCTION get_valid_owner_relations()
+RETURNS TABLE (
+  id UUID,
+  owner_name VARCHAR(255),
+  s_no VARCHAR(255),
+  s_no_type VARCHAR(20),
+  acres NUMERIC,
+  gunthas NUMERIC,
+  square_meters NUMERIC,
+  area_unit VARCHAR(10),
+  created_at TIMESTAMPTZ,
+  nondh_number VARCHAR(255),
+  land_record_id UUID,
+  district VARCHAR(255),
+  taluka VARCHAR(255),
+  village VARCHAR(255)
+)
+AS $$
+BEGIN
+  RETURN QUERY
+  WITH latest_owner_records AS (
+    SELECT 
+      nor.owner_name,
+      MAX(nor.created_at) as latest_date
+    FROM 
+      nondh_owner_relations nor
+    WHERE 
+      nor.is_valid = TRUE
+    GROUP BY 
+      nor.owner_name
+  )
+  SELECT 
+    nor.id,
+    nor.owner_name,
+    nor.s_no,
+    COALESCE(ys.s_no_type, 'survey_no') AS s_no_type,
+    nor.acres,
+    nor.gunthas,
+    nor.square_meters,
+    nor.area_unit,
+    nor.created_at,
+    n.number::VARCHAR AS nondh_number,
+    lr.id AS land_record_id,
+    lr.district,
+    lr.taluka,
+    lr.village
+  FROM 
+    nondh_owner_relations nor
+    JOIN nondh_details nd ON nor.nondh_detail_id = nd.id
+    JOIN nondhs n ON nd.nondh_id = n.id
+    JOIN land_records lr ON n.land_record_id = lr.id
+    LEFT JOIN year_slabs ys ON lr.id = ys.land_record_id AND ys.s_no = nor.s_no
+    JOIN latest_owner_records lor ON nor.owner_name = lor.owner_name 
+      AND nor.created_at = lor.latest_date
+  WHERE 
+    nor.is_valid = TRUE
+  ORDER BY 
+    nor.created_at DESC;
+END;
+$$ LANGUAGE plpgsql;

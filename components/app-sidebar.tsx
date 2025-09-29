@@ -63,6 +63,11 @@ const menuItems = [
     url: "/passbook",
     icon: BookOpen,
   },
+  {
+    title: "Brokers",
+    url: "/brokers",
+    icon: Users,
+  },
   // {
   //   title: "Reports & Queries",
   //   url: "/reports",

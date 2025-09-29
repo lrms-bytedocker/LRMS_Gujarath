@@ -321,7 +321,7 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                 </div>
               )}
               <div>
-                <Label>Hukam Type</Label>
+                <Label>Authority</Label>
                 <p className="mt-1">{detail.hukamType}</p>
               </div>
             </div>
@@ -505,14 +505,16 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                   <div className="mt-4 space-y-4">
                     <div className="border rounded-lg p-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                         <div>
+                          <Label>Date</Label>
+                          <p className="mt-1">{detail.date || 'N/A'}</p>
+                        </div>
+                        
                         <div>
                           <Label>Nondh Type</Label>
                           <p className="mt-1">{detail.type}</p>
                         </div>
-                        <div>
-                          <Label>Date</Label>
-                          <p className="mt-1">{detail.date || 'N/A'}</p>
-                        </div>
+                       
                         <div>
                           <Label>Status</Label>
                           <p className="mt-1">{getStatusLabel(detail.status)}</p>
