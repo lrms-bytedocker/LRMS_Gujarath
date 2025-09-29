@@ -503,6 +503,38 @@ useEffect(() => {
 const [originalData, setOriginalData] = useState<Panipatrak[]>([]);
 const [hasChanges, setHasChanges] = useState(false);
 
+const getAllUniqueSlabNumbers = (slab: YearSlab) => {
+  // If there are paiky/ekatrikaran entries, only show those (ignore main slab s_no)
+  if ((slab.paiky || slab.ekatrikaran) && 
+      ((slab.paikyEntries && slab.paikyEntries.length > 0) || 
+       (slab.ekatrikaranEntries && slab.ekatrikaranEntries.length > 0))) {
+    
+    const allEntries = [
+      ...(slab.paikyEntries || []),
+      ...(slab.ekatrikaranEntries || [])
+    ];
+    
+    // Get unique combinations from entries only
+    const uniqueEntries = allEntries.reduce((acc: any, entry: any) => {
+      const key = `${entry.sNoType}-${entry.sNo}`;
+      if (!acc[key]) {
+        acc[key] = {
+          sNo: entry.sNo,
+          sNoType: entry.sNoType
+        };
+      }
+      return acc;
+    }, {});
+    
+    return Object.values(uniqueEntries);
+  } else {
+    // No paiky/ekatrikaran entries, show main slab s_no
+    return [{
+      sNo: slab.sNo,
+      sNoType: slab.sNoType
+    }];
+  }
+};
 
 // Add this function to get current panipatraks
 const getCurrentPanipatraks = useCallback(() => {
@@ -1108,14 +1140,34 @@ return (
             <CardHeader className="bg-gray-50 p-4">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="font-bold text-lg">
-                    Slab {Object.keys(slabPanels).indexOf(slabId) + 1}: {slab.startYear} - {slab.endYear}
-                  </h2>
-                  <p className="text-sm text-gray-600">
-                    {slab.sNoType === 'block_no' ? 'Block No' : 
-                     slab.sNoType === 're_survey_no' ? 'Re-survey No' : 'Survey No'}: {slab.sNo}
-                  </p>
-                </div>
+  <h2 className="font-bold text-lg">
+    Slab {Object.keys(slabPanels).indexOf(slabId) + 1}: {slab.startYear} - {slab.endYear}
+  </h2>
+  <p className="text-sm text-gray-600">
+    {(() => {
+      const allNumbers = getAllUniqueSlabNumbers(slab);
+      if (allNumbers.length === 1) {
+        // Only main slab number
+        const entry = allNumbers[0];
+        return `${entry.sNoType === 'block_no' ? 'Block No' : 
+                 entry.sNoType === 're_survey_no' ? 'Re-survey No' : 'Survey No'}: ${entry.sNo}`;
+      } else {
+        // Multiple numbers - group by type
+        const grouped = allNumbers.reduce((acc: any, entry: any) => {
+          const typeLabel = entry.sNoType === 'block_no' ? 'Block' : 
+                           entry.sNoType === 're_survey_no' ? 'Re-survey' : 'Survey';
+          if (!acc[typeLabel]) acc[typeLabel] = [];
+          acc[typeLabel].push(entry.sNo);
+          return acc;
+        }, {});
+        
+        return Object.entries(grouped)
+          .map(([type, numbers]: [string, any]) => `${type} No${numbers.length > 1 ? 's' : ''}: ${numbers.join(', ')}`)
+          .join(' | ');
+      }
+    })()}
+  </p>
+</div>
                 <Button
                   variant="ghost"
                   size="sm"

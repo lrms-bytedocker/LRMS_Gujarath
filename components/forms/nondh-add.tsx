@@ -72,23 +72,6 @@ const validateForm = (): boolean => {
     nondh.number.trim() !== "" && nondh.id !== "new"
   );
 
-  validNondhs.forEach((nondh, index) => {
-    if (!nondh.nondhDoc || nondh.nondhDoc.trim() === "") {
-      // Find the original index for display purposes
-      const originalIndex = nondhData.findIndex(n => n.id === nondh.id) + 1;
-      missingDocs.push(`Nondh ${originalIndex} (${nondh.number || 'Unnamed'})`);
-      isValid = false;
-    }
-  });
-
-  if (!isValid) {
-    toast({
-      title: "Missing Documents",
-      description: `Please upload documents for: ${missingDocs.join(", ")}`,
-      variant: "destructive"
-    });
-  }
-
   return isValid;
 };
 

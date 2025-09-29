@@ -39,6 +39,7 @@ interface NondhDetail {
   nondhNumber?: string
   affectedSNos?: string
   nondhDocUrl?: string
+  hukamType?: string
 }
 
 interface Nondh {
@@ -49,7 +50,7 @@ interface Nondh {
 }
 
 export default function OutputViews() {
-  const { recordId } = useLandRecord()
+  const { landBasicInfo, recordId } = useLandRecord()
   const { toast } = useToast()
   const router = useRouter()
   const [passbookData, setPassbookData] = useState<PassbookEntry[]>([])
@@ -60,6 +61,43 @@ export default function OutputViews() {
   const [dateFilter, setDateFilter] = useState("")
   const [sNoFilter, setSNoFilter] = useState("")
   const [loading, setLoading] = useState(true)
+const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+
+const handleDownloadIntegratedDocument = async () => {
+
+  if (!landBasicInfo) {
+    toast({
+      title: 'Error',
+      description: 'Land basic information is required to generate the document',
+      variant: 'destructive'
+    });
+    return;
+  }
+
+  setIsGeneratingPDF(true);
+  
+  try {
+    // Import the PDF generator dynamically to avoid SSR issues
+    const { IntegratedDocumentGenerator } = await import('@/lib/pdf-generator');
+    
+    
+    await IntegratedDocumentGenerator.generateIntegratedPDF(recordId as string, landBasicInfo);
+    
+    toast({
+      title: 'Success',
+      description: 'Integrated document generated and downloaded successfully',
+    });
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    toast({
+      title: 'Error',
+      description: 'Failed to generate integrated document. Please try again.',
+      variant: 'destructive'
+    });
+  } finally {
+    setIsGeneratingPDF(false);
+  }
+}
 
   const safeNondhNumber = (nondh: any): string => {
   if (!nondh || (!nondh.number && nondh.number !== 0)) return "0";
@@ -333,7 +371,7 @@ const formatDate = (dateString: string): string => {
   id: nondh.id,
   number: nondh.number,
   affected_s_nos: nondh.affectedSNos || [],
-  nondh_doc_url: nondh.nondhDoc
+  nondh_doc_url: nondh.nondhDoc,
 })) || []
 
     
@@ -343,7 +381,7 @@ const formatDate = (dateString: string): string => {
   }
 }
 
-  const fetchNondhDetailsFromDB = async () => {
+ const fetchNondhDetailsFromDB = async () => {
   try {
     const { data: nondhDetailsWithRelations, error } = 
       await LandRecordService.getNondhDetailsWithRelations(recordId)
@@ -361,7 +399,8 @@ const formatDate = (dateString: string): string => {
       showInOutput: Boolean(detail.show_in_output),
       createdAt: detail.created_at || new Date().toISOString(),
       docUploadUrl: detail.doc_upload_url || null,
-      invalidReason: detail.invalid_reason || ''
+      invalidReason: detail.invalid_reason || '',
+      hukamType: detail.hukam_type || '' // ADD THIS LINE
     })) || []
 
     setNondhDetails(processedDetails)
@@ -535,23 +574,18 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
   }
 
   const handleCompleteProcess = () => {
-    toast({ title: "Land record process completed successfully!" })
+    toast({ title: "Land records fetched successfully!" })
     router.push('/land-master')
   }
 
-  const renderQueryListCard = (nondh: NondhDetail, index: number) => (
-    <Card key={nondh.id || index} className="p-4">
+  const renderQueryListCard = (nondh: NondhDetail, index: number) => {    
+  return (
+    <Card key={index} className="p-4">
       <div className="space-y-3">
         <div className="flex justify-between items-start">
           <div className="space-y-1">
             <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
-            <div className="text-muted-foreground text-xs">
-              Affected S.No: {nondh.affectedSNos || nondh.sNo}
-            </div>
           </div>
-          <Badge className={`text-xs ${getStatusColorClass(nondh.status)}`}>
-            {getStatusDisplayName(nondh.status)}
-          </Badge>
         </div>
         
         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -559,15 +593,7 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
             <span className="text-muted-foreground">Nondh Doc:</span>
             <div className={`font-medium p-1 rounded ${!nondh.nondhDocUrl ? 'bg-red-100' : ''}`}>
               {nondh.nondhDocUrl ? (
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  className="h-6 px-2"
-                  onClick={() => viewDocument(nondh.nondhDocUrl!, `Nondh ${nondh.nondhNumber} Document`)}
-                >
-                  <Eye className="w-3 h-3 mr-1" />
-                  View
-                </Button>
+                <span className="text-green-600 text-xl">✓</span>
               ) : (
                 <span className="text-red-600 text-xs">N/A</span>
               )}
@@ -576,43 +602,23 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
           <div>
             <span className="text-muted-foreground text-sm">Relevant Docs:</span>
             <div className={`font-medium p-1 rounded ${nondh.hasDocuments ? (!nondh.docUploadUrl ? 'bg-yellow-100' : '') : ''}`}>
-              {nondh.hasDocuments ? (
-                nondh.docUploadUrl ? (
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    className="h-6 px-2"
-                    onClick={() => viewDocument(nondh.docUploadUrl!, `Relevant Documents for Nondh ${nondh.nondhNumber}`)}
-                  >
-                    <Eye className="w-3 h-3 mr-1" />
-                    View
-                  </Button>
-                ) : (
-                  <span className="text-yellow-600 text-xs">Not uploaded</span>
-                )
-              ) : (
-                <span className="text-xs">N/A</span>
+              <div className="text-sm">Available: {nondh.hasDocuments ? "Yes" : "No"}</div>
+              {nondh.hasDocuments && (
+                <div className="mt-1">
+                  {nondh.docUploadUrl ? (
+                    <span className="text-green-600 text-xl">✓</span>
+                  ) : (
+                    <span className="text-red-600 text-xl">✗</span>
+                  )}
+                </div>
               )}
             </div>
           </div>
         </div>
-        
-        {nondh.invalidReason ? (
-  <div className="space-y-1">
-    <span className="text-muted-foreground text-sm">Reason:</span>
-    <div className="text-sm font-medium">{nondh.invalidReason}</div>
-  </div>
-) : null}
-        
-        {nondh.vigat && nondh.vigat !== '-' && (
-          <div className="space-y-1">
-            <span className="text-muted-foreground text-sm">Vigat:</span>
-            <div className="text-sm font-medium truncate">{nondh.vigat}</div>
-          </div>
-        )}
       </div>
     </Card>
   )
+}
 
   const renderPassbookCard = (entry: PassbookEntry, index: number) => (
     <Card key={index} className="p-4">
@@ -731,12 +737,223 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
         <CardTitle className="text-lg sm:text-xl">Step 6: Output Views & Reports</CardTitle>
       </CardHeader>
       <CardContent className="p-4 sm:p-6">
-        <Tabs defaultValue="query-list" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-4">
-            <TabsTrigger value="query-list" className="text-xs sm:text-sm">Query List</TabsTrigger>
-            <TabsTrigger value="passbook" className="text-xs sm:text-sm">Passbook</TabsTrigger>
-            <TabsTrigger value="date-wise" className="text-xs sm:text-sm">Date-wise</TabsTrigger>
-          </TabsList>
+  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+    <h2 className="text-lg font-semibold">Reports & Documents</h2>
+    <Button
+      onClick={handleDownloadIntegratedDocument}
+      className="flex items-center gap-2 w-full sm:w-auto"
+      variant="outline"
+      disabled={isGeneratingPDF}
+    >
+      <Download className="w-4 h-4" />
+      {isGeneratingPDF ? 'Generating...' : 'Download Integrated Document'}
+    </Button>
+  </div>
+  <Tabs defaultValue="nondh-table" className="w-full">
+          <TabsList className="grid w-full grid-cols-4 mb-4">
+  <TabsTrigger value="nondh-table" className="text-xs sm:text-sm">Nondh Table</TabsTrigger>
+  <TabsTrigger value="query-list" className="text-xs sm:text-sm">Query List</TabsTrigger>
+  <TabsTrigger value="passbook" className="text-xs sm:text-sm">Passbook</TabsTrigger>
+  <TabsTrigger value="date-wise" className="text-xs sm:text-sm">Date-wise</TabsTrigger>
+</TabsList>
+
+<TabsContent value="nondh-table" className="space-y-4">
+  <div className="flex flex-col gap-4">
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+      <h3 className="text-base sm:text-lg font-semibold">
+        All Nondhs ({nondhDetails.length})
+      </h3>
+      
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <SNoFilterComponent />
+        <Button 
+          onClick={() => {
+  const allNondhsData = nondhDetails.map((detail) => {
+    const nondh = nondhs.find((n) => n.id === detail.nondhId)
+    return {
+      ...detail,
+      nondhNumber: nondh?.number || 0,
+      affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
+      nondhType: detail.type,
+      hukamType: detail.hukamType || '-'
+    }
+  }).filter(nondh => {
+    if (!sNoFilter) return true;
+    return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
+  }).sort(sortNondhsBySNoType);
+  exportToCSV(allNondhsData, "all-nondhs-table");
+}}
+          className="flex items-center gap-2 w-full sm:w-auto"
+          disabled={nondhDetails.length === 0}
+          size="sm"
+        >
+          <Download className="w-4 h-4" />
+          Export CSV
+        </Button>
+      </div>
+    </div>
+  </div>
+
+  {(() => {
+  const allNondhsData = nondhDetails.map((detail) => {
+    const nondh = nondhs.find((n) => n.id === detail.nondhId)
+    return {
+      ...detail,
+      nondhNumber: nondh?.number || 0,
+      affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
+      nondhType: detail.type,
+      hukamType: detail.hukamType || '-',
+      nondhDocUrl: nondh?.nondh_doc_url || null
+    }
+  }).filter(nondh => {
+    if (!sNoFilter) return true;
+    return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
+  }).sort(sortNondhsBySNoType);
+
+  if (allNondhsData.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-500 text-sm">
+          {sNoFilter ? 'No nondhs found for selected S.No' : 'No nondh data available'}
+        </p>
+      </div>
+    );
+  }
+
+
+  if (allNondhsData.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-500 text-sm">
+          {sNoFilter ? 'No nondhs found for selected S.No' : 'No nondh data available'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Desktop Table */}
+      <div className="hidden lg:block rounded-md border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nondh No.</TableHead>
+              <TableHead>Nondh Doc</TableHead>
+              <TableHead>Nondh Type</TableHead>
+              <TableHead>Hukam Type</TableHead>
+              <TableHead>Vigat</TableHead>
+              <TableHead>Affected S.No</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Reason</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {allNondhsData.map((nondh, index) => (
+              <TableRow key={index}>
+                <TableCell>{nondh.nondhNumber}</TableCell>
+                <TableCell className={!nondh.nondhDocUrl ? 'bg-red-100' : ''}>
+                  {nondh.nondhDocUrl ? (
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => viewDocument(nondh.nondhDocUrl!, `Nondh ${nondh.nondhNumber} Document`)}
+                    >
+                      <Eye className="w-4 h-4 mr-1" />
+                      View Document
+                    </Button>
+                  ) : (
+                    <span className="text-red-600 font-medium">N/A</span>
+                  )}
+                </TableCell>
+                <TableCell>{nondh.nondhType}</TableCell>
+                <TableCell>{nondh.nondhType === 'Hukam' ? (nondh.hukamType || '-') : '-'}</TableCell>
+                <TableCell className="max-w-xs truncate">{nondh.vigat || "-"}</TableCell>
+                <TableCell>{nondh.affectedSNos}</TableCell>
+                <TableCell>
+                  <span className={`px-2 py-1 rounded text-xs ${getStatusColorClass(nondh.status)}`}>
+                    {getStatusDisplayName(nondh.status)}
+                  </span>
+                </TableCell>
+                <TableCell className="max-w-xs">
+                  {nondh.invalidReason ? (
+                    <span className="text-red-600 text-sm">{nondh.invalidReason}</span>
+                  ) : (
+                    "-"
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="lg:hidden space-y-3">
+        {allNondhsData.map((nondh, index) => (
+          <Card key={index} className="p-4">
+            <div className="space-y-3">
+              <div className="flex justify-between items-start">
+                <div className="space-y-1">
+                  <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
+                  <div className="text-muted-foreground text-xs">
+  Type: {nondh.nondhType}
+  {nondh.nondhType === 'Hukam' && nondh.hukamType && nondh.hukamType !== '-' && (
+    <span> - {nondh.hukamType}</span>
+  )}
+</div>
+                </div>
+                <Badge className={`text-xs ${getStatusColorClass(nondh.status)}`}>
+                  {getStatusDisplayName(nondh.status)}
+                </Badge>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Nondh Doc:</span>
+                  <div className={`font-medium p-1 rounded ${!nondh.nondhDocUrl ? 'bg-red-100' : ''}`}>
+                    {nondh.nondhDocUrl ? (
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="h-6 px-2"
+                        onClick={() => viewDocument(nondh.nondhDocUrl!, `Nondh ${nondh.nondhNumber} Document`)}
+                      >
+                        <Eye className="w-3 h-3 mr-1" />
+                        View
+                      </Button>
+                    ) : (
+                      <span className="text-red-600 text-xs">N/A</span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Affected S.No:</span>
+                  <div className="font-medium text-xs">{nondh.affectedSNos}</div>
+                </div>
+              </div>
+              
+              {nondh.vigat && nondh.vigat !== '-' && (
+                <div className="space-y-1">
+                  <span className="text-muted-foreground text-sm">Vigat:</span>
+                  <div className="text-sm font-medium truncate">{nondh.vigat}</div>
+                </div>
+              )}
+              
+              {nondh.invalidReason && (
+                <div className="space-y-1">
+                  <span className="text-muted-foreground text-sm">Reason:</span>
+                  <div className="text-sm font-medium text-red-600">{nondh.invalidReason}</div>
+                </div>
+              )}
+            </div>
+          </Card>
+        ))}
+      </div>
+    </>
+  );
+})()}
+</TabsContent>
 
           <TabsContent value="query-list" className="space-y-4">
             <div className="flex flex-col gap-4">
@@ -772,78 +989,47 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
                 <div className="hidden lg:block rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Nondh No.</TableHead>
-                        <TableHead>Nondh Doc</TableHead>
-                        <TableHead>Relevant Docs Available</TableHead>
-                        <TableHead>Relevant Docs</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Reason</TableHead>
-                        <TableHead>Vigat</TableHead>
-                        <TableHead>Affected S.No</TableHead>
-                      </TableRow>
-                    </TableHeader>
+  <TableRow>
+    <TableHead>Nondh No.</TableHead>
+    <TableHead>Nondh Doc</TableHead>
+    <TableHead>Relevant Docs Available</TableHead>
+    <TableHead>Relevant Docs</TableHead>
+  </TableRow>
+</TableHeader>
                     <TableBody>
-                      {filteredNondhs.map((nondh, index) => (
-                        <TableRow key={nondh.id || index}>
-                          <TableCell>{nondh.nondhNumber}</TableCell>
-                          <TableCell className={!nondh.nondhDocUrl ? 'bg-red-100' : ''}>
-                            {nondh.nondhDocUrl ? (
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => viewDocument(nondh.nondhDocUrl!, `Nondh ${nondh.nondhNumber} Document`)}
-                              >
-                                <Eye className="w-4 h-4 mr-1" />
-                                View Document
-                              </Button>
-                            ) : (
-                              <span className="text-red-600 font-medium">N/A</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{nondh.hasDocuments ? "Yes" : "No"}</TableCell>
-                          <TableCell className={nondh.hasDocuments && !nondh.docUploadUrl ? 'bg-yellow-100' : ''}>
-                            {nondh.hasDocuments ? (
-                              nondh.docUploadUrl ? (
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  onClick={() => viewDocument(nondh.docUploadUrl!, `Relevant Documents for Nondh ${nondh.nondhNumber}`)}
-                                >
-                                  <Eye className="w-4 h-4 mr-1" />
-                                  View Document
-                                </Button>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <AlertTriangle className="w-4 h-4 text-yellow-600" />
-                                  <span className="text-sm">Not uploaded</span>
-                                </div>
-                              )
-                            ) : (
-                              "N/A"
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              className={`px-2 py-1 rounded text-xs ${getStatusColorClass(nondh.status)}`}
-                            >
-                              {getStatusDisplayName(nondh.status)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="max-w-xs">
-  {nondh.invalidReason ? (
-    <span className="text-sm">{nondh.invalidReason}</span>
-  ) : (
-    "-"
-  )}
-</TableCell>
-                          <TableCell className="max-w-xs truncate">{nondh.vigat || "-"}</TableCell>
-                          <TableCell>
-                            {nondh.affectedSNos || nondh.sNo}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
+  {filteredNondhs.map((nondh, index) => {
+    return (
+      <TableRow key={index}>
+        <TableCell>{nondh.nondhNumber}</TableCell>
+        <TableCell className={!nondh.nondhDocUrl ? 'bg-red-100' : ''}>
+          {nondh.nondhDocUrl ? (
+            <div className="flex items-center justify-center">
+              <span className="text-green-600 text-xl">✓</span>
+            </div>
+          ) : (
+            <span className="text-red-600 font-medium">N/A</span>
+          )}
+        </TableCell>
+        <TableCell>{nondh.hasDocuments ? "Yes" : "No"}</TableCell>
+        <TableCell className={nondh.hasDocuments && !nondh.docUploadUrl ? 'bg-yellow-100' : ''}>
+          {nondh.hasDocuments ? (
+            nondh.docUploadUrl ? (
+              <div className="flex items-center justify-center">
+                <span className="text-green-600 text-xl">✓</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center">
+                <span className="text-red-600 text-xl">✗</span>
+              </div>
+            )
+          ) : (
+            "N/A"
+          )}
+        </TableCell>
+      </TableRow>
+    );
+  })}
+</TableBody>
                   </Table>
                 </div>
 
@@ -1022,7 +1208,7 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
             className="w-full sm:w-auto"
             size="sm"
           >
-            Complete Process
+            Back to LandMaster
           </Button>
         </div>
       </CardContent>
