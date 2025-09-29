@@ -1005,6 +1005,10 @@ const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; error
       errors.push(`Nondh ${nondhNumber}: Date is required`);
     }
 
+     if (!detail.vigat || !detail.vigat.trim()) {
+      errors.push(`Nondh ${nondhNumber}: Vigat is required`);
+    }
+    
     // Owner name validation (at least one non-empty owner name) - Skip for 1st Right Hukam
     // const hasValidOwnerName = detail.ownerRelations.some(rel => rel.ownerName.trim() !== "");
     // const is1stRightHukam = detail.type === "Hukam" && detail.ganot === "1st Right";

@@ -662,7 +662,8 @@ useEffect(() => {
               ? nondh.affected_s_nos 
               : nondh.affectedSNos 
                 ? [nondh.affectedSNos] 
-                : []
+                : [],
+            nondhDoc: nondh.nondh_doc_url || ''
           }));
           
           console.log('Nondh numbers from DB:', formattedNondhs.map(n => n.number));
@@ -731,7 +732,8 @@ const loadDataFromDatabase = async () => {
         ? nondh.affected_s_nos 
         : nondh.affectedSNos 
           ? [nondh.affectedSNos] 
-          : []
+          : [],
+      nondhDoc: nondh.nondh_doc_url || ''
     }));
     
     setLocalNondhs(formattedNondhs);
@@ -1842,16 +1844,21 @@ const getYearSlabAreaForDate = (date: string) => {
 }
 
   const toggleCollapse = (detailId: string) => {
-    setCollapsedNondhs(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(detailId)) {
-        newSet.delete(detailId)
-      } else {
-        newSet.add(detailId)
-      }
-      return newSet
-    })
-  }
+  setLocalState(prev => {
+    const newCollapsedNondhs = new Set(prev.collapsedNondhs);
+    
+    if (newCollapsedNondhs.has(detailId)) {
+      newCollapsedNondhs.delete(detailId);
+    } else {
+      newCollapsedNondhs.add(detailId);
+    }
+    
+    return {
+      ...prev,
+      collapsedNondhs: newCollapsedNondhs
+    };
+  });
+};
 
   const toggleEqualDistribution = (detailId: string, checked: boolean) => {
   setLocalState(prev => {
@@ -2035,6 +2042,10 @@ const getYearSlabAreaForDate = (date: string) => {
     }
     if (!detail.date.trim()) {
       errors.push(`Nondh ${nondhNumber}: Date is required`);
+    }
+
+    if (!detail.vigat || !detail.vigat.trim()) {
+      errors.push(`Nondh ${nondhNumber}: Vigat is required`);
     }
 
     // Owner name validation
@@ -2564,7 +2575,7 @@ onCheckedChange={(checked) => {
     const newOwners = detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner);
     const newOwnersTotal = newOwners.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
     const remaining = oldOwnerArea - newOwnersTotal;
-    const isBalanced = Math.abs(remaining) < 0.01; // Account for floating point precision
+    const isBalanced = Math.abs(remaining) < 0.01;
     
     return (
       <div className={`p-3 rounded text-sm ${
@@ -3592,28 +3603,41 @@ onCheckedChange={(checked) => {
 </div>
                     </div>
                   </div>
-                  <div>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleCollapse(nondh.id)}
-                    className="flex items-center gap-1"
-                  >
-                    {collapsedNondhs.has(nondh.id) ? (
-                      <>
-                        <ChevronDown className="w-4 h-4" />
-                        <span>Show Details</span>
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUp className="w-4 h-4" />
-                        <span>Hide Details</span>
-                      </>
-                    )}
-                  </Button>
-                </div>
-                </div>
+                 <div className="flex items-center gap-2">
+  {/* View Document Button - only show if document exists */}
+  {(nondh as any).nondhDoc && (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => window.open((nondh as any).nondhDoc, '_blank')}
+      className="flex items-center gap-1"
+    >
+      <Eye className="w-4 h-4" />
+      View Document
+    </Button>
+  )}
+  
+  {/* Existing Collapse Button */}
+  <Button
+    variant="ghost"
+    size="sm"
+    onClick={() => toggleCollapse(nondh.id)}
+    className="flex items-center gap-1"
+  >
+    {collapsedNondhs.has(nondh.id) ? (
+      <>
+        <ChevronDown className="w-4 h-4" />
+        <span>Show Details</span>
+      </>
+    ) : (
+      <>
+        <ChevronUp className="w-4 h-4" />
+        <span>Hide Details</span>
+      </>
+    )}
+  </Button>
+</div>
+</div>
 
                 {!collapsedNondhs.has(nondh.id) && (
                   <div className="mt-4 space-y-4">
