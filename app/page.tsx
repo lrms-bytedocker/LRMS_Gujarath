@@ -1,533 +1,9 @@
-// "use client"
-
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-// import {
-//   BarChart,
-//   Bar,
-//   XAxis,
-//   YAxis,
-//   CartesianGrid,
-//   ResponsiveContainer,
-//   PieChart,
-//   Pie,
-//   Cell,
-//   AreaChart,
-//   Area,
-// } from "recharts"
-// import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-// import { MapPin, FileText, Calendar, Users, TrendingUp, AlertCircle, Building2, Layers } from "lucide-react"
-// import { useLRMS } from "@/contexts/lrms-context"
-// import { Badge } from "@/components/ui/badge"
-
-// // Enhanced dummy data for charts
-// const yearlySlabData = [
-//   { year: "2020", count: 45, area: 125.5 },
-//   { year: "2021", count: 52, area: 142.8 },
-//   { year: "2022", count: 38, area: 98.2 },
-//   { year: "2023", count: 61, area: 178.9 },
-//   { year: "2024", count: 29, area: 89.4 },
-// ]
-
-// const monthlyLandData = [
-//   { month: "Jan", entries: 12, area: 45.2 },
-//   { month: "Feb", entries: 19, area: 67.8 },
-//   { month: "Mar", entries: 15, area: 52.1 },
-//   { month: "Apr", entries: 22, area: 78.9 },
-//   { month: "May", entries: 18, area: 61.4 },
-//   { month: "Jun", entries: 25, area: 89.7 },
-//   { month: "Jul", entries: 21, area: 73.2 },
-//   { month: "Aug", entries: 16, area: 58.6 },
-// ]
-
-// const statusData = [
-//   { name: "Valid", value: 65, color: "#10b981" },
-//   { name: "Pending", value: 25, color: "#f59e0b" },
-//   { name: "Invalid", value: 10, color: "#ef4444" },
-// ]
-
-// const districtData = [
-//   { district: "Pune", lands: 45, farmers: 128, area: 234.5 },
-//   { district: "Mumbai", lands: 32, farmers: 89, area: 156.8 },
-//   { district: "Nashik", lands: 28, farmers: 76, area: 189.2 },
-//   { district: "Aurangabad", lands: 35, farmers: 95, area: 201.7 },
-//   { district: "Kolhapur", lands: 22, farmers: 58, area: 134.9 },
-// ]
-
-// const noticeTypeData = [
-//   { type: "Possessor", count: 15, percentage: 35 },
-//   { type: "Sales Deed", count: 12, percentage: 28 },
-//   { type: "Inheritance", count: 8, percentage: 19 },
-//   { type: "Agricultural Rights", count: 5, percentage: 12 },
-//   { type: "Other", count: 3, percentage: 6 },
-// ]
-
-// export default function Dashboard() {
-//   const { state } = useLRMS()
-
-//   const metrics = [
-//     {
-//       title: "Total Lands Recorded",
-//       value: state.lands.length.toString(),
-//       icon: MapPin,
-//       description: "Across all districts",
-//       trend: "+12%",
-//       trendUp: true,
-//       color: "text-blue-600",
-//       bgColor: "bg-blue-50",
-//     },
-//     {
-//       title: "Active Yearly Slabs",
-//       value: state.slabs.length.toString(),
-//       icon: Calendar,
-//       description: "Current year slabs",
-//       trend: "+8%",
-//       trendUp: true,
-//       color: "text-green-600",
-//       bgColor: "bg-green-50",
-//     },
-//     {
-//       title: "Pending Land Notices",
-//       value: state.landNotices.filter((notice) => notice.status === "Valid").length.toString(),
-//       icon: FileText,
-//       description: "Awaiting processing",
-//       trend: "-5%",
-//       trendUp: false,
-//       color: "text-amber-600",
-//       bgColor: "bg-amber-50",
-//     },
-//     {
-//       title: "Registered Farmers",
-//       value: state.farmers.length.toString(),
-//       icon: Users,
-//       description: "In panipatrak registry",
-//       trend: "+15%",
-//       trendUp: true,
-//       color: "text-purple-600",
-//       bgColor: "bg-purple-50",
-//     },
-//     {
-//       title: "Total Districts",
-//       value: new Set(state.lands.map((land) => land.district)).size.toString(),
-//       icon: Building2,
-//       description: "Coverage areas",
-//       trend: "0%",
-//       trendUp: true,
-//       color: "text-indigo-600",
-//       bgColor: "bg-indigo-50",
-//     },
-//     {
-//       title: "Document Upload Rate",
-//       value: "87%",
-//       icon: Layers,
-//       description: "Documents available",
-//       trend: "+3%",
-//       trendUp: true,
-//       color: "text-teal-600",
-//       bgColor: "bg-teal-50",
-//     },
-//   ]
-
-//   // Calculate additional metrics
-//   const totalArea = state.lands.reduce((sum, land) => {
-//     const areaInAcres = land.areaUnit === "acre" ? land.area : land.area / 4047
-//     return sum + areaInAcres
-//   }, 0)
-
-//   const avgAreaPerLand = totalArea / state.lands.length || 0
-
-//   return (
-//     <div className="space-y-6 p-6">
-//       <div>
-//         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-//         <p className="text-muted-foreground">Comprehensive overview of your land record management system</p>
-//       </div>
-
-//       {/* Enhanced Metrics Cards */}
-//       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-//         {metrics.map((metric) => (
-//           <Card key={metric.title} className="relative overflow-hidden">
-//             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-//               <CardTitle className="text-sm font-medium">{metric.title}</CardTitle>
-//               <div className={`p-2 rounded-lg ${metric.bgColor}`}>
-//                 <metric.icon className={`h-4 w-4 ${metric.color}`} />
-//               </div>
-//             </CardHeader>
-//             <CardContent>
-//               <div className="text-2xl font-bold">{metric.value}</div>
-//               <div className="flex items-center justify-between mt-2">
-//                 <p className="text-xs text-muted-foreground">{metric.description}</p>
-//                 <div className={`flex items-center text-xs ${metric.trendUp ? "text-green-600" : "text-red-600"}`}>
-//                   <TrendingUp className={`h-3 w-3 mr-1 ${!metric.trendUp ? "rotate-180" : ""}`} />
-//                   {metric.trend}
-//                 </div>
-//               </div>
-//             </CardContent>
-//           </Card>
-//         ))}
-//       </div>
-
-//       {/* Summary Stats */}
-//       <div className="grid gap-4 md:grid-cols-4">
-//         <Card>
-//           <CardContent className="p-6">
-//             <div className="text-center">
-//               <div className="text-2xl font-bold text-blue-600">{totalArea.toFixed(1)}</div>
-//               <p className="text-sm text-muted-foreground">Total Area (Acres)</p>
-//             </div>
-//           </CardContent>
-//         </Card>
-//         <Card>
-//           <CardContent className="p-6">
-//             <div className="text-center">
-//               <div className="text-2xl font-bold text-green-600">{avgAreaPerLand.toFixed(2)}</div>
-//               <p className="text-sm text-muted-foreground">Avg Area per Land</p>
-//             </div>
-//           </CardContent>
-//         </Card>
-//         <Card>
-//           <CardContent className="p-6">
-//             <div className="text-center">
-//               <div className="text-2xl font-bold text-purple-600">
-//                 {state.slabs.filter((s) => s.paiky || s.consolidation).length}
-//               </div>
-//               <p className="text-sm text-muted-foreground">Special Slabs</p>
-//             </div>
-//           </CardContent>
-//         </Card>
-//         <Card>
-//           <CardContent className="p-6">
-//             <div className="text-center">
-//               <div className="text-2xl font-bold text-amber-600">
-//                 {state.landNotices.filter((n) => n.displayInOutput).length}
-//               </div>
-//               <p className="text-sm text-muted-foreground">Output Notices</p>
-//             </div>
-//           </CardContent>
-//         </Card>
-//       </div>
-
-//       {/* Charts Section */}
-//       <div className="grid gap-6 lg:grid-cols-5">
-//         {/* Year-over-year Slab Counts */}
-//         <Card className="lg:col-span-3">
-//           <CardHeader>
-//             <CardTitle>Yearly Slab Distribution</CardTitle>
-//             <CardDescription>Number of slabs and total area per year</CardDescription>
-//           </CardHeader>
-//           <CardContent>
-//             <ChartContainer
-//               config={{
-//                 count: {
-//                   label: "Slab Count",
-//                   color: "#3b82f6",
-//                 },
-//                 area: {
-//                   label: "Total Area",
-//                   color: "#10b981",
-//                 },
-//               }}
-//               className="h-[350px] w-full"
-//             >
-//               <BarChart data={yearlySlabData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-//                 <CartesianGrid strokeDasharray="3 3" />
-//                 <XAxis 
-//                   dataKey="year" 
-//                   tick={{ fontSize: 12 }}
-//                   height={60}
-//                 />
-//                 <YAxis 
-//                   yAxisId="left" 
-//                   tick={{ fontSize: 12 }}
-//                   width={40}
-//                 />
-//                 <YAxis 
-//                   yAxisId="right" 
-//                   orientation="right" 
-//                   tick={{ fontSize: 12 }}
-//                   width={40}
-//                 />
-//                 <ChartTooltip content={<ChartTooltipContent />} />
-//                 <Bar yAxisId="left" dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} />
-//                 <Bar yAxisId="right" dataKey="area" fill="var(--color-area)" radius={[4, 4, 0, 0]} opacity={0.7} />
-//               </BarChart>
-//             </ChartContainer>
-//           </CardContent>
-//         </Card>
-
-//         {/* Monthly New Land Entries */}
-//         <Card className="lg:col-span-2">
-//           <CardHeader>
-//             <CardTitle>Monthly Land Entries</CardTitle>
-//             <CardDescription>New land records trend</CardDescription>
-//           </CardHeader>
-//           <CardContent>
-//             <ChartContainer
-//               config={{
-//                 entries: {
-//                   label: "Land Entries",
-//                   color: "#8b5cf6",
-//                 },
-//                 area: {
-//                   label: "Area Added",
-//                   color: "#06b6d4",
-//                 },
-//               }}
-//               className="h-[350px] w-full"
-//             >
-//               <AreaChart data={monthlyLandData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
-//                 <CartesianGrid strokeDasharray="3 3" />
-//                 <XAxis 
-//                   dataKey="month" 
-//                   tick={{ fontSize: 12 }}
-//                   height={60}
-//                 />
-//                 <YAxis 
-//                   tick={{ fontSize: 12 }}
-//                   width={40}
-//                 />
-//                 <ChartTooltip content={<ChartTooltipContent />} />
-//                 <Area
-//                   type="monotone"
-//                   dataKey="entries"
-//                   stroke="var(--color-entries)"
-//                   fill="var(--color-entries)"
-//                   fillOpacity={0.6}
-//                 />
-//               </AreaChart>
-//             </ChartContainer>
-//           </CardContent>
-//         </Card>
-//       </div>
-
-//       {/* Second Row of Charts */}
-//       <div className="grid gap-6 lg:grid-cols-5">
-//         {/* District-wise Distribution */}
-//         <Card className="lg:col-span-3">
-//           <CardHeader>
-//             <CardTitle>District-wise Distribution</CardTitle>
-//             <CardDescription>Land records and farmers by district</CardDescription>
-//           </CardHeader>
-//           <CardContent>
-//             <ChartContainer
-//               config={{
-//                 lands: {
-//                   label: "Land Records",
-//                   color: "#f59e0b",
-//                 },
-//                 farmers: {
-//                   label: "Farmers",
-//                   color: "#06b6d4",
-//                 },
-//               }}
-//               className="h-[350px] w-full"
-//             >
-//               <BarChart 
-//                 data={districtData} 
-//                 layout="horizontal"
-//                 margin={{ top: 20, right: 30, left: 80, bottom: 5 }}
-//               >
-//                 <CartesianGrid strokeDasharray="3 3" />
-//                 <XAxis 
-//                   type="number" 
-//                   tick={{ fontSize: 12 }}
-//                   height={60}
-//                 />
-//                 <YAxis 
-//                   dataKey="district" 
-//                   type="category" 
-//                   width={80}
-//                   tick={{ fontSize: 12 }}
-//                 />
-//                 <ChartTooltip content={<ChartTooltipContent />} />
-//                 <Bar dataKey="lands" fill="var(--color-lands)" radius={[0, 4, 4, 0]} />
-//                 <Bar dataKey="farmers" fill="var(--color-farmers)" radius={[0, 4, 4, 0]} />
-//               </BarChart>
-//             </ChartContainer>
-//           </CardContent>
-//         </Card>
-
-//         {/* Notice Status Distribution */}
-//         <Card className="lg:col-span-2">
-//           <CardHeader>
-//             <CardTitle>Land Notice Status</CardTitle>
-//             <CardDescription>Distribution of notice statuses</CardDescription>
-//           </CardHeader>
-//           <CardContent>
-//             <ChartContainer
-//               config={{
-//                 valid: { label: "Valid", color: "#10b981" },
-//                 pending: { label: "Pending", color: "#f59e0b" },
-//                 invalid: { label: "Invalid", color: "#ef4444" },
-//               }}
-//               className="h-[350px] w-full"
-//             >
-//               <PieChart>
-//                 <Pie
-//                   data={statusData}
-//                   cx="50%"
-//                   cy="50%"
-//                   innerRadius={60}
-//                   outerRadius={120}
-//                   paddingAngle={5}
-//                   dataKey="value"
-//                 >
-//                   {statusData.map((entry, index) => (
-//                     <Cell key={`cell-${index}`} fill={entry.color} />
-//                   ))}
-//                 </Pie>
-//                 <ChartTooltip content={<ChartTooltipContent />} />
-//               </PieChart>
-//             </ChartContainer>
-//             {/* Legend */}
-//             <div className="flex justify-center space-x-4 mt-4">
-//               {statusData.map((item) => (
-//                 <div key={item.name} className="flex items-center">
-//                   <div 
-//                     className="w-3 h-3 rounded-full mr-2" 
-//                     style={{ backgroundColor: item.color }}
-//                   />
-//                   <span className="text-sm">{item.name}</span>
-//                 </div>
-//               ))}
-//             </div>
-//           </CardContent>
-//         </Card>
-//       </div>
-
-//       {/* Third Row */}
-//       <div className="grid gap-6 lg:grid-cols-5">
-//         {/* Notice Type Distribution */}
-//         <Card className="lg:col-span-3">
-//           <CardHeader>
-//             <CardTitle>Notice Type Distribution</CardTitle>
-//             <CardDescription>Breakdown of land notices by type</CardDescription>
-//           </CardHeader>
-//           <CardContent>
-//             <div className="space-y-6">
-//               {noticeTypeData.map((item) => (
-//                 <div key={item.type} className="flex items-center justify-between">
-//                   <div className="flex items-center gap-3 flex-1">
-//                     <div className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
-//                     <span className="text-sm font-medium">{item.type}</span>
-//                   </div>
-//                   <div className="flex items-center gap-4 flex-1 justify-end">
-//                     <div className="w-32 bg-gray-200 rounded-full h-2">
-//                       <div 
-//                         className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
-//                         style={{ width: `${item.percentage}%` }} 
-//                       />
-//                     </div>
-//                     <span className="text-sm text-muted-foreground w-8 text-right">{item.count}</span>
-//                     <span className="text-sm font-medium w-10 text-right">{item.percentage}%</span>
-//                   </div>
-//                 </div>
-//               ))}
-//             </div>
-//           </CardContent>
-//         </Card>
-
-//         {/* Recent Activity & Notifications */}
-//         <Card className="lg:col-span-2">
-//           <CardHeader>
-//             <CardTitle>Recent Activity</CardTitle>
-//             <CardDescription>Latest system activities</CardDescription>
-//           </CardHeader>
-//           <CardContent>
-//             <div className="space-y-4 max-h-[300px] overflow-y-auto">
-//               <div className="flex items-start space-x-3">
-//                 <AlertCircle className="h-4 w-4 text-amber-500 mt-1 flex-shrink-0" />
-//                 <div className="flex-1 space-y-1">
-//                   <p className="text-sm font-medium">3 notices need verification</p>
-//                   <p className="text-xs text-muted-foreground">Survey: 123/A, 456/B, 789/C</p>
-//                 </div>
-//                 <Badge variant="secondary" className="text-xs">Pending</Badge>
-//               </div>
-
-//               <div className="flex items-start space-x-3">
-//                 <AlertCircle className="h-4 w-4 text-blue-500 mt-1 flex-shrink-0" />
-//                 <div className="flex-1 space-y-1">
-//                   <p className="text-sm font-medium">New slab created</p>
-//                   <p className="text-xs text-muted-foreground">Survey 234/D (2024-2029)</p>
-//                 </div>
-//                 <Badge variant="outline" className="text-xs">Info</Badge>
-//               </div>
-
-//               <div className="flex items-start space-x-3">
-//                 <AlertCircle className="h-4 w-4 text-green-500 mt-1 flex-shrink-0" />
-//                 <div className="flex-1 space-y-1">
-//                   <p className="text-sm font-medium">Passbook updated</p>
-//                   <p className="text-xs text-muted-foreground">15 farmer records processed</p>
-//                 </div>
-//                 <Badge variant="outline" className="text-xs">Success</Badge>
-//               </div>
-
-//               <div className="flex items-start space-x-3">
-//                 <AlertCircle className="h-4 w-4 text-red-500 mt-1 flex-shrink-0" />
-//                 <div className="flex-1 space-y-1">
-//                   <p className="text-sm font-medium">Area validation failed</p>
-//                   <p className="text-xs text-muted-foreground">Survey 567/E area mismatch</p>
-//                 </div>
-//                 <Badge variant="destructive" className="text-xs">Error</Badge>
-//               </div>
-
-//               <div className="flex items-start space-x-3">
-//                 <AlertCircle className="h-4 w-4 text-purple-500 mt-1 flex-shrink-0" />
-//                 <div className="flex-1 space-y-1">
-//                   <p className="text-sm font-medium">Monthly report ready</p>
-//                   <p className="text-xs text-muted-foreground">November 2024 summary</p>
-//                 </div>
-//                 <Badge variant="outline" className="text-xs">Report</Badge>
-//               </div>
-//             </div>
-//           </CardContent>
-//         </Card>
-//       </div>
-
-//       {/* Quick Actions */}
-//       <Card>
-//         <CardHeader>
-//           <CardTitle>Quick Actions</CardTitle>
-//           <CardDescription>Frequently used actions and shortcuts</CardDescription>
-//         </CardHeader>
-//         <CardContent>
-//           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-//             <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-//               <MapPin className="h-8 w-8 text-blue-600 mb-2" />
-//               <span className="text-sm font-medium text-center">Add Land</span>
-//             </div>
-//             <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-//               <Calendar className="h-8 w-8 text-green-600 mb-2" />
-//               <span className="text-sm font-medium text-center">Create Slab</span>
-//             </div>
-//             <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-//               <Users className="h-8 w-8 text-purple-600 mb-2" />
-//               <span className="text-sm font-medium text-center">Add Farmer</span>
-//             </div>
-//             <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-//               <FileText className="h-8 w-8 text-amber-600 mb-2" />
-//               <span className="text-sm font-medium text-center">Land Notice</span>
-//             </div>
-//             <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-//               <Building2 className="h-8 w-8 text-indigo-600 mb-2" />
-//               <span className="text-sm font-medium text-center">View Reports</span>
-//             </div>
-//             <div className="flex flex-col items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-//               <Layers className="h-8 w-8 text-teal-600 mb-2" />
-//               <span className="text-sm font-medium text-center">Export Data</span>
-//             </div>
-//           </div>
-//         </CardContent>
-//       </Card>
-//     </div>
-//   )
-// }
-
 "use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Card,
+  Card, 
   CardContent,
   CardDescription,
   CardHeader,
@@ -555,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Download, Loader2, Filter, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 
 interface LandRecord {
   id: string;
@@ -566,6 +43,7 @@ interface LandRecord {
 }
 
 export default function LandMaster() {
+  const { isSignedIn, user } = useUser();
   const router = useRouter();
   const [lands, setLands] = useState<LandRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -575,6 +53,18 @@ export default function LandMaster() {
   const [talukaFilter, setTalukaFilter] = useState("all");
   const [villageFilter, setVillageFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
+
+  const [selectedLand, setSelectedLand] = useState<string | null>(null);
+const [showBrokerDialog, setShowBrokerDialog] = useState(false);
+const [brokers, setBrokers] = useState([]);
+const [brokerFormData, setBrokerFormData] = useState({
+  brokerId: '',
+  lastOffer: '',
+  nextUpdate: '',
+  status: 'pending'
+});
+const [linkedBrokers, setLinkedBrokers] = useState([]);
+const [loadingLinkedBrokers, setLoadingLinkedBrokers] = useState(false);
 
   // Fetch land records from Supabase
   useEffect(() => {
@@ -603,6 +93,22 @@ export default function LandMaster() {
 
     fetchLandRecords();
   }, []);
+
+  useEffect(() => {
+  const fetchBrokers = async () => {
+    const { data, error } = await supabase
+      .from('brokers')
+      .select('id, name')
+      .eq('status', 'active')
+      .order('name');
+    
+    if (!error && data) {
+      setBrokers(data);
+    }
+  };
+  
+  fetchBrokers();
+}, []);
 
   // Get unique values for filters
   const districts = [
@@ -652,6 +158,66 @@ const filteredLands = lands.filter((land) => {
       setLoading(false);
     }
   };
+
+  const handleLinkBroker = async (landId: string) => {
+    if (!isSignedIn) {
+      alert("Please sign in to link brokers");
+      return;
+    }
+
+  setSelectedLand(landId);
+  setShowBrokerDialog(true);
+  setLoadingLinkedBrokers(true);
+  
+  try {
+    const { data, error } = await supabase
+      .from('broker_land_records')
+      .select(`
+        id,
+        last_offer,
+        status,
+        brokers (
+          id,
+          name
+        )
+      `)
+      .eq('land_record_id', landId);
+
+    if (error) throw error;
+    setLinkedBrokers(data || []);
+  } catch (err) {
+    console.error('Error fetching linked brokers:', err);
+  } finally {
+    setLoadingLinkedBrokers(false);
+  }
+};
+
+const handleSubmitBrokerLink = async () => {
+  if (!isSignedIn) {
+      alert("Please sign in to link brokers");
+      return;
+    }
+    
+  try {
+    const { error } = await supabase
+      .from('broker_land_records')
+      .insert({
+        broker_id: brokerFormData.brokerId,
+        land_record_id: selectedLand,
+        last_offer: brokerFormData.lastOffer ? parseFloat(brokerFormData.lastOffer) : null,
+        next_update: brokerFormData.nextUpdate || null,
+        status: brokerFormData.status
+      });
+
+    if (error) throw error;
+    
+    setShowBrokerDialog(false);
+    setBrokerFormData({ brokerId: '', lastOffer: '', nextUpdate: '', status: 'pending' });
+    // Show success message
+  } catch (err) {
+    console.error('Error linking broker:', err);
+  }
+};
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -1008,15 +574,22 @@ const filteredLands = lands.filter((land) => {
                       <TableCell>{land.block_no}</TableCell>
                       <TableCell>{land.re_survey_no}</TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
-                          <Link href={`/land-master/forms?mode=view&id=${land.id}`}>
-                            <Button variant="ghost" size="sm">View</Button>
-                          </Link>
-                          <Link href={`/land-master/forms?mode=edit&id=${land.id}`}>
-                            <Button variant="ghost" size="sm">Edit</Button>
-                          </Link>
-                        </div>
-                      </TableCell>
+  <div className="flex gap-2">
+    <Link href={`/land-master/forms?mode=view&id=${land.id}`}>
+      <Button variant="ghost" size="sm">View</Button>
+    </Link>
+    <Link href={`/land-master/forms?mode=edit&id=${land.id}`}>
+      <Button variant="ghost" size="sm">Edit</Button>
+    </Link>
+    <Button 
+      variant="ghost" 
+      size="sm"
+      onClick={() => handleLinkBroker(land.id)}
+    >
+      Link Broker
+    </Button>
+  </div>
+</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -1067,17 +640,21 @@ const filteredLands = lands.filter((land) => {
                     </div>
                     
                     <div className="flex gap-2 pt-2">
-                      <Link href={`/land-master/forms?mode=view&id=${land.id}`} className="flex-1">
-                        <Button variant="outline" size="sm" className="w-full">
-                          View
-                        </Button>
-                      </Link>
-                      <Link href={`/land-master/forms?mode=edit&id=${land.id}`} className="flex-1">
-                        <Button variant="outline" size="sm" className="w-full">
-                          Edit
-                        </Button>
-                      </Link>
-                    </div>
+  <Link href={`/land-master/forms?mode=view&id=${land.id}`} className="flex-1">
+    <Button variant="outline" size="sm" className="w-full">View</Button>
+  </Link>
+  <Link href={`/land-master/forms?mode=edit&id=${land.id}`} className="flex-1">
+    <Button variant="outline" size="sm" className="w-full">Edit</Button>
+  </Link>
+  <Button 
+    variant="outline" 
+    size="sm" 
+    className="flex-1"
+    onClick={() => handleLinkBroker(land.id)}
+  >
+    Link Broker
+  </Button>
+</div>
                   </div>
                 </Card>
               ))
@@ -1102,6 +679,148 @@ const filteredLands = lands.filter((land) => {
           )}
         </CardContent>
       </Card>
+      {showBrokerDialog && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="overflow-y-auto max-h-[90vh]">
+        <CardHeader>
+          <CardTitle>Link Broker</CardTitle>
+          <CardDescription>Associate a broker with this land record</CardDescription>
+        </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left Side - Add New Broker Link */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-sm">Add New Broker</h3>
+            
+            <div>
+              <Label>Select Broker</Label>
+              <Select
+                value={brokerFormData.brokerId}
+                onValueChange={(value) => setBrokerFormData({...brokerFormData, brokerId: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a broker" />
+                </SelectTrigger>
+                <SelectContent>
+                  {brokers.map((broker) => (
+                    <SelectItem key={broker.id} value={broker.id}>
+                      {broker.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Link href="/brokers/new">
+                <Button variant="link" className="pl-0 text-sm" size="sm">
+                  + Add New Broker
+                </Button>
+              </Link>
+            </div>
+
+            <div>
+              <Label>Last Offer (Optional)</Label>
+              <Input
+                type="number"
+                placeholder="Enter amount"
+                value={brokerFormData.lastOffer}
+                onChange={(e) => setBrokerFormData({...brokerFormData, lastOffer: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <Label>Next Update Date (Optional)</Label>
+              <Input
+                type="date"
+                value={brokerFormData.nextUpdate}
+                onChange={(e) => setBrokerFormData({...brokerFormData, nextUpdate: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={brokerFormData.status}
+                onValueChange={(value) => setBrokerFormData({...brokerFormData, status: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="negotiating">Negotiating</SelectItem>
+                  <SelectItem value="deal_closed">Deal Closed</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowBrokerDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleSubmitBrokerLink}
+                disabled={!brokerFormData.brokerId}
+              >
+                Link Broker
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Side - Linked Brokers */}
+          <div className="space-y-4 border-l pl-6">
+            <h3 className="font-semibold text-sm">Linked Brokers ({linkedBrokers.length})</h3>
+            
+            {loadingLinkedBrokers ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : linkedBrokers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No brokers linked yet
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {linkedBrokers.map((link) => (
+                  <Card key={link.id} className="p-3">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div className="font-medium text-sm">{link.brokers.name}</div>
+                        <Badge 
+                          variant={
+                            link.status === 'deal_closed' ? 'default' :
+                            link.status === 'negotiating' ? 'secondary' :
+                            link.status === 'rejected' ? 'destructive' : 'outline'
+                          }
+                          className="text-xs"
+                        >
+                          {link.status.replace('_', ' ')}
+                        </Badge>
+                      </div>
+                      
+                      {link.last_offer && (
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">Last Offer:</span>
+                          <span className="ml-2 font-medium">₹{link.last_offer.toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </div>
+    </Card>
+  </div>
+)}
     </div>
   );
 }

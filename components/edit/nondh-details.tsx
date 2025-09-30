@@ -696,7 +696,10 @@ useEffect(() => {
             });
           }
         }
-        
+        const { data: docs712Data, error: docs712Error } = await LandRecordService.get712Documents(recordId);
+if (!docs712Error && docs712Data) {
+  setDocuments712(docs712Data);
+}
         setIsInitialized(true);
       } catch (error) {
         console.error('Error in initializeData:', error);
@@ -790,38 +793,52 @@ const loadDataFromDatabase = async () => {
     const allDetails = [...transformedDetails];
 
     // Add missing details
-    formattedNondhs
-        .filter(nondh => !existingDetailNondhIds.has(nondh.id))
-        .forEach(nondh => {
-          console.log('Adding missing detail for nondh:', nondh.id);
-          allDetails.push({
-            id: `temp_${nondh.id}_${Date.now()}`,
-            nondhId: nondh.id,
-            sNo: nondh.affectedSNos?.[0] || '',
-            type: nondh.type || 'Kabjedaar',
-            reason: "",
-            date: "",
-            vigat: "",
-            status: "valid",
-            invalidReason: "",
-            showInOutput: true,
-            hasDocuments: false,
-            docUpload: "",
-            oldOwner: "",
-            hukamDate: "",
-            hukamType: "SSRD",
-            hukamStatus: "valid",
-            hukamInvalidReason: "",
-            affectedNondhNo: "",
-            ganot: "",
-            restrainingOrder: "no",
-            sdDate: "",
-            tenure: "Navi",
-            amount: null,
-            affectedNondhDetails: [],
-            ownerRelations: []
-          });
-        });
+formattedNondhs
+    .filter(nondh => !existingDetailNondhIds.has(nondh.id))
+    .forEach(nondh => {
+      console.log('Adding missing detail for nondh:', nondh.id);
+      
+      // Determine if we should initialize with an empty owner relation
+      const shouldInitializeOwner = !["Hakkami", "Vehchani"].includes(nondh.type || '');
+      
+      const newDetail = {
+        id: `temp_${nondh.id}_${Date.now()}`,
+        nondhId: nondh.id,
+        sNo: nondh.affectedSNos?.[0] || '',
+        type: nondh.type || 'Kabjedaar',
+        reason: "",
+        date: "",
+        vigat: "",
+        status: "valid",
+        invalidReason: "",
+        showInOutput: true,
+        hasDocuments: false,
+        docUpload: "",
+        oldOwner: "",
+        hukamDate: "",
+        hukamType: "SSRD",
+        hukamStatus: "valid",
+        hukamInvalidReason: "",
+        affectedNondhNo: "",
+        ganot: "",
+        restrainingOrder: "no",
+        sdDate: "",
+        tenure: "Navi",
+        amount: null,
+        affectedNondhDetails: [],
+        ownerRelations: shouldInitializeOwner ? [{
+          id: Date.now().toString() + Math.random(),
+          ownerName: "",
+          sNo: nondh.affectedSNos?.[0] || '',
+          area: { value: 0, unit: "sq_m" },
+          isValid: true,
+          surveyNumber: "",
+          surveyNumberType: "s_no"
+        }] : [] // Empty array for Hakkami and Vehchani
+      };
+      
+      allDetails.push(newDetail);
+    });
 
     setNondhDetails(allDetails);
     setOriginalDetails(allDetails);
@@ -1346,32 +1363,45 @@ const updateAffectedNondh = (detailId: string, affectedId: string, updates: any)
 }
   
   // Auto-populate all previous owners for 2nd Right
-  if (ganot === "2nd Right") {
-    console.log('Processing 2nd Right auto-population');
-    
-    const currentSNos = currentNondh.affectedSNos.map(sNo => 
-      typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
-    );
-    console.log('Current SNos:', currentSNos);
-    
-    const previousOwners = getAvailableOwnersForGanot("2nd Right", currentNondh.id, currentSNos);
-    console.log('Previous owners returned:', previousOwners);
-    console.log('Previous owners count:', previousOwners.length);
-    
-    // Convert all previous owners to owner relations
-    const ownerRelations = previousOwners.map((owner, index) => ({
-      id: (Date.now() + index).toString(),
-      ownerName: owner.name,
-      sNo: owner.sNo,
-      area: owner.area,
-      isValid: true
-    }));
-    
-    console.log('Setting owner relations:', ownerRelations.map(r => r.ownerName));
-    
-    // Update with the new owner relations
-    updateNondhDetail(detailId, { ownerRelations });
+if (ganot === "2nd Right") {
+  console.log('Processing 2nd Right auto-population');
+  
+  // Get the current nondh FIRST
+  const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+  
+  if (!currentNondh) {
+    console.log('ERROR: Current nondh not found');
+    return;
   }
+  
+  const currentSNos = currentNondh.affectedSNos.map(sNo => 
+    typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+  );
+  console.log('Current SNos:', currentSNos);
+  
+  const previousOwners = getAvailableOwnersForGanot("2nd Right", currentNondh.id, currentSNos);
+  console.log('Previous owners returned:', previousOwners);
+  console.log('Previous owners count:', previousOwners.length);
+  
+  // Ensure we have an array (not object with oldOwners/newOwners)
+  const ownersArray = Array.isArray(previousOwners) ? previousOwners : [];
+  
+  // Convert all previous owners to owner relations
+  const ownerRelations = ownersArray.map((owner, index) => ({
+    id: (Date.now() + index).toString(),
+    ownerName: owner.name,
+    sNo: owner.sNo,
+    area: owner.area,
+    isValid: true,
+    surveyNumber: "",
+    surveyNumberType: "s_no"
+  }));
+  
+  console.log('Setting owner relations:', ownerRelations.map(r => r.ownerName));
+  
+  // Update with the new owner relations
+  updateNondhDetail(detailId, { ownerRelations });
+}
   
   console.log('=== HANDLE GANOT CHANGE END ===\n');
 };
@@ -1481,6 +1511,12 @@ const processValidityChainFromNondh = (startIndex: number, changedStatus: string
           return [];
         }
         
+        // Skip if status is invalid/nullified (Radd/Na Manjoor)
+        if (detail.status === 'invalid' || detail.status === 'nullified') {
+          console.log('  Skipped - Status is Radd/Na Manjoor');
+          return [];
+        }
+        
         console.log('  Detail type:', detail.type);
         console.log('  Owner relations count:', detail.ownerRelations.length);
         
@@ -1494,12 +1530,55 @@ const processValidityChainFromNondh = (startIndex: number, changedStatus: string
         
         const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
         console.log('  Is transfer type:', isTransferType);
-        if (isTransferType) {
+        
+        const owners = [];
+        
+        // Add old owner with remaining area (if any remaining)
+        if (isTransferType && detail.oldOwner && detail.oldOwner.trim() !== "") {
           console.log('  Old owner:', detail.oldOwner);
+          
+          // Calculate remaining area for old owner
+          const newOwnersTotal = detail.ownerRelations
+            .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+            .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+          
+          // Find old owner's original area
+          const oldOwnerOriginalArea = (() => {
+            const nondhIndex = allSortedNondhs.findIndex(n => n.id === nondh.id);
+            const priorNondhs = allSortedNondhs.slice(0, nondhIndex);
+            
+            for (let i = priorNondhs.length - 1; i >= 0; i--) {
+              const priorDetail = nondhDetails.find(d => d.nondhId === priorNondhs[i].id);
+              if (!priorDetail || priorDetail.status === 'invalid' || priorDetail.status === 'nullified') continue;
+              
+              const ownerRel = priorDetail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+              if (ownerRel) {
+                return ownerRel.area?.value || 0;
+              }
+            }
+            return 0;
+          })();
+          
+          const remainingArea = Math.max(0, oldOwnerOriginalArea - newOwnersTotal);
+          console.log(`  Old owner remaining area: ${remainingArea}`);
+          
+          // Only include old owner if they have remaining area
+          if (remainingArea > 0) {
+            owners.push({
+              id: `old-${detail.oldOwner}-${nondh.id}`,
+              name: detail.oldOwner,
+              area: { value: remainingArea, unit: detail.ownerRelations[0]?.area?.unit || 'sq_m' },
+              sNo: firstSNo,
+              nondhId: nondh.id,
+              nondhType: detail.type,
+              isOldOwner: true,
+              sortIndex: index
+            });
+          }
         }
         
-        // For transfer types, only return new owners (exclude old owner)
-        const filteredRelations = detail.ownerRelations
+        // Add new owners (exclude old owner)
+        const newOwners = detail.ownerRelations
           .filter(r => {
             if (!isTransferType) return true;
             const isNotOldOwner = r.ownerName !== detail.oldOwner;
@@ -1513,11 +1592,14 @@ const processValidityChainFromNondh = (startIndex: number, changedStatus: string
             sNo: firstSNo,
             nondhId: nondh.id,
             nondhType: detail.type,
+            isOldOwner: false,
             sortIndex: index
           }));
         
-        console.log('  Filtered relations:', filteredRelations.map(r => r.name));
-        return filteredRelations;
+        owners.push(...newOwners);
+        
+        console.log('  All owners from this nondh:', owners.map(o => `${o.name} ${o.isOldOwner ? '(old, area: ' + o.area.value + ')' : ''}`));
+        return owners;
       })
       .flat()
       .filter(owner => owner.name.trim() !== '');
@@ -1526,13 +1608,12 @@ const processValidityChainFromNondh = (startIndex: number, changedStatus: string
     
     // Get unique owners - keep only the latest (highest sortIndex) for each name
     const uniqueOwnersMap = new Map();
-allOwners.forEach(owner => {
-  const existing = uniqueOwnersMap.get(owner.name);
-  // Keep the one with HIGHER sortIndex (later nondh)
-  if (!existing || existing.sortIndex < owner.sortIndex) {
-    uniqueOwnersMap.set(owner.name, owner);
-  }
-});
+    allOwners.forEach(owner => {
+      const existing = uniqueOwnersMap.get(owner.name);
+      if (!existing || existing.sortIndex < owner.sortIndex) {
+        uniqueOwnersMap.set(owner.name, owner);
+      }
+    });
     
     const result = Array.from(uniqueOwnersMap.values());
     console.log('\nFinal unique owners:', result.map(o => `${o.name} (index: ${o.sortIndex})`));
@@ -1544,22 +1625,79 @@ allOwners.forEach(owner => {
     const previousNondhs = allSortedNondhs.slice(0, currentIndex);
     console.log('Previous nondhs count:', previousNondhs.length);
     
-    // Get old owners (excluding 2nd Right from Hukam)
+    // Get old owners (excluding 2nd Right from Hukam with Radd/Na Manjoor status)
     console.log('\n--- Processing OLD OWNERS ---');
     const allOldOwners = previousNondhs
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index}) for OLD owners`);
         const detail = nondhDetails.find(d => d.nondhId === nondh.id);
-        if (!detail || (detail.type === "Hukam" && detail.ganot === "2nd Right")) {
-          console.log('  Skipped (no detail or is Hukam 2nd Right)');
+        
+        // Skip if no detail, is Hukam 2nd Right, OR status is invalid/nullified
+        if (!detail || 
+            (detail.type === "Hukam" && detail.ganot === "2nd Right") ||
+            detail.status === 'invalid' || 
+            detail.status === 'nullified') {
+          console.log('  Skipped (no detail, Hukam 2nd Right, or Radd/Na Manjoor)');
           return [];
         }
         
         console.log('  Detail type:', detail.type);
         const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
         console.log('  Is transfer type:', isTransferType);
-        if (isTransferType) {
+        
+        const owners = [];
+        
+        // Add old owner with remaining area (if any remaining)
+        if (isTransferType && detail.oldOwner && detail.oldOwner.trim() !== "") {
           console.log('  Old owner:', detail.oldOwner);
+          
+          // Calculate remaining area for old owner
+          const newOwnersTotal = detail.ownerRelations
+            .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+            .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+          
+          // Find old owner's original area
+          const oldOwnerOriginalArea = (() => {
+            const nondhIndex = allSortedNondhs.findIndex(n => n.id === nondh.id);
+            const priorNondhs = allSortedNondhs.slice(0, nondhIndex);
+            
+            for (let i = priorNondhs.length - 1; i >= 0; i--) {
+              const priorDetail = nondhDetails.find(d => d.nondhId === priorNondhs[i].id);
+              if (!priorDetail || priorDetail.status === 'invalid' || priorDetail.status === 'nullified') continue;
+              
+              const ownerRel = priorDetail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+              if (ownerRel) {
+                return ownerRel.area?.value || 0;
+              }
+            }
+            return 0;
+          })();
+          
+          const remainingArea = Math.max(0, oldOwnerOriginalArea - newOwnersTotal);
+          console.log(`  Old owner remaining area: ${remainingArea}`);
+          
+          const firstSNo = (() => {
+          try {
+            return JSON.parse(nondh.affectedSNos[0]).number;
+          } catch (e) {
+            return nondh.affectedSNos[0];
+          }
+        })();
+
+          // Only include old owner if they have remaining area
+          if (remainingArea > 0) {
+            owners.push({
+              id: `old-${detail.oldOwner}-${nondh.id}`,
+              name: detail.oldOwner,
+              area: { value: remainingArea, unit: detail.ownerRelations[0]?.area?.unit || 'sq_m' },
+              sNo: firstSNo,
+              nondhId: nondh.id,
+              nondhType: detail.type,
+              category: 'old',
+              isOldOwner: true,
+              sortIndex: index
+            });
+          }
         }
         
         const firstSNo = (() => {
@@ -1570,7 +1708,8 @@ allOwners.forEach(owner => {
           }
         })();
         
-        const filteredRelations = detail.ownerRelations
+        // Add new owners (exclude old owner)
+        const newOwners = detail.ownerRelations
           .filter(r => {
             if (!isTransferType) return true;
             const isNotOldOwner = r.ownerName !== detail.oldOwner;
@@ -1585,11 +1724,14 @@ allOwners.forEach(owner => {
             nondhId: nondh.id,
             nondhType: detail.type,
             category: 'old',
+            isOldOwner: false,
             sortIndex: index
           }));
         
-        console.log('  Filtered OLD owners:', filteredRelations.map(r => r.name));
-        return filteredRelations;
+        owners.push(...newOwners);
+        
+        console.log('  Filtered OLD owners:', owners.map(r => `${r.name} ${r.isOldOwner ? '(old, area: ' + r.area.value + ')' : ''}`));
+        return owners;
       })
       .flat()
       .filter(owner => owner.name.trim() !== '');
@@ -1610,18 +1752,22 @@ allOwners.forEach(owner => {
     const oldOwners = Array.from(oldOwnersMap.values());
     console.log('\nFinal unique OLD owners:', oldOwners.map(o => `${o.name} (index: ${o.sortIndex})`));
 
-    // Get new owners (2nd Right from previous Hukam nondhs)
+    // Get new owners (2nd Right from previous Hukam nondhs) - ONLY if status is Pramanik (valid)
     console.log('\n--- Processing NEW OWNERS ---');
     const allNewOwners = previousNondhs
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index}) for NEW owners`);
         const detail = nondhDetails.find(d => d.nondhId === nondh.id);
-        if (!detail || !(detail.type === "Hukam" && detail.ganot === "2nd Right")) {
-          console.log('  Skipped (not Hukam 2nd Right)');
+        
+        // Only include if it's Hukam 2nd Right AND status is valid (Pramanik)
+        if (!detail || 
+            !(detail.type === "Hukam" && detail.ganot === "2nd Right") ||
+            detail.status !== 'valid') {
+          console.log('  Skipped (not Hukam 2nd Right or not Pramanik status)');
           return [];
         }
         
-        console.log('  Is Hukam 2nd Right - including all owners');
+        console.log('  Is Hukam 2nd Right with Pramanik status - including all owners');
         
         const firstSNo = (() => {
           try {
@@ -1639,6 +1785,7 @@ allOwners.forEach(owner => {
           nondhId: nondh.id,
           nondhType: detail.type,
           category: 'new',
+          isOldOwner: false,
           sortIndex: index
         }));
         
@@ -1721,29 +1868,25 @@ const getYearSlabAreaForDate = (date: string) => {
   if (!date) return null;
   
   const year = new Date(date).getFullYear();
-  
-  // Find matching year slab
   const matchingYearSlab = yearSlabs.find(slab => 
     year >= slab.startYear && year <= slab.endYear
   );
   
   if (!matchingYearSlab) return null;
   
-  // Calculate total area including paiky and ekatrikaran entries
   let totalArea = matchingYearSlab.area?.value || 0;
   const unit = matchingYearSlab.area?.unit || 'sq_m';
   
-  // Add paiky entries area
+  // Sum paiky entries
   matchingYearSlab.paikyEntries?.forEach(entry => {
     if (entry.area?.unit === unit) {
       totalArea += entry.area.value || 0;
     } else {
-      // Convert units if different - you'll need conversion logic here
       totalArea += convertAreaUnits(entry.area?.value || 0, entry.area?.unit || 'sq_m', unit);
     }
   });
   
-  // Add ekatrikaran entries area
+  // Sum ekatrikaran entries  
   matchingYearSlab.ekatrikaranEntries?.forEach(entry => {
     if (entry.area?.unit === unit) {
       totalArea += entry.area.value || 0;
@@ -1763,62 +1906,85 @@ const getYearSlabAreaForDate = (date: string) => {
   // Only look at nondhs that come BEFORE the current one
   const previousNondhs = allSortedNondhs.slice(0, currentIndex);
 
-  return nondhDetails
-    .filter(d => {
-      // Must be from a previous nondh
-      const nondh = previousNondhs.find(n => n.id === d.nondhId);
-      if (!nondh) return false;
-      
-      // Include all relevant nondh types, no S.No filtering
-      return ["Varsai", "Hakkami", "Vechand", "Vehchani", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type);
-    })
-    .sort((a, b) => {
-      const nondhA = nondhs.find(n => n.id === a.nondhId);
-      const nondhB = nondhs.find(n => n.id === b.nondhId);
-      return nondhA && nondhB ? sortNondhs(nondhA, nondhB) : 0;
-    })
-    .flatMap(d => d.ownerRelations.map(r => ({ 
-      name: r.ownerName, 
-      area: r.area,
-      type: d.type,
-      nondhId: d.nondhId
-    })))
-    .filter(owner => owner.name.trim() !== '');
-};
+  // Track owners by name to keep only the most recent version
+  const ownerMap = new Map();
 
-  const sortNondhsBySNoType = (a: NondhDetail, b: NondhDetail, nondhs: any[]): number => {
-    const sNoTypes = getSNoTypesFromSlabs();
-    const nondhA = nondhs.find(n => n.id === a.nondhId);
-    const nondhB = nondhs.find(n => n.id === b.nondhId);
+  previousNondhs.forEach(nondh => {
+    const detail = nondhDetails.find(d => d.nondhId === nondh.id);
     
-    const getPrimaryType = (nondh: any): string => {
-      if (!nondh) return 's_no';
-      const types = nondh.affectedSNos.map((sNo: string) => sNoTypes.get(sNo) || 's_no');
-      if (types.includes('s_no')) return 's_no';
-      if (types.includes('block_no')) return 'block_no';
-      return 're_survey_no';
-    };
-
-    const typeA = getPrimaryType(nondhA);
-    const typeB = getPrimaryType(nondhB);
-    
-    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
-    const priorityA = priorityOrder.indexOf(typeA);
-    const priorityB = priorityOrder.indexOf(typeB);
-    
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
+    // Skip if no detail OR if status is invalid/nullified (Radd/Na Manjoor)
+    if (!detail || detail.status === 'invalid' || detail.status === 'nullified') {
+      return;
     }
+
+    // Only include relevant nondh types
+    if (!["Varsai", "Hakkami", "Vechand", "Vehchani", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(detail.type)) {
+      return;
+    }
+
+    // For transfer types, handle old owner specially
+    const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
     
-    const aFirstSNo = nondhA?.affectedSNos[0] || '';
-    const bFirstSNo = nondhB?.affectedSNos[0] || '';
-    const sNoCompare = aFirstSNo.localeCompare(bFirstSNo, undefined, { numeric: true });
-    if (sNoCompare !== 0) return sNoCompare;
-    
-    const aNondhNo = nondhA ? getNondhNumber(nondhA) : 0;
-    const bNondhNo = nondhB ? getNondhNumber(nondhB) : 0;
-    return aNondhNo - bNondhNo;
-  };
+    if (isTransferType && detail.oldOwner) {
+      // Calculate if old owner's area was completely distributed
+      const newOwnersTotal = detail.ownerRelations
+        .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+        .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+      
+      // Find old owner's original area from previous nondhs
+      const oldOwnerOriginalArea = (() => {
+        // Look backwards from this nondh to find old owner's area
+        const nondhIndex = allSortedNondhs.findIndex(n => n.id === nondh.id);
+        const priorNondhs = allSortedNondhs.slice(0, nondhIndex);
+        
+        for (let i = priorNondhs.length - 1; i >= 0; i--) {
+          const priorDetail = nondhDetails.find(d => d.nondhId === priorNondhs[i].id);
+          if (!priorDetail) continue;
+          
+          const ownerRel = priorDetail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+          if (ownerRel) {
+            return ownerRel.area?.value || 0;
+          }
+        }
+        return 0;
+      })();
+      
+      const remainingArea = oldOwnerOriginalArea - newOwnersTotal;
+      
+      // Update or add old owner with remaining area (0 if fully distributed)
+      ownerMap.set(detail.oldOwner, {
+        name: detail.oldOwner,
+        area: { 
+          value: Math.max(0, remainingArea), 
+          unit: detail.ownerRelations[0]?.area?.unit || 'sq_m' 
+        },
+        type: detail.type,
+        nondhId: nondh.id
+      });
+    }
+
+    // Add/update new owners (for all types including transfer types)
+    detail.ownerRelations.forEach(rel => {
+      if (rel.ownerName.trim() === "") return;
+      
+      // For transfer types, skip old owner in relations (already handled above)
+      if (isTransferType && rel.ownerName === detail.oldOwner) {
+        return;
+      }
+      
+      // Update owner in map (this will overwrite older versions)
+      ownerMap.set(rel.ownerName, {
+        name: rel.ownerName,
+        area: rel.area,
+        type: detail.type,
+        nondhId: nondh.id
+      });
+    });
+  });
+
+  // Return array of unique owners (most recent version of each)
+  return Array.from(ownerMap.values());
+};
 
   // Form update functions
   const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
@@ -1885,15 +2051,14 @@ const getYearSlabAreaForDate = (date: string) => {
   if (detail && checked) {
     const transferTypes = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"];
     
-    if (transferTypes.includes(detail.type) && detail.ownerRelations.length > 1) {
+    if (transferTypes.includes(detail.type) && detail.ownerRelations.length >= 1) {
       // For transfer types, distribute old owner's area equally among new owners
       const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
       const selectedOldOwner = previousOwners.find(owner => owner.name === detail.oldOwner);
       const oldOwnerArea = selectedOldOwner?.area?.value || 0;
       const newOwnersCount = detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length;
       
-      if (newOwnersCount > 0) {
-        const equalArea = oldOwnerArea / newOwnersCount;
+const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerArea;
         
         const updatedRelations = detail.ownerRelations.map((relation) => {
           if (relation.ownerName === detail.oldOwner) {
@@ -1909,7 +2074,7 @@ const getYearSlabAreaForDate = (date: string) => {
         });
         
         updateNondhDetail(detailId, { ownerRelations: updatedRelations });
-      }
+      
     }
   }
 };
@@ -1920,7 +2085,7 @@ const getYearSlabAreaForDate = (date: string) => {
       // Get area from year slab if date is available
     const yearSlabArea = detail.date ? getYearSlabAreaForDate(detail.date) : null;
     const defaultArea = yearSlabArea || { value: 0, unit: "sq_m" };
-    
+
     const newRelation = {
       id: Date.now().toString() + Math.random(),
       ownerName: "",
@@ -2365,13 +2530,16 @@ survey_number_type: data.surveyNumberType || null
   }
 }
 
-  // Render functions from original component
   const renderOwnerSelectionFields = (detail: NondhDetail) => {
   const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
   
   const hakkamiPreviousOwners = detail.type === "Hakkami" 
     ? getPreviousOwners(detail.sNo, detail.nondhId)
     : [];
+
+    const vehchaniPreviousOwners = detail.type === "Vehchani" 
+  ? getPreviousOwners(detail.sNo, detail.nondhId)
+  : [];
 
   return (
     <div className="space-y-4">
@@ -2386,7 +2554,7 @@ survey_number_type: data.surveyNumberType || null
               onChange={(e) => {
     const value = e.target.value;
     updateNondhDetail(detail.id, { 
-      date: value === '' ? null : value  // Convert empty string to null
+      date: value === '' ? null : value
     });
   }}
             />
@@ -2409,23 +2577,34 @@ survey_number_type: data.surveyNumberType || null
         <Select
   value={detail.oldOwner}
   onValueChange={(value) => {
-    const selectedOwner = previousOwners.find(owner => 
-      owner.name === value
-    );
+  const selectedOwner = previousOwners.find(owner => 
+    owner.name === value
+  );
+  
+  if (selectedOwner) {
+    updateNondhDetail(detail.id, { 
+      oldOwner: selectedOwner.name
+    });
     
-    if (selectedOwner) {
-      updateNondhDetail(detail.id, { 
-        oldOwner: selectedOwner.name
-      });
-      
-      // Auto-apply equal distribution if enabled
-      if (equalDistribution[detail.id]) {
-        setTimeout(() => {
-          toggleEqualDistribution(detail.id, true);
-        }, 100);
+    // Only auto-apply equal distribution for types that should have default owners
+    const shouldAutoApplyEqualDist = !["Hakkami", "Vehchani"].includes(detail.type);
+    
+    // ADD THIS: For Hakkami and Vehchani, ensure no owner relations are created
+    if (["Hakkami", "Vehchani"].includes(detail.type)) {
+      // Explicitly set empty owner relations if somehow any got created
+      if (detail.ownerRelations.length > 0) {
+        updateNondhDetail(detail.id, { ownerRelations: [] });
       }
+      return; // Don't proceed further for these types
     }
-  }}
+    
+    if (equalDistribution[detail.id] && shouldAutoApplyEqualDist) {
+      setTimeout(() => {
+        toggleEqualDistribution(detail.id, true);
+      }, 100);
+    }
+  }
+}}
 >
           <SelectTrigger>
             <SelectValue placeholder="Select Old Owner" />
@@ -2440,10 +2619,82 @@ survey_number_type: data.surveyNumberType || null
         </Select>
       </div>
 
+{/* Vehchani Section */}
+      {detail.type === "Vehchani" && (
+  <div className="space-y-4">
+    
+    {/* Available Previous Owners as Checkboxes for NEW owners only */}
+    <div className="space-y-2">
+      <Label>Select New Owners *</Label>
+      <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
+        {vehchaniPreviousOwners
+          .filter(owner => owner.name !== detail.oldOwner)
+          .map((owner, index) => {
+            const isSelected = detail.ownerRelations.some(rel => 
+              rel.ownerName === owner.name && rel.ownerName !== detail.oldOwner
+            );
+            
+            return (
+              <div key={`vehchani_${owner.name}_${index}`} className="flex items-center space-x-2 mb-2">
+                <Checkbox
+                  id={`vehchani_owner_${index}`}
+                  checked={isSelected}
+onCheckedChange={(checked) => {
+  const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
+  const selectedOldOwner = previousOwners.find(owner => owner.name === detail.oldOwner);
+  const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+  
+  let updatedRelations = [...detail.ownerRelations];
+  
+  if (checked) {
+    // Calculate area for new owner
+    let newOwnerArea = 0;
+    if (equalDistribution[detail.id]) {
+      const newOwnersCount = updatedRelations.filter(rel => rel.ownerName !== detail.oldOwner).length + 1;
+      newOwnerArea = oldOwnerArea / newOwnersCount;
+    }
+    
+    const newRelation = {
+      id: Date.now().toString() + Math.random(),
+      ownerName: owner.name,
+      sNo: detail.sNo,
+      area: { 
+        value: newOwnerArea, 
+        unit: owner.area.unit 
+      },
+      tenure: "Navi",
+      isValid: true
+    };
+    updatedRelations.push(newRelation);
+  } else {
+    updatedRelations = updatedRelations.filter(rel => 
+      rel.ownerName !== owner.name || rel.ownerName === detail.oldOwner
+    );
+  }
+  
+  updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+  
+  // Re-apply equal distribution if enabled
+  if (equalDistribution[detail.id]) {
+    setTimeout(() => {
+      toggleEqualDistribution(detail.id, true);
+    }, 100);
+  }
+}}
+                />
+                <Label htmlFor={`vehchani_owner_${index}`} className="flex-1">
+                  {owner.name} ({owner.area.value} {owner.area.unit})
+                </Label>
+              </div>
+            );
+          })}
+      </div>
+    </div>
+  </div>
+)}
       {/* Hakkami Section */}
       {detail.type === "Hakkami" && (
   <div className="space-y-4">
-    {/* Equal distribution checkbox - MOVED to the Area Distribution Header above */}
     
     {/* Available Previous Owners as Checkboxes for NEW owners only */}
     <div className="space-y-2">
@@ -2515,18 +2766,6 @@ onCheckedChange={(checked) => {
   </div>
 )}
 
-      {/* Equal distribution checkbox - shown for Hayati, Varsai, and Vechand */}
-      {(detail.type === "Hayati_ma_hakh_dakhal" || detail.type === "Varsai" || detail.type === "Vechand") && (
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id={`equal_dist_${detail.id}`}
-            checked={equalDistribution[detail.id] || false}
-            onCheckedChange={(checked) => toggleEqualDistribution(detail.id, checked as boolean)}
-          />
-          <Label htmlFor={`equal_dist_${detail.id}`}>Equal Distribution of Land</Label>
-        </div>
-      )}
-
       {/* Owner Details Section for Hayati, Varsai, and Vechand */}
 {(detail.type === "Varsai" || detail.type === "Hayati_ma_hakh_dakhal" || detail.type === "Vechand" || detail.type === "Hakkami" || detail.type === "Vehchani") && (
   <div className="space-y-4">
@@ -2557,12 +2796,12 @@ onCheckedChange={(checked) => {
         id={`equal_dist_${detail.id}`}
         checked={equalDistribution[detail.id] || false}
         onCheckedChange={(checked) => toggleEqualDistribution(detail.id, checked as boolean)}
-        disabled={detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length <= 1}
+        disabled={detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length < 1}
       />
       <Label htmlFor={`equal_dist_${detail.id}`} className="text-blue-800 font-medium">
         Equal Distribution
         {detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length <= 1 && 
-          " (Need 2+ new owners)"}
+          " (Need atleast 1 new owner)"}
       </Label>
     </div>
   </div>
@@ -2610,7 +2849,7 @@ onCheckedChange={(checked) => {
         
         {equalDistribution[detail.id] && newOwners.length > 0 && (
           <div className="mt-2 pt-2 border-t border-blue-200 text-center">
-            <strong>Equal Distribution:</strong> { (oldOwnerArea / newOwners.length).toFixed(2) } each
+            <strong>Equal Distribution:</strong> { (oldOwnerArea / newOwners.length).toFixed(4) } each
           </div>
         )}
       </div>
@@ -2721,6 +2960,29 @@ onCheckedChange={(checked) => {
   );
 };
 
+const formatArea = (area: { value: number; unit: string }) => {
+  if (!area) return 'N/A';
+  
+  const { value, unit } = area;
+  
+  switch (unit) {
+    case 'acre':
+      return `${value.toFixed(2)} Acre`;
+    case 'guntha':
+      return `${value.toFixed(2)} Guntha`;
+    case 'sq_m':
+      return `${value.toFixed(2)} Sq.m`;
+    case 'acre_guntha':
+      // If it's acre_guntha format, you might have acres and gunthas properties
+      const acres = Math.floor(value / 4046.86);
+      const remainingSqm = value % 4046.86;
+      const gunthas = Math.floor(remainingSqm / 101.17);
+      return `${acres}A ${gunthas}G`;
+    default:
+      return `${value.toFixed(2)} ${unit}`;
+  }
+};
+
   const renderTypeSpecificFields = (detail: NondhDetail) => {
   // Handle types that need owner selection
   if (["Hayati_ma_hakh_dakhal", "Varsai", "Hakkami", "Vechand", "Vehchani"].includes(detail.type)) {
@@ -2746,7 +3008,7 @@ onCheckedChange={(checked) => {
               <Card key={relation.id} className="p-3">
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-medium">Owner {index + 1}</h4>
-                  {detail.ownerRelations.length > 1 && (
+                
                     <Button
                       variant="outline"
                       size="sm"
@@ -2755,7 +3017,7 @@ onCheckedChange={(checked) => {
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
-                  )}
+   
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2804,7 +3066,7 @@ onCheckedChange={(checked) => {
               <Card key={relation.id} className="p-3">
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-medium">Owner {index + 1}</h4>
-                  {detail.ownerRelations.length > 1 && (
+               
                     <Button
                       variant="outline"
                       size="sm"
@@ -2813,7 +3075,7 @@ onCheckedChange={(checked) => {
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
-                  )}
+            
                 </div>
 
                 <div className="space-y-2 mb-3">
@@ -2891,7 +3153,7 @@ onCheckedChange={(checked) => {
               <Card key={relation.id} className="p-3">
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-medium">Owner {index + 1}</h4>
-                  {detail.ownerRelations.length > 1 && (
+               
                     <Button
                       variant="outline"
                       size="sm"
@@ -2900,7 +3162,7 @@ onCheckedChange={(checked) => {
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
-                  )}
+      
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -3216,7 +3478,7 @@ onCheckedChange={(checked) => {
       const equalAreaValue = oldOwnerArea.value / transfer.newOwners.length;
       const updatedNewOwnerAreas = transfer.newOwners.map(ownerId => ({
         ownerId,
-        area: { ...oldOwnerArea, value: equalAreaValue }
+        area: { ...oldOwnerArea, value: parseFloat(equalAreaValue.toFixed(4)) }
       }));
       
       updateOwnerTransfer(detail.id, transfer.id, { 
@@ -3248,7 +3510,7 @@ onCheckedChange={(checked) => {
   />
   <Label htmlFor={`equal_dist_${detail.id}_${transfer.id}`}>
     Equal Distribution of Land
-    {(transfer.newOwners?.length || 0) <= 1 && " (Requires at least 2 new owners)"}
+    {(transfer.newOwners?.length || 0) <= 1 && " (Requires at least 1 new owner)"}
   </Label>
 </div>
                     <div className="space-y-2 mb-4">
@@ -3343,7 +3605,7 @@ onCheckedChange={(checked) => {
     {/* Area validation display */}
     <div className="text-sm text-muted-foreground">
       {(() => {
-        const totalNewOwnerArea = isEqualDist 
+        const totalNewOwnerArea = isEqualDistribution 
           ? oldOwnerAreaValue
           : (transfer.newOwnerAreas || []).reduce((sum, areaObj) => sum + (areaObj.area?.value || 0), 0);
         const oldOwnerArea = transfer.oldOwnerArea?.value || 0;
@@ -3381,7 +3643,7 @@ onCheckedChange={(checked) => {
                 <Card key={relation.id} className="p-4">
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="font-medium">Owner {index + 1}</h4>
-                    {detail.ownerRelations.length > 1 && (
+             
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -3390,7 +3652,7 @@ onCheckedChange={(checked) => {
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
-                    )}
+        
                   </div>
                   
                   <div className="space-y-4">
@@ -3506,7 +3768,7 @@ onCheckedChange={(checked) => {
       </CardHeader>
       <CardContent className="space-y-6">
         {/* 7/12 Documents Table */}
-        {/* {documents712.length > 0 && (
+        {documents712.length > 0 && (
           <Card className="p-4">
             <h3 className="text-lg font-semibold mb-4">Available 7/12 Documents</h3>
             <Table>
@@ -3539,7 +3801,7 @@ onCheckedChange={(checked) => {
               </TableBody>
             </Table>
           </Card>
-        )} */}
+        )}
 
         {/* Nondh Details */}
         {nondhs
@@ -3653,7 +3915,7 @@ onCheckedChange={(checked) => {
   max={getMaxDateForNondh(nondh.id)}
   onChange={(e) => {
   const newDate = e.target.value;
-  if (isValidNondhDateOrder(sortedNondh.id, newDate)) {
+  if (isValidNondhDateOrder(nondh.id, newDate)) {
     updateNondhDetail(detail.id, { date: newDate });
     
     // Auto-populate areas when date changes

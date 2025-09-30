@@ -1091,48 +1091,82 @@ if (data?.error) {
     }
   }
 static async get712Documents(landRecordId: string) {
-  console.log(`[SERVICE] Fetching 7/12 docs for land record: ${landRecordId}`);
-  
   try {
-    // First check if basic record has documents
+    const docs = [];
+    
+    // Get main record document
     const { data: recordData } = await supabase
       .from('land_records')
       .select('integrated_712')
       .eq('id', landRecordId)
       .single();
 
-    const docs = [];
-    
-    // Add main document if exists
-    if (recordData?.integrated_712) {
-      docs.push({
-        type: 'main',
-        url: recordData.integrated_712,
-        year: 'All',
-        s_no: 'Primary'
-      });
-    }
-
     // Get year slab documents
     const { data: slabs } = await supabase
       .from('year_slabs')
-      .select('id, integrated_712, start_year, end_year')
+      .select('integrated_712, start_year, end_year, s_no, area_value, area_unit')
       .eq('land_record_id', landRecordId)
       .not('integrated_712', 'is', null);
 
     slabs?.forEach(slab => {
-      docs.push({
-        type: 'year_slab',
-        url: slab.integrated_712,
-        year: `${slab.start_year}-${slab.end_year}`,
-        s_no: `Slab ${slab.id.slice(0, 4)}`
-      });
+      if (slab.integrated_712 && slab.integrated_712.trim() !== '') {
+        docs.push({
+          type: "Main Slab",
+          url: slab.integrated_712,
+          year: `${slab.start_year}-${slab.end_year}`,
+          s_no: slab.s_no || 'Main',
+          area: { value: slab.area_value, unit: slab.area_unit }
+        });
+      }
     });
 
-    console.log(`[SERVICE] Found ${docs.length} documents`);
+    // Get slab entry documents
+    const { data: entries } = await supabase
+      .from('slab_entries')
+      .select(`
+        integrated_712,
+        s_no,
+        area_value,
+        area_unit,
+        entry_type,
+        year_slabs!inner(start_year, end_year, land_record_id)
+      `)
+      .eq('year_slabs.land_record_id', landRecordId)
+      .not('integrated_712', 'is', null);
+    
+    // Counter objects for each entry type
+    const typeCounters: { [key: string]: number } = {};
+    
+    entries?.forEach(entry => {
+      if (entry.integrated_712 && entry.integrated_712.trim() !== '') {
+        const entryType = entry.entry_type;
+        
+        // Initialize counter for this type if it doesn't exist
+        if (!typeCounters[entryType]) {
+          typeCounters[entryType] = 0;
+        }
+        
+        // Increment counter
+        typeCounters[entryType]++;
+        
+        // Format type with counter for paiky and ekatrikaran
+        let displayType = entryType;
+        if (entryType === 'paiky' || entryType === 'ekatrikaran') {
+          displayType = `${entryType} ${typeCounters[entryType]}`;
+        }
+        
+        docs.push({
+          type: displayType,
+          url: entry.integrated_712,
+          year: `${entry.year_slabs.start_year}-${entry.year_slabs.end_year}`,
+          s_no: entry.s_no,
+          area: { value: entry.area_value, unit: entry.area_unit }
+        });
+      }
+    });
+
     return { data: docs, error: null };
   } catch (error) {
-    console.error('[SERVICE] Error fetching documents:', error);
     return { data: null, error };
   }
 }
