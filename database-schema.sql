@@ -139,6 +139,33 @@ CREATE TABLE nondh_owner_relations (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Broker table
+CREATE TABLE brokers (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(15) NOT NULL,
+    area TEXT,
+    rating DECIMAL(2,1) CHECK (rating >= 0 AND rating <= 5),
+    status VARCHAR(10) NOT NULL CHECK (status IN ('active', 'inactive')),
+    remarks TEXT,
+    recent_task TEXT
+);
+
+-- Linking table: many-to-many between brokers and land_records
+CREATE TABLE broker_land_records (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    broker_id UUID NOT NULL REFERENCES brokers(id) ON DELETE CASCADE,
+    land_record_id UUID NOT NULL REFERENCES land_records(id) ON DELETE CASCADE,
+    last_offer DECIMAL(15,2),
+    next_update DATE,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'negotiating', 'deal_closed', 'rejected'))
+    
+    UNIQUE (broker_id, land_record_id)
+);
+
+
 -- Create indexes for better performance
 CREATE INDEX idx_land_records_district ON land_records(district);
 CREATE INDEX idx_land_records_status ON land_records(status);
@@ -146,6 +173,11 @@ CREATE INDEX idx_year_slabs_land_record ON year_slabs(land_record_id);
 CREATE INDEX idx_panipatraks_land_record ON panipatraks(land_record_id);
 CREATE INDEX idx_nondhs_land_record ON nondhs(land_record_id);
 CREATE INDEX idx_nondh_owner_relations_detail_id ON nondh_owner_relations(nondh_detail_id);
+
+-- Create index for better query performance
+CREATE INDEX IF NOT EXISTS idx_brokers_status ON brokers(status);
+CREATE INDEX IF NOT EXISTS idx_broker_land_records_broker_id ON broker_land_records(broker_id);
+CREATE INDEX IF NOT EXISTS idx_broker_land_records_status ON broker_land_records(status);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE land_records ENABLE ROW LEVEL SECURITY;

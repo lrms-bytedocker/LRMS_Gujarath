@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Download, Loader2, Filter, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 
 interface LandRecord {
   id: string;
@@ -42,6 +43,7 @@ interface LandRecord {
 }
 
 export default function LandMaster() {
+  const { isSignedIn, user } = useUser();
   const router = useRouter();
   const [lands, setLands] = useState<LandRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +53,18 @@ export default function LandMaster() {
   const [talukaFilter, setTalukaFilter] = useState("all");
   const [villageFilter, setVillageFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
+
+  const [selectedLand, setSelectedLand] = useState<string | null>(null);
+const [showBrokerDialog, setShowBrokerDialog] = useState(false);
+const [brokers, setBrokers] = useState([]);
+const [brokerFormData, setBrokerFormData] = useState({
+  brokerId: '',
+  lastOffer: '',
+  nextUpdate: '',
+  status: 'pending'
+});
+const [linkedBrokers, setLinkedBrokers] = useState([]);
+const [loadingLinkedBrokers, setLoadingLinkedBrokers] = useState(false);
 
   // Fetch land records from Supabase
   useEffect(() => {
@@ -79,6 +93,22 @@ export default function LandMaster() {
 
     fetchLandRecords();
   }, []);
+
+  useEffect(() => {
+  const fetchBrokers = async () => {
+    const { data, error } = await supabase
+      .from('brokers')
+      .select('id, name')
+      .eq('status', 'active')
+      .order('name');
+    
+    if (!error && data) {
+      setBrokers(data);
+    }
+  };
+  
+  fetchBrokers();
+}, []);
 
   // Get unique values for filters
   const districts = [
@@ -128,6 +158,66 @@ const filteredLands = lands.filter((land) => {
       setLoading(false);
     }
   };
+
+  const handleLinkBroker = async (landId: string) => {
+    if (!isSignedIn) {
+      alert("Please sign in to link brokers");
+      return;
+    }
+
+  setSelectedLand(landId);
+  setShowBrokerDialog(true);
+  setLoadingLinkedBrokers(true);
+  
+  try {
+    const { data, error } = await supabase
+      .from('broker_land_records')
+      .select(`
+        id,
+        last_offer,
+        status,
+        brokers (
+          id,
+          name
+        )
+      `)
+      .eq('land_record_id', landId);
+
+    if (error) throw error;
+    setLinkedBrokers(data || []);
+  } catch (err) {
+    console.error('Error fetching linked brokers:', err);
+  } finally {
+    setLoadingLinkedBrokers(false);
+  }
+};
+
+const handleSubmitBrokerLink = async () => {
+  if (!isSignedIn) {
+      alert("Please sign in to link brokers");
+      return;
+    }
+    
+  try {
+    const { error } = await supabase
+      .from('broker_land_records')
+      .insert({
+        broker_id: brokerFormData.brokerId,
+        land_record_id: selectedLand,
+        last_offer: brokerFormData.lastOffer ? parseFloat(brokerFormData.lastOffer) : null,
+        next_update: brokerFormData.nextUpdate || null,
+        status: brokerFormData.status
+      });
+
+    if (error) throw error;
+    
+    setShowBrokerDialog(false);
+    setBrokerFormData({ brokerId: '', lastOffer: '', nextUpdate: '', status: 'pending' });
+    // Show success message
+  } catch (err) {
+    console.error('Error linking broker:', err);
+  }
+};
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -484,15 +574,22 @@ const filteredLands = lands.filter((land) => {
                       <TableCell>{land.block_no}</TableCell>
                       <TableCell>{land.re_survey_no}</TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
-                          <Link href={`/land-master/forms?mode=view&id=${land.id}`}>
-                            <Button variant="ghost" size="sm">View</Button>
-                          </Link>
-                          <Link href={`/land-master/forms?mode=edit&id=${land.id}`}>
-                            <Button variant="ghost" size="sm">Edit</Button>
-                          </Link>
-                        </div>
-                      </TableCell>
+  <div className="flex gap-2">
+    <Link href={`/land-master/forms?mode=view&id=${land.id}`}>
+      <Button variant="ghost" size="sm">View</Button>
+    </Link>
+    <Link href={`/land-master/forms?mode=edit&id=${land.id}`}>
+      <Button variant="ghost" size="sm">Edit</Button>
+    </Link>
+    <Button 
+      variant="ghost" 
+      size="sm"
+      onClick={() => handleLinkBroker(land.id)}
+    >
+      Link Broker
+    </Button>
+  </div>
+</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -543,17 +640,21 @@ const filteredLands = lands.filter((land) => {
                     </div>
                     
                     <div className="flex gap-2 pt-2">
-                      <Link href={`/land-master/forms?mode=view&id=${land.id}`} className="flex-1">
-                        <Button variant="outline" size="sm" className="w-full">
-                          View
-                        </Button>
-                      </Link>
-                      <Link href={`/land-master/forms?mode=edit&id=${land.id}`} className="flex-1">
-                        <Button variant="outline" size="sm" className="w-full">
-                          Edit
-                        </Button>
-                      </Link>
-                    </div>
+  <Link href={`/land-master/forms?mode=view&id=${land.id}`} className="flex-1">
+    <Button variant="outline" size="sm" className="w-full">View</Button>
+  </Link>
+  <Link href={`/land-master/forms?mode=edit&id=${land.id}`} className="flex-1">
+    <Button variant="outline" size="sm" className="w-full">Edit</Button>
+  </Link>
+  <Button 
+    variant="outline" 
+    size="sm" 
+    className="flex-1"
+    onClick={() => handleLinkBroker(land.id)}
+  >
+    Link Broker
+  </Button>
+</div>
                   </div>
                 </Card>
               ))
@@ -578,6 +679,148 @@ const filteredLands = lands.filter((land) => {
           )}
         </CardContent>
       </Card>
+      {showBrokerDialog && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="overflow-y-auto max-h-[90vh]">
+        <CardHeader>
+          <CardTitle>Link Broker</CardTitle>
+          <CardDescription>Associate a broker with this land record</CardDescription>
+        </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left Side - Add New Broker Link */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-sm">Add New Broker</h3>
+            
+            <div>
+              <Label>Select Broker</Label>
+              <Select
+                value={brokerFormData.brokerId}
+                onValueChange={(value) => setBrokerFormData({...brokerFormData, brokerId: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a broker" />
+                </SelectTrigger>
+                <SelectContent>
+                  {brokers.map((broker) => (
+                    <SelectItem key={broker.id} value={broker.id}>
+                      {broker.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Link href="/brokers/new">
+                <Button variant="link" className="pl-0 text-sm" size="sm">
+                  + Add New Broker
+                </Button>
+              </Link>
+            </div>
+
+            <div>
+              <Label>Last Offer (Optional)</Label>
+              <Input
+                type="number"
+                placeholder="Enter amount"
+                value={brokerFormData.lastOffer}
+                onChange={(e) => setBrokerFormData({...brokerFormData, lastOffer: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <Label>Next Update Date (Optional)</Label>
+              <Input
+                type="date"
+                value={brokerFormData.nextUpdate}
+                onChange={(e) => setBrokerFormData({...brokerFormData, nextUpdate: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={brokerFormData.status}
+                onValueChange={(value) => setBrokerFormData({...brokerFormData, status: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="negotiating">Negotiating</SelectItem>
+                  <SelectItem value="deal_closed">Deal Closed</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowBrokerDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleSubmitBrokerLink}
+                disabled={!brokerFormData.brokerId}
+              >
+                Link Broker
+              </Button>
+            </div>
+          </div>
+
+          {/* Right Side - Linked Brokers */}
+          <div className="space-y-4 border-l pl-6">
+            <h3 className="font-semibold text-sm">Linked Brokers ({linkedBrokers.length})</h3>
+            
+            {loadingLinkedBrokers ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : linkedBrokers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                No brokers linked yet
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {linkedBrokers.map((link) => (
+                  <Card key={link.id} className="p-3">
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div className="font-medium text-sm">{link.brokers.name}</div>
+                        <Badge 
+                          variant={
+                            link.status === 'deal_closed' ? 'default' :
+                            link.status === 'negotiating' ? 'secondary' :
+                            link.status === 'rejected' ? 'destructive' : 'outline'
+                          }
+                          className="text-xs"
+                        >
+                          {link.status.replace('_', ' ')}
+                        </Badge>
+                      </div>
+                      
+                      {link.last_offer && (
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">Last Offer:</span>
+                          <span className="ml-2 font-medium">₹{link.last_offer.toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </div>
+    </Card>
+  </div>
+)}
     </div>
   );
 }

@@ -128,34 +128,6 @@ export function EditFormsContainer() {
     }
   }, [activeStep, handleStepChange, steps]);
 
-  const handleSubmitAll = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      const combinedData = {
-        ...formData,
-        current_step: activeStep,
-        status: "completed",
-      };
-
-      const { data, error } = await LandRecordService.saveLandRecord(combinedData);
-      if (error) throw error;
-      
-      // Mark all steps as saved
-      steps.forEach(step => {
-        const stepFormData = useStepFormData(step.id);
-        stepFormData.markAsSaved();
-      });
-      
-      toast({ title: "All forms submitted successfully!" });
-      localStorage.setItem("currentLandRecordId", data.id);
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Error submitting forms", variant: "destructive" });
-    } finally {
-      setIsSaving(false);
-    }
-  }, [activeStep, formData, steps, toast]);
-
   // Render current step with its saved data
   const renderStep = useCallback(() => {
     const stepData = formData[activeStep] || {};
