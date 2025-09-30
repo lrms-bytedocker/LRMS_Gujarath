@@ -3215,55 +3215,7 @@ case "Bojo":
   )
   
       default:
-        return (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Label>Owner Details</Label>
-              <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Owner
-              </Button>
-            </div>
-
-            {detail.ownerRelations.map((relation, index) => (
-              <Card key={relation.id} className="p-3">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-medium">Owner {index + 1}</h4>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => removeOwnerRelation(detail.id, relation.id)}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Owner Name</Label>
-                    <Input
-                      value={relation.ownerName}
-                      onChange={(e) => updateOwnerRelation(detail.id, relation.id, { ownerName: e.target.value })}
-                      placeholder="Enter owner name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-  <Label>Area</Label>
-  {areaFields({
-    area: relation.area,
-    onChange: (newArea) => updateOwnerRelation(
-      detail.id, 
-      relation.id, 
-      { area: newArea }
-    )
-  })}
-</div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )
+        return null;
     }
   }
 

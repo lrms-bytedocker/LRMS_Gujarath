@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { supabase } from '@/lib/supabase'
 
 interface DocumentInfo {
@@ -41,14 +41,41 @@ export class IntegratedDocumentGenerator {
         }
       }
       
-      // Save and download the merged PDF
+      // Save and download the merged PDF with enhanced filename
       const pdfBytes = await mergedPdf.save()
-      this.downloadPDF(pdfBytes, `Integrated_Land_Record_${landRecordId}.pdf`)
+      const filename = this.generateFilename(landBasicInfo)
+      this.downloadPDF(pdfBytes, filename)
       
     } catch (error) {
       console.error('Error generating integrated PDF:', error)
       throw error
     }
+  }
+  
+  static generateFilename(landBasicInfo: any): string {
+    const parts = ['Integrated_LandRecord']
+    
+    // Add block number with 'Block' type if available
+    if (landBasicInfo?.blockNo) {
+      parts.push(`${landBasicInfo.blockNo}(Block)`)
+    }
+    
+    // Add re-survey number with 'Resurvey' type if available
+    if (landBasicInfo?.reSurveyNo) {
+      parts.push(`${landBasicInfo.reSurveyNo}(Resurvey)`)
+    }
+    
+    // Add village if available
+    if (landBasicInfo?.village) {
+      parts.push(landBasicInfo.village.replace(/\s+/g, '_'))
+    }
+    
+    // Add taluka if available
+    if (landBasicInfo?.taluka) {
+      parts.push(landBasicInfo.taluka.replace(/\s+/g, '_'))
+    }
+    
+    return `${parts.join('_')}.pdf`
   }
   
   static async collectAllDocuments(landRecordId: string): Promise<DocumentInfo[]> {
@@ -103,7 +130,7 @@ export class IntegratedDocumentGenerator {
             integrated_712
           `)
           .in('year_slab_id', yearSlabs.map(s => s.id))
-          .order('entry_type', { ascending: true }) // paiky comes before ekatrikaran alphabetically
+          .order('entry_type', { ascending: true })
           
         if (entriesError) throw entriesError
         
@@ -220,26 +247,32 @@ export class IntegratedDocumentGenerator {
     const page = pdf.addPage([595.28, 841.89]) // A4 size
     const { width, height } = page.getSize()
     
-    const fontSize = 14
-    const titleFontSize = 18
+    const font = await pdf.embedFont(StandardFonts.HelveticaBold)
+    const regularFont = await pdf.embedFont(StandardFonts.Helvetica)
     
-    // Add title
-    page.drawText('Integrated Land Record Document', {
-      x: 50,
-      y: height - 80,
-      size: titleFontSize
+    const titleFontSize = 24
+    const headingFontSize = 16
+    const fontSize = 14
+    
+    // Add main title (centered)
+    const mainTitle = 'Integrated Land Record Document'
+    const mainTitleWidth = font.widthOfTextAtSize(mainTitle, titleFontSize)
+    page.drawText(mainTitle, {
+      x: (width - mainTitleWidth) / 2,
+      y: height - 100,
+      size: titleFontSize,
+      font: font,
+      color: rgb(0, 0, 0.5)
     })
     
-    // Add land basic information
-    let yPosition = height - 150
-    const lineHeight = 25
+    // Add land basic information (centered)
+    let yPosition = height - 180
+    const lineHeight = 30
     
     const info = [
       `District: ${landBasicInfo?.district || 'N/A'}`,
       `Taluka: ${landBasicInfo?.taluka || 'N/A'}`,
       `Village: ${landBasicInfo?.village || 'N/A'}`,
-      `Survey Number: ${landBasicInfo?.sNo || 'N/A'}`,
-      `Survey Type: ${landBasicInfo?.sNoType || 'N/A'}`,
       `Block Number: ${landBasicInfo?.blockNo || 'N/A'}`,
       `Re-survey Number: ${landBasicInfo?.reSurveyNo || 'N/A'}`,
       `Area: ${landBasicInfo?.area?.value || 'N/A'} ${landBasicInfo?.area?.unit || ''}`,
@@ -248,10 +281,13 @@ export class IntegratedDocumentGenerator {
     ]
     
     for (const line of info) {
+      const textWidth = regularFont.widthOfTextAtSize(line, fontSize)
       page.drawText(line, {
-        x: 50,
+        x: (width - textWidth) / 2,
         y: yPosition,
-        size: fontSize
+        size: fontSize,
+        font: regularFont,
+        color: rgb(0, 0, 0)
       })
       yPosition -= lineHeight
     }
@@ -272,29 +308,51 @@ export class IntegratedDocumentGenerator {
         const sourcePdf = await PDFDocument.load(arrayBuffer)
         const pages = await pdf.copyPages(sourcePdf, sourcePdf.getPageIndices())
         
-        // Add a separator page with document info
+        // Add a separator page with document info (centered)
         const separatorPage = pdf.addPage([595.28, 841.89])
-        const { height } = separatorPage.getSize()
+        const { width, height } = separatorPage.getSize()
         
-        separatorPage.drawText(docInfo.title || 'Document', {
-          x: 50,
-          y: height - 100,
-          size: 16
+        const font = await pdf.embedFont(StandardFonts.HelveticaBold)
+        const regularFont = await pdf.embedFont(StandardFonts.Helvetica)
+        
+        const titleFontSize = 20
+        const infoFontSize = 16
+        
+        // Center the title
+        const title = docInfo.title || 'Document'
+        const titleWidth = font.widthOfTextAtSize(title, titleFontSize)
+        separatorPage.drawText(title, {
+          x: (width - titleWidth) / 2,
+          y: height / 2 + 50,
+          size: titleFontSize,
+          font: font,
+          color: rgb(0, 0, 0.5)
         })
         
+        let yPosition = height / 2
+        
         if (docInfo.year) {
-          separatorPage.drawText(`Year: ${docInfo.year}`, {
-            x: 50,
-            y: height - 130,
-            size: 12
+          const yearText = `Year: ${docInfo.year}`
+          const yearWidth = regularFont.widthOfTextAtSize(yearText, infoFontSize)
+          separatorPage.drawText(yearText, {
+            x: (width - yearWidth) / 2,
+            y: yPosition,
+            size: infoFontSize,
+            font: regularFont,
+            color: rgb(0, 0, 0)
           })
+          yPosition -= 40
         }
         
         if (docInfo.s_no) {
-          separatorPage.drawText(`S.No: ${docInfo.s_no}`, {
-            x: 50,
-            y: height - 150,
-            size: 12
+          const snoText = `S.No: ${docInfo.s_no}`
+          const snoWidth = regularFont.widthOfTextAtSize(snoText, infoFontSize)
+          separatorPage.drawText(snoText, {
+            x: (width - snoWidth) / 2,
+            y: yPosition,
+            size: infoFontSize,
+            font: regularFont,
+            color: rgb(0, 0, 0)
           })
         }
         
@@ -311,18 +369,17 @@ export class IntegratedDocumentGenerator {
       console.error(`Error processing document ${docInfo.title}:`, error)
       // Add an error page instead
       const errorPage = pdf.addPage([595.28, 841.89])
-      const { height } = errorPage.getSize()
+      const { width, height } = errorPage.getSize()
+      const font = await pdf.embedFont(StandardFonts.Helvetica)
       
-      errorPage.drawText(`Failed to load: ${docInfo.title}`, {
-        x: 50,
-        y: height - 100,
-        size: 16
-      })
-      
-      errorPage.drawText(`URL: ${docInfo.url}`, {
-        x: 50,
-        y: height - 130,
-        size: 10
+      const errorText = `Failed to load: ${docInfo.title}`
+      const errorWidth = font.widthOfTextAtSize(errorText, 16)
+      errorPage.drawText(errorText, {
+        x: (width - errorWidth) / 2,
+        y: height / 2,
+        size: 16,
+        font: font,
+        color: rgb(0.8, 0, 0)
       })
     }
   }
@@ -332,11 +389,18 @@ export class IntegratedDocumentGenerator {
       const page = pdf.addPage([595.28, 841.89])
       const { width, height } = page.getSize()
       
-      // Add document title
-      page.drawText(docInfo.title || 'Document', {
-        x: 50,
+      const font = await pdf.embedFont(StandardFonts.HelveticaBold)
+      const titleFontSize = 18
+      
+      // Add document title (centered)
+      const title = docInfo.title || 'Document'
+      const titleWidth = font.widthOfTextAtSize(title, titleFontSize)
+      page.drawText(title, {
+        x: (width - titleWidth) / 2,
         y: height - 50,
-        size: 14
+        size: titleFontSize,
+        font: font,
+        color: rgb(0, 0, 0.5)
       })
       
       // Determine image type and embed
@@ -359,11 +423,15 @@ export class IntegratedDocumentGenerator {
       const { width: imgWidth, height: imgHeight } = image.scale(1)
       const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight)
       
+      const scaledWidth = imgWidth * scale
+      const scaledHeight = imgHeight * scale
+      
+      // Center the image
       page.drawImage(image, {
-        x: 50,
-        y: 100,
-        width: imgWidth * scale,
-        height: imgHeight * scale
+        x: (width - scaledWidth) / 2,
+        y: (height - scaledHeight) / 2 - 50,
+        width: scaledWidth,
+        height: scaledHeight
       })
       
     } catch (error) {
