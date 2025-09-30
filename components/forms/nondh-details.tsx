@@ -702,6 +702,7 @@ const propagateReasonToAffectedNondh = (affectedNondhNo: string, reason: string)
   ));
 };
 
+
 const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, currentSNos: string[]) => {
   console.log('=== getAvailableOwnersForGanot START ===');
   console.log('Ganot Type:', ganotType);
@@ -728,6 +729,12 @@ const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, c
           return [];
         }
         
+        // Skip if status is invalid/nullified (Radd/Na Manjoor)
+        if (detail.status === 'invalid' || detail.status === 'nullified') {
+          console.log('  Skipped - Status is Radd/Na Manjoor');
+          return [];
+        }
+        
         console.log('  Detail type:', detail.type);
         console.log('  Owner relations count:', detail.ownerRelations.length);
         
@@ -741,12 +748,55 @@ const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, c
         
         const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
         console.log('  Is transfer type:', isTransferType);
-        if (isTransferType) {
+        
+        const owners = [];
+        
+        // Add old owner with remaining area (if any remaining)
+        if (isTransferType && detail.oldOwner && detail.oldOwner.trim() !== "") {
           console.log('  Old owner:', detail.oldOwner);
+          
+          // Calculate remaining area for old owner
+          const newOwnersTotal = detail.ownerRelations
+            .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+            .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+          
+          // Find old owner's original area
+          const oldOwnerOriginalArea = (() => {
+            const nondhIndex = allSortedNondhs.findIndex(n => n.id === nondh.id);
+            const priorNondhs = allSortedNondhs.slice(0, nondhIndex);
+            
+            for (let i = priorNondhs.length - 1; i >= 0; i--) {
+              const priorDetail = nondhDetailData.find(d => d.nondhId === priorNondhs[i].id);
+              if (!priorDetail || priorDetail.status === 'invalid' || priorDetail.status === 'nullified') continue;
+              
+              const ownerRel = priorDetail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+              if (ownerRel) {
+                return ownerRel.area?.value || 0;
+              }
+            }
+            return 0;
+          })();
+          
+          const remainingArea = Math.max(0, oldOwnerOriginalArea - newOwnersTotal);
+          console.log(`  Old owner remaining area: ${remainingArea}`);
+          
+          // Only include old owner if they have remaining area
+          if (remainingArea > 0) {
+            owners.push({
+              id: `old-${detail.oldOwner}-${nondh.id}`,
+              name: detail.oldOwner,
+              area: { value: remainingArea, unit: detail.ownerRelations[0]?.area?.unit || 'sq_m' },
+              sNo: firstSNo,
+              nondhId: nondh.id,
+              nondhType: detail.type,
+              isOldOwner: true,
+              sortIndex: index
+            });
+          }
         }
         
-        // For transfer types, only return new owners (exclude old owner)
-        const filteredRelations = detail.ownerRelations
+        // Add new owners (exclude old owner)
+        const newOwners = detail.ownerRelations
           .filter(r => {
             if (!isTransferType) return true;
             const isNotOldOwner = r.ownerName !== detail.oldOwner;
@@ -760,11 +810,14 @@ const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, c
             sNo: firstSNo,
             nondhId: nondh.id,
             nondhType: detail.type,
+            isOldOwner: false,
             sortIndex: index
           }));
         
-        console.log('  Filtered relations:', filteredRelations.map(r => r.name));
-        return filteredRelations;
+        owners.push(...newOwners);
+        
+        console.log('  All owners from this nondh:', owners.map(o => `${o.name} ${o.isOldOwner ? '(old, area: ' + o.area.value + ')' : ''}`));
+        return owners;
       })
       .flat()
       .filter(owner => owner.name.trim() !== '');
@@ -773,13 +826,12 @@ const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, c
     
     // Get unique owners - keep only the latest (highest sortIndex) for each name
     const uniqueOwnersMap = new Map();
-allOwners.forEach(owner => {
-  const existing = uniqueOwnersMap.get(owner.name);
-  // Keep the one with HIGHER sortIndex (later nondh)
-  if (!existing || existing.sortIndex < owner.sortIndex) {
-    uniqueOwnersMap.set(owner.name, owner);
-  }
-});
+    allOwners.forEach(owner => {
+      const existing = uniqueOwnersMap.get(owner.name);
+      if (!existing || existing.sortIndex < owner.sortIndex) {
+        uniqueOwnersMap.set(owner.name, owner);
+      }
+    });
     
     const result = Array.from(uniqueOwnersMap.values());
     console.log('\nFinal unique owners:', result.map(o => `${o.name} (index: ${o.sortIndex})`));
@@ -791,22 +843,79 @@ allOwners.forEach(owner => {
     const previousNondhs = allSortedNondhs.slice(0, currentIndex);
     console.log('Previous nondhs count:', previousNondhs.length);
     
-    // Get old owners (excluding 2nd Right from Hukam)
+    // Get old owners (excluding 2nd Right from Hukam with Radd/Na Manjoor status)
     console.log('\n--- Processing OLD OWNERS ---');
     const allOldOwners = previousNondhs
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index}) for OLD owners`);
         const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
-        if (!detail || (detail.type === "Hukam" && detail.ganot === "2nd Right")) {
-          console.log('  Skipped (no detail or is Hukam 2nd Right)');
+        
+        // Skip if no detail, is Hukam 2nd Right, OR status is invalid/nullified
+        if (!detail || 
+            (detail.type === "Hukam" && detail.ganot === "2nd Right") ||
+            detail.status === 'invalid' || 
+            detail.status === 'nullified') {
+          console.log('  Skipped (no detail, Hukam 2nd Right, or Radd/Na Manjoor)');
           return [];
         }
         
         console.log('  Detail type:', detail.type);
         const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
         console.log('  Is transfer type:', isTransferType);
-        if (isTransferType) {
+        
+        const owners = [];
+        
+        // Add old owner with remaining area (if any remaining)
+        if (isTransferType && detail.oldOwner && detail.oldOwner.trim() !== "") {
           console.log('  Old owner:', detail.oldOwner);
+          
+          // Calculate remaining area for old owner
+          const newOwnersTotal = detail.ownerRelations
+            .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+            .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+          
+          // Find old owner's original area
+          const oldOwnerOriginalArea = (() => {
+            const nondhIndex = allSortedNondhs.findIndex(n => n.id === nondh.id);
+            const priorNondhs = allSortedNondhs.slice(0, nondhIndex);
+            
+            for (let i = priorNondhs.length - 1; i >= 0; i--) {
+              const priorDetail = nondhDetailData.find(d => d.nondhId === priorNondhs[i].id);
+              if (!priorDetail || priorDetail.status === 'invalid' || priorDetail.status === 'nullified') continue;
+              
+              const ownerRel = priorDetail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+              if (ownerRel) {
+                return ownerRel.area?.value || 0;
+              }
+            }
+            return 0;
+          })();
+          
+          const remainingArea = Math.max(0, oldOwnerOriginalArea - newOwnersTotal);
+          console.log(`  Old owner remaining area: ${remainingArea}`);
+          
+          const firstSNo = (() => {
+          try {
+            return JSON.parse(nondh.affectedSNos[0]).number;
+          } catch (e) {
+            return nondh.affectedSNos[0];
+          }
+        })();
+
+          // Only include old owner if they have remaining area
+          if (remainingArea > 0) {
+            owners.push({
+              id: `old-${detail.oldOwner}-${nondh.id}`,
+              name: detail.oldOwner,
+              area: { value: remainingArea, unit: detail.ownerRelations[0]?.area?.unit || 'sq_m' },
+              sNo: firstSNo,
+              nondhId: nondh.id,
+              nondhType: detail.type,
+              category: 'old',
+              isOldOwner: true,
+              sortIndex: index
+            });
+          }
         }
         
         const firstSNo = (() => {
@@ -817,7 +926,8 @@ allOwners.forEach(owner => {
           }
         })();
         
-        const filteredRelations = detail.ownerRelations
+        // Add new owners (exclude old owner)
+        const newOwners = detail.ownerRelations
           .filter(r => {
             if (!isTransferType) return true;
             const isNotOldOwner = r.ownerName !== detail.oldOwner;
@@ -832,11 +942,14 @@ allOwners.forEach(owner => {
             nondhId: nondh.id,
             nondhType: detail.type,
             category: 'old',
+            isOldOwner: false,
             sortIndex: index
           }));
         
-        console.log('  Filtered OLD owners:', filteredRelations.map(r => r.name));
-        return filteredRelations;
+        owners.push(...newOwners);
+        
+        console.log('  Filtered OLD owners:', owners.map(r => `${r.name} ${r.isOldOwner ? '(old, area: ' + r.area.value + ')' : ''}`));
+        return owners;
       })
       .flat()
       .filter(owner => owner.name.trim() !== '');
@@ -857,18 +970,22 @@ allOwners.forEach(owner => {
     const oldOwners = Array.from(oldOwnersMap.values());
     console.log('\nFinal unique OLD owners:', oldOwners.map(o => `${o.name} (index: ${o.sortIndex})`));
 
-    // Get new owners (2nd Right from previous Hukam nondhs)
+    // Get new owners (2nd Right from previous Hukam nondhs) - ONLY if status is Pramanik (valid)
     console.log('\n--- Processing NEW OWNERS ---');
     const allNewOwners = previousNondhs
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index}) for NEW owners`);
         const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
-        if (!detail || !(detail.type === "Hukam" && detail.ganot === "2nd Right")) {
-          console.log('  Skipped (not Hukam 2nd Right)');
+        
+        // Only include if it's Hukam 2nd Right AND status is valid (Pramanik)
+        if (!detail || 
+            !(detail.type === "Hukam" && detail.ganot === "2nd Right") ||
+            detail.status !== 'valid') {
+          console.log('  Skipped (not Hukam 2nd Right or not Pramanik status)');
           return [];
         }
         
-        console.log('  Is Hukam 2nd Right - including all owners');
+        console.log('  Is Hukam 2nd Right with Pramanik status - including all owners');
         
         const firstSNo = (() => {
           try {
@@ -886,6 +1003,7 @@ allOwners.forEach(owner => {
           nondhId: nondh.id,
           nondhType: detail.type,
           category: 'new',
+          isOldOwner: false,
           sortIndex: index
         }));
         
@@ -1629,27 +1747,84 @@ const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   // Only look at nondhs that come BEFORE the current one
   const previousNondhs = allSortedNondhs.slice(0, currentIndex);
 
-  return nondhDetailData
-    .filter(d => {
-      // Must be from a previous nondh
-      const nondh = previousNondhs.find(n => n.id === d.nondhId);
-      if (!nondh) return false;
+  // Track owners by name to keep only the most recent version
+  const ownerMap = new Map();
+
+  previousNondhs.forEach(nondh => {
+    const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
+    
+    // Skip if no detail OR if status is invalid/nullified (Radd/Na Manjoor)
+    if (!detail || detail.status === 'invalid' || detail.status === 'nullified') {
+      return;
+    }
+
+    // Only include relevant nondh types
+    if (!["Varsai", "Hakkami", "Vechand", "Vehchani", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(detail.type)) {
+      return;
+    }
+
+    // For transfer types, handle old owner specially
+    const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
+    
+    if (isTransferType && detail.oldOwner) {
+      // Calculate if old owner's area was completely distributed
+      const newOwnersTotal = detail.ownerRelations
+        .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+        .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
       
-      // Include all relevant nondh types, no S.No filtering
-      return ["Varsai", "Hakkami", "Vechand", "Vehchani", "Kabjedaar", "Ekatrikaran", "Hayati_ma_hakh_dakhal"].includes(d.type);
-    })
-    .sort((a, b) => {
-      const nondhA = nondhs.find(n => n.id === a.nondhId);
-      const nondhB = nondhs.find(n => n.id === b.nondhId);
-      return nondhA && nondhB ? sortNondhs(nondhA, nondhB) : 0;
-    })
-    .flatMap(d => d.ownerRelations.map(r => ({ 
-      name: r.ownerName, 
-      area: r.area,
-      type: d.type,
-      nondhId: d.nondhId
-    })))
-    .filter(owner => owner.name.trim() !== '');
+      // Find old owner's original area from previous nondhs
+      const oldOwnerOriginalArea = (() => {
+        // Look backwards from this nondh to find old owner's area
+        const nondhIndex = allSortedNondhs.findIndex(n => n.id === nondh.id);
+        const priorNondhs = allSortedNondhs.slice(0, nondhIndex);
+        
+        for (let i = priorNondhs.length - 1; i >= 0; i--) {
+          const priorDetail = nondhDetailData.find(d => d.nondhId === priorNondhs[i].id);
+          if (!priorDetail) continue;
+          
+          const ownerRel = priorDetail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
+          if (ownerRel) {
+            return ownerRel.area?.value || 0;
+          }
+        }
+        return 0;
+      })();
+      
+      const remainingArea = oldOwnerOriginalArea - newOwnersTotal;
+      
+      // Update or add old owner with remaining area (0 if fully distributed)
+      ownerMap.set(detail.oldOwner, {
+        name: detail.oldOwner,
+        area: { 
+          value: Math.max(0, remainingArea), 
+          unit: detail.ownerRelations[0]?.area?.unit || 'sq_m' 
+        },
+        type: detail.type,
+        nondhId: nondh.id
+      });
+    }
+
+    // Add/update new owners (for all types including transfer types)
+    detail.ownerRelations.forEach(rel => {
+      if (rel.ownerName.trim() === "") return;
+      
+      // For transfer types, skip old owner in relations (already handled above)
+      if (isTransferType && rel.ownerName === detail.oldOwner) {
+        return;
+      }
+      
+      // Update owner in map (this will overwrite older versions)
+      ownerMap.set(rel.ownerName, {
+        name: rel.ownerName,
+        area: rel.area,
+        type: detail.type,
+        nondhId: nondh.id
+      });
+    });
+  });
+
+  // Return array of unique owners (most recent version of each)
+  return Array.from(ownerMap.values());
 };
 
   const updateNondhDetailData = (newData: NondhDetail[]) => {
@@ -1755,6 +1930,10 @@ const toggleAffectedNondhStatus = (affectedNondhNo: string, uiStatus: string, hu
     ? getPreviousOwners(detail.sNo, detail.nondhId)
     : [];
 
+const vehchaniPreviousOwners = detail.type === "Vehchani" 
+  ? getPreviousOwners(detail.sNo, detail.nondhId)
+  : [];
+
   return (
     <div className="space-y-4">
       {/* SD Date and Amount fields for Vechand */}
@@ -1835,6 +2014,194 @@ const toggleAffectedNondhStatus = (affectedNondhNo: string, uiStatus: string, hu
         </Select>
       </div>
 
+{/* Vehchani Section */}
+      {detail.type === "Vehchani" && (
+  <div className="space-y-4">
+    {/* Equal distribution checkbox */}
+    <div className="flex items-center space-x-2">
+      <Checkbox
+        id={`equal_dist_${detail.id}`}
+        checked={equalDistribution[detail.id] || false}
+        onCheckedChange={(checked) => {
+          setEqualDistribution(prev => ({ ...prev, [detail.id]: checked }));
+          
+          if (checked) {
+            // Get old owner area from previous owners data
+            const selectedOldOwner = vehchaniPreviousOwners.find(owner => owner.name === detail.oldOwner);
+            const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+            
+            // Get only new owners (excluding old owner)
+            const newOwners = detail.ownerRelations.filter(rel => 
+              rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
+            );
+            const newOwnersCount = newOwners.length;
+            
+            if (newOwnersCount > 0) {
+              const equalArea = oldOwnerArea / newOwnersCount;
+              
+              const updatedRelations = detail.ownerRelations.map((relation) => {
+                // Don't modify old owner (shouldn't be in relations anyway)
+                if (relation.ownerName === detail.oldOwner) {
+                  return relation;
+                }
+                return { ...relation, area: { ...relation.area, value: equalArea } };
+              });
+              
+              updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+            }
+          }
+        }}
+      />
+      <Label htmlFor={`equal_dist_${detail.id}`}>Equal Distribution of Land</Label>
+    </div>
+
+    {/* Available Previous Owners as Checkboxes for NEW owners only */}
+    <div className="space-y-2">
+      <Label>Select New Owners *</Label>
+      <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
+        {vehchaniPreviousOwners
+          .filter(owner => owner.name !== detail.oldOwner)
+          .map((owner, index) => {
+            const isSelected = detail.ownerRelations.some(rel => 
+              rel.ownerName === owner.name && rel.ownerName !== detail.oldOwner
+            );
+            
+            return (
+              <div key={`vehchani_${owner.name}_${index}`} className="flex items-center space-x-2 mb-2">
+                <Checkbox
+                  id={`vehchani_owner_${index}`}
+                  checked={isSelected}
+                  onCheckedChange={(checked) => {
+                    // Get old owner area from previous owners data
+                    const selectedOldOwner = vehchaniPreviousOwners.find(o => o.name === detail.oldOwner);
+                    const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+                    
+                    let updatedRelations = [...detail.ownerRelations];
+                    
+                    if (checked) {
+                      // Add new owner relation with 0 area
+                      const newRelation = {
+                        id: Date.now().toString(),
+                        ownerName: owner.name,
+                        sNo: detail.sNo,
+                        area: { value: 0, unit: selectedOldOwner?.area?.unit || owner.area.unit },
+                        isValid: true
+                      };
+                      
+                      updatedRelations.push(newRelation);
+                    } else {
+                      // Remove owner relation
+                      updatedRelations = updatedRelations.filter(rel => 
+                        rel.ownerName !== owner.name
+                      );
+                    }
+                    
+                    updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+                    
+                    // Auto-distribute if equal distribution is enabled
+                    if (equalDistribution[detail.id] && selectedOldOwner) {
+                      const newOwnersCount = updatedRelations.filter(rel => 
+                        rel.ownerName !== detail.oldOwner
+                      ).length;
+                      
+                      if (newOwnersCount > 0) {
+                        const equalArea = oldOwnerArea / newOwnersCount;
+                        
+                        const redistributed = updatedRelations.map(relation => {
+                          // Don't modify old owner (shouldn't be in relations)
+                          if (relation.ownerName === detail.oldOwner) {
+                            return relation;
+                          }
+                          return { ...relation, area: { ...relation.area, value: equalArea } };
+                        });
+                        
+                        updateNondhDetail(detail.id, { ownerRelations: redistributed });
+                      }
+                    }
+                  }}
+                />
+                <Label htmlFor={`vehchani_owner_${index}`} className="flex-1">
+                  {owner.name} ({owner.area.value} {owner.area.unit})
+                </Label>
+              </div>
+            );
+          })}
+      </div>
+    </div>
+
+    {/* Area Distribution for NEW Owners Only */}
+    {detail.ownerRelations.filter(rel => 
+      rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
+    ).length > 0 && (
+      <div className="space-y-3">
+        <Label>Area Distribution for New Owners</Label>
+        
+        {/* Show new owners with editable areas */}
+        {detail.ownerRelations
+          .filter(rel => rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner)
+          .map((relation) => (
+            <div key={relation.id} className="flex items-center gap-3 p-2 border rounded">
+              <span className="min-w-0 flex-1 font-medium">{relation.ownerName}</span>
+              <div className="flex-shrink-0">
+                {areaFields({
+                  area: relation.area,
+                  onChange: (newArea) => {
+                    // Validate before updating
+                    const currentDetail = nondhDetailData.find(d => d.id === detail.id);
+                    if (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(currentDetail?.type || "")) {
+                      const oldOwnerArea = getPreviousOwners(currentDetail.sNo, currentDetail.nondhId)
+                        .find(owner => owner.name === currentDetail.oldOwner)?.area?.value || 0;
+                      
+                      const otherNewOwnersTotal = currentDetail.ownerRelations
+                        .filter(rel => rel.id !== relation.id && rel.ownerName !== currentDetail.oldOwner && rel.ownerName.trim() !== "")
+                        .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+                      
+                      const proposedTotal = otherNewOwnersTotal + (newArea.value || 0);
+                      
+                      if (proposedTotal > oldOwnerArea) {
+                        toast({
+                          title: "Area validation error",
+                          description: `Total area would exceed old owner's area. Maximum allowed: ${oldOwnerArea - otherNewOwnersTotal}`,
+                          variant: "destructive"
+                        });
+                        return;
+                      }
+                    }
+                    
+                    updateOwnerRelation(detail.id, relation.id, { area: newArea });
+                  },
+                  disabled: equalDistribution[detail.id]
+                })}
+              </div>
+            </div>
+          ))}
+        
+        {/* Area validation display */}
+        <div className="text-sm text-muted-foreground">
+          {(() => {
+            // Get old owner area from previous owners data
+            const selectedOldOwner = vehchaniPreviousOwners.find(owner => owner.name === detail.oldOwner);
+            const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+            // Only sum new owners (old owner not in relations)
+            const newOwnersTotal = detail.ownerRelations
+              .filter(rel => rel.ownerName !== detail.oldOwner)
+              .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+            const remaining = oldOwnerArea - newOwnersTotal;
+            
+            return (
+              <div className={`p-2 rounded ${remaining < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+                {remaining < 0 && " (⚠️ Exceeds old owner area!)"}
+                {remaining > 0 && " (Old owner retains remaining area)"}
+                {equalDistribution[detail.id] && detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length > 0 && ` (Equal distribution: ${(oldOwnerArea / detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length).toFixed(2)} each)`}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    )}
+  </div>
+)}
       {/* Hakkami Section */}
       {detail.type === "Hakkami" && (
         <div className="space-y-4">

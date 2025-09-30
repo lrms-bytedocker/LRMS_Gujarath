@@ -1644,7 +1644,7 @@ const toggleCollapse = (id: string) => {
                             <div>
                               <Label>S.No Type</Label>
                               <Select
-                                value={entry.sNoTypeUI}
+                                value={entry.sNoTypeUI || "block_no"} 
                                 onValueChange={(val) =>
                                   updateSlabEntry(slab.id, "paiky", globalIndex, {
                                     sNoTypeUI: val as SNoTypeUI,
@@ -1920,7 +1920,7 @@ const toggleCollapse = (id: string) => {
           <div>
             <Label>S.No Type</Label>
             <Select
-              value={entry.sNoTypeUI}
+              value={entry.sNoTypeUI || "block_no"} 
               onValueChange={(val) =>
                 updateSlabEntry(slab.id, "ekatrikaran", globalIndex, {
                   sNoTypeUI: val as SNoTypeUI,
