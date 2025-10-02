@@ -1090,6 +1090,27 @@ if (data?.error) {
       return { data: null, error };
     }
   }
+
+  static async deleteNondhOwnerRelation(relationId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('nondh_owner_relations')
+      .delete()
+      .eq('id', relationId)
+      .select()
+    
+    if (error) {
+      console.error('Error deleting nondh owner relation:', error)
+      return { data: null, error }
+    }
+    
+    return { data, error: null }
+  } catch (error) {
+    console.error('Exception deleting nondh owner relation:', error)
+    return { data: null, error }
+  }
+}
+
 static async get712Documents(landRecordId: string) {
   try {
     const docs = [];
@@ -1173,12 +1194,15 @@ static async get712Documents(landRecordId: string) {
 
   // Create a new nondh detail
   static async createNondhDetail(data: any) {
-    return await supabase
-      .from('nondh_details')
-      .insert(data)
-      .select()
-      .single();
-  }
+  // Remove id if it exists - let database generate it
+  const { id, ...insertData } = data;
+  
+  return await supabase
+    .from('nondh_details')
+    .insert(insertData)
+    .select()
+    .single();
+}
 
   // Update a nondh detail
   static async updateNondhDetail(id: string, updates: any) {

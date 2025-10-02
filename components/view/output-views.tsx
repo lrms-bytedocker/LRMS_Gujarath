@@ -635,10 +635,6 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
         
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>
-            <span className="text-muted-foreground">S.No:</span>
-            <div className="font-medium">{entry.sNo}</div>
-          </div>
-          <div>
             <span className="text-muted-foreground">Area:</span>
             <div className="font-medium">{entry.area?.toFixed(2)} sq.m</div>
           </div>
@@ -867,7 +863,7 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
                   )}
                 </TableCell>
                 <TableCell>{nondh.nondhType}</TableCell>
-                <TableCell>{nondh.nondhType === 'Hukam' ? (nondh.hukamType || '-') : '-'}</TableCell>
+                <TableCell>{nondh.type === 'Hukam' ? (nondh.hukamType || '-') : '-'}</TableCell>
                 <TableCell className="max-w-xs truncate">{nondh.vigat || "-"}</TableCell>
                 <TableCell>{nondh.affectedSNos}</TableCell>
                 <TableCell>
@@ -1078,7 +1074,6 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
                       <TableRow>
                         <TableHead>Year</TableHead>
                         <TableHead>Owner Name</TableHead>
-                        <TableHead>S.No</TableHead>
                         <TableHead>Affected S.No</TableHead>
                         <TableHead>Area (sq.m)</TableHead>
                         <TableHead>Nondh No.</TableHead>
@@ -1089,7 +1084,6 @@ console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
                         <TableRow key={index}>
                           <TableCell>{entry.year}</TableCell>
                           <TableCell>{entry.ownerName}</TableCell>
-                          <TableCell>{entry.sNo}</TableCell>
                           <TableCell>{entry.affectedSNos || entry.sNo}</TableCell>
                           <TableCell>{entry.area?.toFixed(2)}</TableCell>
                           <TableCell>{entry.nondhNumber || "-"}</TableCell>

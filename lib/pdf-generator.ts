@@ -277,7 +277,7 @@ export class IntegratedDocumentGenerator {
       `Re-survey Number: ${landBasicInfo?.reSurveyNo || 'N/A'}`,
       `Area: ${landBasicInfo?.area?.value || 'N/A'} ${landBasicInfo?.area?.unit || ''}`,
       `Is Promulgation: ${landBasicInfo?.isPromulgation ? 'Yes' : 'No'}`,
-      `Generated on: ${new Date().toLocaleDateString()}`
+      `Generated on: ${new Date().toLocaleDateString('en-GB')}`
     ]
     
     for (const line of info) {
