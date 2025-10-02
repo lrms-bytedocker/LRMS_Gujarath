@@ -2708,37 +2708,12 @@ case "Bojo":
                 />
               </div>
               <div className="space-y-2">
-                <Label>Area</Label>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    type="number"
-                    value={relation.area.value || 0}
-                    onChange={(e) => {
-                      const newValue = parseFloat(e.target.value) || 0;
-                      updateOwnerRelation(detail.id, relation.id, { 
-                        area: { ...relation.area, value: newValue } 
-                      });
-                    }}
-                    className="w-20"
-                    min="0"
-                    step="0.01"
-                  />
-                  <Select
-                    value={relation.area.unit}
-                    onValueChange={(value) => updateOwnerRelation(detail.id, relation.id, { 
-                      area: { ...relation.area, unit: value } 
-                    })}
-                  >
-                    <SelectTrigger className="w-28">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sq_m">Sq. M</SelectItem>
-                      <SelectItem value="acre_guntha">Acre-Guntha</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+  <Label>Area</Label>
+  {areaFields({
+    area: relation.area,
+    onChange: (newArea) => updateOwnerRelation(detail.id, relation.id, { area: newArea })
+  })}
+</div>
             </div>
           </Card>
         ))}
