@@ -1093,6 +1093,7 @@ if (data?.error) {
 
   static async deleteNondhOwnerRelation(relationId: string) {
   try {
+    console.log('Deleting nondh owner relation with ID:', relationId);
     const { data, error } = await supabase
       .from('nondh_owner_relations')
       .delete()

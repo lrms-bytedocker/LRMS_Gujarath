@@ -1043,10 +1043,20 @@ const getMinDateForNondh = (nondhId: string): string => {
   
   if (currentIndex <= 0) return ''; // First nondh has no minimum date
   
-  // Get the date of the previous nondh
+  // Get the date of the previous nondh and add 1 day to prevent same date
   const prevNondhId = allSortedNondhs[currentIndex - 1].id;
-  const prevDetail = nondhDetailData.find(d => d.nondhId === prevNondhId);
-  return prevDetail?.date || '';
+  const prevDetail = nondhDetails.find(d => d.nondhId === prevNondhId);
+  if (!prevDetail?.date) return '';
+  
+  const prevDate = new Date(prevDetail.date);
+  // Create a new date to avoid modifying the original
+  const minDate = new Date(prevDate);
+  minDate.setDate(minDate.getDate() + 1);
+  
+  // Check if the date is valid after modification
+  if (isNaN(minDate.getTime())) return '';
+  
+  return minDate.toISOString().split('T')[0];
 };
 
 const getMaxDateForNondh = (nondhId: string): string => {
@@ -1055,10 +1065,20 @@ const getMaxDateForNondh = (nondhId: string): string => {
   
   if (currentIndex >= allSortedNondhs.length - 1) return ''; // Last nondh has no maximum date
   
-  // Get the date of the next nondh
+  // Get the date of the next nondh and subtract 1 day to prevent same date
   const nextNondhId = allSortedNondhs[currentIndex + 1].id;
-  const nextDetail = nondhDetailData.find(d => d.nondhId === nextNondhId);
-  return nextDetail?.date || '';
+  const nextDetail = nondhDetails.find(d => d.nondhId === nextNondhId);
+  if (!nextDetail?.date) return '';
+  
+  const nextDate = new Date(nextDetail.date);
+  // Create a new date to avoid modifying the original
+  const maxDate = new Date(nextDate);
+  maxDate.setDate(maxDate.getDate() - 1);
+  
+  // Check if the date is valid after modification
+  if (isNaN(maxDate.getTime())) return '';
+  
+  return maxDate.toISOString().split('T')[0];
 };
 
 const isValidNondhDateOrder = (nondhId: string, newDate: string): boolean => {
@@ -3713,27 +3733,19 @@ if (insertError) throw insertError;
     min={getMinDateForNondh(sortedNondh.id)}
     max={getMaxDateForNondh(sortedNondh.id)}
     onChange={(e) => {
-  const newDate = e.target.value;
-  if (isValidNondhDateOrder(sortedNondh.id, newDate)) {
-    updateNondhDetail(detail.id, { date: newDate });
-    
-    // Auto-populate areas when date changes
-    const yearSlabArea = getYearSlabAreaForDate(newDate);
-    if (yearSlabArea) {
-      const updatedRelations = detail.ownerRelations.map(relation => ({
-        ...relation,
-        area: { ...yearSlabArea }
-      }));
-      updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
-    }
-  } else {
-    toast({
-      title: "Invalid Date",
-      description: "Nondh dates must be in ascending order",
-      variant: "destructive"
-    });
-  }
-}}
+      const newDate = e.target.value;
+      updateNondhDetail(detail.id, { date: newDate });
+      
+      // Auto-populate areas when date changes
+      const yearSlabArea = getYearSlabAreaForDate(newDate);
+      if (yearSlabArea) {
+        const updatedRelations = detail.ownerRelations.map(relation => ({
+          ...relation,
+          area: { ...yearSlabArea }
+        }));
+        updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+      }
+    }}
   />
 </div>
 
