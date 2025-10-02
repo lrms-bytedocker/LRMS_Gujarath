@@ -2708,37 +2708,12 @@ case "Bojo":
                 />
               </div>
               <div className="space-y-2">
-                <Label>Area</Label>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    type="number"
-                    value={relation.area.value || 0}
-                    onChange={(e) => {
-                      const newValue = parseFloat(e.target.value) || 0;
-                      updateOwnerRelation(detail.id, relation.id, { 
-                        area: { ...relation.area, value: newValue } 
-                      });
-                    }}
-                    className="w-20"
-                    min="0"
-                    step="0.01"
-                  />
-                  <Select
-                    value={relation.area.unit}
-                    onValueChange={(value) => updateOwnerRelation(detail.id, relation.id, { 
-                      area: { ...relation.area, unit: value } 
-                    })}
-                  >
-                    <SelectTrigger className="w-28">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sq_m">Sq. M</SelectItem>
-                      <SelectItem value="acre_guntha">Acre-Guntha</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+  <Label>Area</Label>
+  {areaFields({
+    area: relation.area,
+    onChange: (newArea) => updateOwnerRelation(detail.id, relation.id, { area: newArea })
+  })}
+</div>
             </div>
           </Card>
         ))}
@@ -3215,55 +3190,7 @@ case "Bojo":
   )
   
       default:
-        return (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Label>Owner Details</Label>
-              <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Owner
-              </Button>
-            </div>
-
-            {detail.ownerRelations.map((relation, index) => (
-              <Card key={relation.id} className="p-3">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-medium">Owner {index + 1}</h4>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => removeOwnerRelation(detail.id, relation.id)}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Owner Name</Label>
-                    <Input
-                      value={relation.ownerName}
-                      onChange={(e) => updateOwnerRelation(detail.id, relation.id, { ownerName: e.target.value })}
-                      placeholder="Enter owner name"
-                    />
-                  </div>
-                  <div className="space-y-2">
-  <Label>Area</Label>
-  {areaFields({
-    area: relation.area,
-    onChange: (newArea) => updateOwnerRelation(
-      detail.id, 
-      relation.id, 
-      { area: newArea }
-    )
-  })}
-</div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )
+        return null;
     }
   }
 

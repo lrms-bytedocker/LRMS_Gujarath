@@ -650,7 +650,7 @@ useEffect(() => {
     
     if (stepData) {
       try {
-        setLoading(true); // Start loading
+        setLoading(true);
         
         // ALWAYS load nondhs from database to get the numbers (1, 2, 3, etc.)
         const { data: nondhData, error: nondhError } = await LandRecordService.getNondhsforDetails(recordId);
@@ -672,13 +672,13 @@ useEffect(() => {
           const needsDetails = !stepData.nondhDetails || stepData.nondhDetails.length === 0;
           
           if (needsDetails) {
-            // Load details from database (your original logic)
+            // Load details from database - pass nondhs to avoid reloading
             await loadDataFromDatabase(formattedNondhs);
           } else {
             // Use nondhs from DB but keep nondhDetails from step data
             setLocalState({
-              nondhs: formattedNondhs, // From database
-              nondhDetails: stepData.nondhDetails || [], // From step data
+              nondhs: formattedNondhs,
+              nondhDetails: stepData.nondhDetails || [],
               originalDetails: stepData.originalDetails || [],
               collapsedNondhs: new Set(stepData.collapsedNondhs || []),
               equalDistribution: stepData.equalDistribution || {},
@@ -696,48 +696,53 @@ useEffect(() => {
             });
           }
         }
+        
         const { data: docs712Data, error: docs712Error } = await LandRecordService.get712Documents(recordId);
-if (!docs712Error && docs712Data) {
-  setDocuments712(docs712Data);
-}
+        if (!docs712Error && docs712Data) {
+          setDocuments712(docs712Data);
+        }
+        
         setIsInitialized(true);
       } catch (error) {
         console.error('Error in initializeData:', error);
       } finally {
-        setLoading(false); // Always stop loading
+        setLoading(false);
       }
     } else {
-      setLoading(false); // Also stop loading if no step data
+      setLoading(false);
     }
   };
 
   if (recordId) {
     initializeData();
   } else {
-    setLoading(false); // Stop loading if no recordId
+    setLoading(false);
   }
 }, [recordId]);
 
-const loadDataFromDatabase = async () => {
+const loadDataFromDatabase = async (providedNondhs?: any[]) => {
   console.log('Loading data from database...');
   if (!recordId) return;
 
   try {
     setLoading(true);
     
-    // Load nondhs from database
-    const { data: nondhData, error: nondhError } = await LandRecordService.getNondhsforDetails(recordId);
-    if (nondhError) throw nondhError;
-    
-    const formattedNondhs = (nondhData || []).map(nondh => ({
-      ...nondh,
-      affectedSNos: Array.isArray(nondh.affected_s_nos) 
-        ? nondh.affected_s_nos 
-        : nondh.affectedSNos 
-          ? [nondh.affectedSNos] 
-          : [],
-      nondhDoc: nondh.nondh_doc_url || ''
-    }));
+    // Use provided nondhs or load from database
+    let formattedNondhs = providedNondhs;
+    if (!formattedNondhs) {
+      const { data: nondhData, error: nondhError } = await LandRecordService.getNondhsforDetails(recordId);
+      if (nondhError) throw nondhError;
+      
+      formattedNondhs = (nondhData || []).map(nondh => ({
+        ...nondh,
+        affectedSNos: Array.isArray(nondh.affected_s_nos) 
+          ? nondh.affected_s_nos 
+          : nondh.affectedSNos 
+            ? [nondh.affectedSNos] 
+            : [],
+        nondhDoc: nondh.nondh_doc_url || ''
+      }));
+    }
     
     setLocalNondhs(formattedNondhs);
 
@@ -746,7 +751,7 @@ const loadDataFromDatabase = async () => {
     if (detailError) throw detailError;
 
     const transformedDetails = (detailData || []).map((detail: any) => ({
-        id: detail.id,
+        id: detail.id, // ✅ USE DATABASE ID
         nondhId: detail.nondh_id,
         sNo: detail.s_no,
         type: detail.type,
@@ -774,7 +779,7 @@ const loadDataFromDatabase = async () => {
           ? JSON.parse(detail.affected_nondh_details) 
           : [],
         ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
-          id: rel.id,
+          id: rel.id, // ✅ USE DATABASE ID
           ownerName: rel.owner_name,
           sNo: rel.s_no,
           area: {
@@ -792,42 +797,41 @@ const loadDataFromDatabase = async () => {
     const existingDetailNondhIds = new Set(transformedDetails.map(detail => detail.nondhId));
     const allDetails = [...transformedDetails];
 
-    // Add missing details
-formattedNondhs
-    .filter(nondh => !existingDetailNondhIds.has(nondh.id))
-    .forEach(nondh => {
-      console.log('Adding missing detail for nondh:', nondh.id);
-      
-      // Determine if we should initialize with an empty owner relation
+    // Add missing details ONLY for nondhs that don't have details yet
+    formattedNondhs
+      .filter(nondh => !existingDetailNondhIds.has(nondh.id))
+      .forEach(nondh => {
+        console.log('Adding missing detail for nondh:', nondh.id);
+           // Determine if we should initialize with an empty owner relation
       const shouldInitializeOwner = !["Hakkami", "Vehchani"].includes(nondh.type || '');
-      
-      const newDetail = {
-        id: `temp_${nondh.id}_${Date.now()}`,
-        nondhId: nondh.id,
-        sNo: nondh.affectedSNos?.[0] || '',
-        type: nondh.type || 'Kabjedaar',
-        reason: "",
-        date: "",
-        vigat: "",
-        status: "valid",
-        invalidReason: "",
-        showInOutput: true,
-        hasDocuments: false,
-        docUpload: "",
-        oldOwner: "",
-        hukamDate: "",
-        hukamType: "SSRD",
-        hukamStatus: "valid",
-        hukamInvalidReason: "",
-        affectedNondhNo: "",
-        ganot: "",
-        restrainingOrder: "no",
-        sdDate: "",
-        tenure: "Navi",
-        amount: null,
-        affectedNondhDetails: [],
-        ownerRelations: shouldInitializeOwner ? [{
-          id: Date.now().toString() + Math.random(),
+        // ✅ Mark as temporary - will be created on save
+        const newDetail = {
+          id: `temp_${nondh.id}`, // Temporary ID marker
+          nondhId: nondh.id,
+          sNo: nondh.affectedSNos?.[0] || '',
+          type: nondh.type || 'Kabjedaar',
+          reason: "",
+          date: "",
+          vigat: "",
+          status: "valid",
+          invalidReason: "",
+          showInOutput: true,
+          hasDocuments: false,
+          docUpload: "",
+          oldOwner: "",
+          hukamDate: "",
+          hukamType: "SSRD",
+          hukamStatus: "valid",
+          hukamInvalidReason: "",
+          affectedNondhNo: "",
+          ganot: "",
+          restrainingOrder: "no",
+          sdDate: "",
+          tenure: "Navi",
+          amount: null,
+          affectedNondhDetails: [],
+          ownerRelations: shouldInitializeOwner ? [{
+          id: `temp_rel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           ownerName: "",
           sNo: nondh.affectedSNos?.[0] || '',
           area: { value: 0, unit: "sq_m" },
@@ -836,9 +840,9 @@ formattedNondhs
           surveyNumberType: "s_no"
         }] : [] // Empty array for Hakkami and Vehchani
       };
-      
-      allDetails.push(newDetail);
-    });
+
+        allDetails.push(newDetail);
+      });
 
     setNondhDetails(allDetails);
     setOriginalDetails(allDetails);
@@ -2080,37 +2084,41 @@ const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerA
 };
 
   const addOwnerRelation = (detailId: string) => {
-    const detail = nondhDetails.find((d) => d.id === detailId)
-    if (detail) {
-      // Get area from year slab if date is available
+  const detail = nondhDetails.find((d) => d.id === detailId)
+  if (detail) {
+    // Get area from year slab if date is available
     const yearSlabArea = detail.date ? getYearSlabAreaForDate(detail.date) : null;
     const defaultArea = yearSlabArea || { value: 0, unit: "sq_m" };
 
+    // Use consistent ID generation for new relations
     const newRelation = {
-      id: Date.now().toString() + Math.random(),
+      id: `temp_rel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       ownerName: "",
       sNo: detail.sNo,
       area: defaultArea,
       tenure: "Navi",
       isValid: true
     };
-      const updatedRelations = [...detail.ownerRelations, newRelation]
-      updateNondhDetail(detailId, { ownerRelations: updatedRelations })
+    
+    const updatedRelations = [...detail.ownerRelations, newRelation]
+    
+    // Only update owner relations, don't create a new detail
+    updateNondhDetail(detailId, { ownerRelations: updatedRelations })
+    
+    if (equalDistribution[detailId] && updatedRelations.length > 1) {
+      const oldOwnerArea = updatedRelations[0]?.area?.value || 0
+      const newOwnersCount = updatedRelations.length - 1
+      const equalArea = oldOwnerArea / newOwnersCount
       
-      if (equalDistribution[detailId] && updatedRelations.length > 1) {
-        const oldOwnerArea = updatedRelations[0]?.area?.value || 0
-        const newOwnersCount = updatedRelations.length - 1
-        const equalArea = oldOwnerArea / newOwnersCount
-        
-        const redistributed = updatedRelations.map((relation, index) => {
-          if (index === 0) return relation
-          return { ...relation, area: { ...relation.area, value: equalArea } }
-        })
-        
-        updateNondhDetail(detailId, { ownerRelations: redistributed })
-      }
+      const redistributed = updatedRelations.map((relation, index) => {
+        if (index === 0) return relation
+        return { ...relation, area: { ...relation.area, value: equalArea } }
+      })
+      
+      updateNondhDetail(detailId, { ownerRelations: redistributed })
     }
   }
+}
 
   const removeOwnerRelation = (detailId: string, relationId: string) => {
     const detail = nondhDetails.find((d) => d.id === detailId)
@@ -2275,142 +2283,178 @@ const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerA
       return;
     }
 
-    // Process validity chains and affected nondh details before saving
-    const processedDetails = nondhDetails.map(detail => {
-      // Remove the owner tenure copying logic since tenure is now per nondh
-      return detail;
-    });
+    const processedDetails = nondhDetails.map(detail => detail);
 
-    // Check for empty date values AFTER processedDetails is defined
-    const detailsWithEmptyDates = processedDetails.filter(detail => 
-      detail.date === "" || detail.hukamDate === ""
-    );
-    
-    if (detailsWithEmptyDates.length > 0) {
-      console.log("Found details with empty dates:", detailsWithEmptyDates);
-      // Convert empty strings to null
-      detailsWithEmptyDates.forEach(detail => {
-        if (detail.date === "") detail.date = null;
-        if (detail.hukamDate === "") detail.hukamDate = null;
-      });
-    }
-
-    // Update validity chains for invalid status changes
+    // Handle empty dates
     processedDetails.forEach(detail => {
-      if (detail.status === 'invalid') {
-        const allSortedNondhs = [...nondhs].sort(sortNondhs);
-        const currentIndex = allSortedNondhs.findIndex(n => n.id === detail.nondhId);
-        if (currentIndex !== -1) {
-          processValidityChainFromNondh(currentIndex, 'invalid', processedDetails);
-        }
-      }
-      
-      // Update validity chain for Hukam with affected nondhs
-      if (detail.type === "Hukam" && affectedNondhDetails[detail.id]) {
-        affectedNondhDetails[detail.id].forEach(affected => {
-          if (affected.nondhNo && affected.status) {
-            updateAffectedNondhValidityChain(detail.id, affected.nondhNo, affected.status);
-          }
-        });
-      }
+      if (detail.date === "") detail.date = null;
+      if (detail.hukamDate === "") detail.hukamDate = null;
     });
 
-    // Transform data before saving with enhanced affected nondh details
+    // Transform data
     const changes = processedDetails.map(detail => {
       const transformedDetail = {
         ...transformForDB(detail),
-        // Ensure old_owner contains the name, not just ID
         old_owner: detail.oldOwner?.includes('-') 
-          ? processedDetails.find(d => d.nondhId === detail.oldOwner)?.ownerRelations[0]?.ownerName 
-            || detail.oldOwner
+          ? processedDetails.find(d => d.nondhId === detail.oldOwner)?.ownerRelations[0]?.ownerName || detail.oldOwner
           : detail.oldOwner,
-        // Add affected nondh details for Hukam types
-        affected_nondh_details: affectedNondhDetails[detail.id] && affectedNondhDetails[detail.id].length > 0 
-          ? JSON.stringify(affectedNondhDetails[detail.id].map(a => ({
-              id: a.id,
-              nondhNo: a.nondhNo,
-              status: a.status,
-              invalidReason: a.invalidReason || null
-            }))) 
+        affected_nondh_details: affectedNondhDetails[detail.id]?.length > 0 
+          ? JSON.stringify(affectedNondhDetails[detail.id])
           : null
       };
 
-      return { 
-        id: detail.id, 
-        changes: transformedDetail
-      };
+      return { id: detail.id, changes: transformedDetail };
     });
+
+    console.log('💾 Starting save process...');
+    console.log('Original details IDs:', originalDetails.map(d => d.id));
+    console.log('Current details IDs:', processedDetails.map(d => d.id));
+
+    // CRITICAL: Map to track ID changes
+    const idMap = new Map<string, string>();
 
     // Save nondh details
     for (const change of changes) {
       const detail = processedDetails.find(d => d.id === change.id);
+      if (!detail) continue;
       
-      if (detail && detail.id && !detail.id.toString().startsWith('temp_')) {
-        const { data: updatedDetail, error } = await LandRecordService.updateNondhDetail(
-          detail.id, 
-          change.changes
-        );
+      // FIXED: Properly check if this is a new detail vs existing
+      const isTempDetail = detail.id.toString().startsWith('temp_');
+      const originalDetail = originalDetails.find(od => od.id === detail.id);
+      
+      console.log(`\n🔍 Processing detail: ${detail.id}`);
+      console.log(`   - isTempDetail: ${isTempDetail}`);
+      console.log(`   - originalDetail exists: ${!!originalDetail}`);
+      console.log(`   - nondhId: ${detail.nondhId}`);
+      
+      // Only create new detail if it's temporary AND doesn't exist in original
+      if (isTempDetail && !originalDetail) {
+        // CREATE new detail
+        console.log(`   ➕ CREATING new detail...`);
+        const { data: createdDetail, error } = await LandRecordService.createNondhDetail(change.changes);
         
         if (error) {
-          console.error('Error updating detail:', error);
+          console.error('   ❌ Error creating:', error);
           throw error;
         }
+        
+        console.log(`   ✅ Created with ID: ${createdDetail.id}`);
+        idMap.set(detail.id, createdDetail.id); // Track ID change
+        detail.id = createdDetail.id; // Update in memory
       } else {
-        // New record - create it
-        const { data: newDetail, error } = await LandRecordService.createNondhDetail({
-          ...change.changes,
-          land_record_id: recordId // Make sure to include land_record_id
-        });
+        // UPDATE existing detail (either has original or is not temp)
+        console.log(`   🔄 UPDATING existing detail...`);
+        const { data: updatedDetail, error } = await LandRecordService.updateNondhDetail(detail.id, change.changes);
         
         if (error) {
-          console.error('Error creating detail:', error);
+          console.error('   ❌ Error updating:', error);
           throw error;
         }
+        
+        console.log(`   ✅ Updated successfully`);
       }
     }
+
+    console.log('\n👥 Processing owner relations...');
 
     // Handle owner relations
-    for (const detail of processedDetails) {
-      const originalDetail = originalDetails.find(d => d.id === detail.id);
-      if (!originalDetail) continue;
+for (const detail of processedDetails) {
+  // Use new ID if it was created, otherwise use original ID
+  const actualDetailId = idMap.get(detail.id) || detail.id;
+  console.log(`\n📋 Detail ${actualDetailId} (original: ${detail.id})`);
+  
+  const originalDetail = originalDetails.find(d => d.id === detail.id);
+  
+  const validOwnerRelations = detail.ownerRelations.filter(
+    relation => relation.ownerName && relation.ownerName.trim() !== ""
+  );
+  
+  console.log(`   Valid owners: ${validOwnerRelations.length}`);
+
+  // Get ALL existing relations for this detail from database to check what truly exists
+  const { data: existingDbRelations, error: fetchRelationsError } = await supabase
+    .from('nondh_owner_relations')
+    .select('id, owner_name')
+    .eq('nondh_detail_id', actualDetailId);
+  
+  if (fetchRelationsError) {
+    console.error('   ❌ Error fetching existing relations:', fetchRelationsError);
+    throw fetchRelationsError;
+  }
+  
+  const existingDbRelationIds = existingDbRelations?.map(r => r.id) || [];
+  console.log(`   Existing DB relations: ${existingDbRelationIds.join(', ')}`);
+
+  for (const relation of validOwnerRelations) {
+    const isTempRelation = relation.id.toString().startsWith('temp_rel_');
+    const existsInDb = existingDbRelationIds.includes(relation.id);
+    const existsInOriginal = originalDetail?.ownerRelations.some(r => r.id === relation.id);
+    
+    console.log(`   👤 ${relation.ownerName}:`);
+    console.log(`      - relationId: ${relation.id}`);
+    console.log(`      - isTempRelation: ${isTempRelation}`);
+    console.log(`      - existsInDb: ${existsInDb}`);
+    console.log(`      - existsInOriginal: ${existsInOriginal}`);
+    
+    if (isTempRelation || !existsInDb) {
+      // CREATE - either temp relation or relation not found in DB
+      console.log(`      ➕ Creating relation...`);
+      const { data: createdRelation, error } = await LandRecordService.createNondhOwnerRelation({
+        ...transformOwnerRelationForDB(relation),
+        nondh_detail_id: actualDetailId
+      });
       
-      // Process all owner relations (both new and existing)
-      for (const relation of detail.ownerRelations) {
-        const originalRelation = originalDetail.ownerRelations.find(r => r.id === relation.id);
-        
-        if (!originalRelation) {
-          // New relation - create with proper nondh_detail_id
-          await LandRecordService.createNondhOwnerRelation({
-            ...transformOwnerRelationForDB(relation),
-            nondh_detail_id: detail.id
-          });
-        } else {
-          // Existing relation - update
-          if (relation.id && !relation.id.toString().startsWith('temp_')) {
-            await LandRecordService.updateNondhOwnerRelation(
-              relation.id,
-              transformOwnerRelationForDB(relation)
-            );
-          }
-        }
+      if (error) {
+        console.error('      ❌ Error creating relation:', error);
+        throw error;
       }
       
-      // Handle deleted relations
-      if (originalDetail.ownerRelations) {
-        const currentRelationIds = detail.ownerRelations.map(r => r.id);
-        const deletedRelations = originalDetail.ownerRelations.filter(
-          r => r.id && !currentRelationIds.includes(r.id)
-        );
-        
-        for (const deletedRelation of deletedRelations) {
-          if (deletedRelation.id && !deletedRelation.id.toString().startsWith('temp_')) {
-            await LandRecordService.deleteNondhOwnerRelation(deletedRelation.id);
-          }
+      console.log(`      ✅ Created with ID: ${createdRelation.id}`);
+      
+      // Update the relation ID in our local state for future reference
+      if (isTempRelation) {
+        const relationIndex = detail.ownerRelations.findIndex(r => r.id === relation.id);
+        if (relationIndex !== -1) {
+          detail.ownerRelations[relationIndex].id = createdRelation.id;
         }
+      }
+    } else {
+      // UPDATE - relation exists in DB
+      console.log(`      🔄 Updating relation...`);
+      const { error } = await LandRecordService.updateNondhOwnerRelation(
+        relation.id,
+        transformOwnerRelationForDB(relation)
+      );
+      
+      if (error) {
+        console.error('      ❌ Error updating relation:', error);
+        throw error;
+      }
+      console.log(`      ✅ Updated`);
+    }
+  }
+  
+  // Delete removed relations - relations that exist in DB but not in current valid relations
+  const currentRelationIds = validOwnerRelations.map(r => r.id);
+  const relationsToDelete = existingDbRelationIds.filter(dbId => 
+    !currentRelationIds.includes(dbId)
+  );
+  
+  if (relationsToDelete.length > 0) {
+    console.log(`      🗑️ Deleting relations: ${relationsToDelete.join(', ')}`);
+    for (const relationIdToDelete of relationsToDelete) {
+      const { error } = await LandRecordService.deleteNondhOwnerRelation(relationIdToDelete);
+      if (error) {
+        console.error('      ❌ Error deleting relation:', error);
+        throw error;
       }
     }
+    console.log(`      ✅ Deleted ${relationsToDelete.length} relations`);
+  }
+}
 
-    // Refresh data to get updated validity states
+    // Refresh from database
+    console.log('\n🔄 Refreshing from database...');
     const { data: updatedDetails, error: refreshError } = await LandRecordService.getNondhDetailsWithRelations(recordId || '');
     if (refreshError) throw refreshError;
 
@@ -2455,22 +2499,19 @@ const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerA
       }))
     }));
 
-    // Update local state with fresh data
+    console.log('✅ Refreshed details:', transformed.map(d => ({ id: d.id, owners: d.ownerRelations.length })));
+
     setNondhDetails(transformed);
-    setOriginalDetails(transformed);
+    setOriginalDetails(JSON.parse(JSON.stringify(transformed))); // Deep clone
     
-    // Refresh affected nondh details state
     const refreshedAffectedDetails = {};
     transformed.forEach(detail => {
-      if (detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0) {
-        refreshedAffectedDetails[detail.id] = detail.affectedNondhDetails.map((affected, index) => ({
-          ...affected,
-          id: affected.id || `existing_${detail.id}_${index}`
-        }));
+      if (detail.affectedNondhDetails?.length > 0) {
+        refreshedAffectedDetails[detail.id] = detail.affectedNondhDetails;
       }
     });
     setAffectedNondhDetails(refreshedAffectedDetails);
-    setOriginalAffectedNondhDetails(refreshedAffectedDetails);
+    setOriginalAffectedNondhDetails(JSON.parse(JSON.stringify(refreshedAffectedDetails)));
     
     setHasChanges(false);
     
@@ -2478,7 +2519,7 @@ const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerA
     setCurrentStep(6);
     
   } catch (error) {
-    console.error('Error saving changes:', error);
+    console.error('❌ Error saving changes:', error);
     toast({
       title: "Error saving changes",
       description: error instanceof Error ? error.message : "Unknown error occurred",
@@ -2488,6 +2529,7 @@ const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerA
     setSaving(false);
   }
 };
+
   const transformForDB = (data: any) => {
   return {
     nondh_id: data.nondhId,
@@ -2503,7 +2545,6 @@ const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerA
     old_owner: data.oldOwner,
     hukam_status: data.hukamStatus,
     hukam_invalid_reason: data.hukamInvalidReason,
-    affected_nondh_no: data.affectedNondhNo,
     hukam_type: data.hukamType,
     hukam_date: data.hukamDate,
     ganot: data.ganot,
@@ -3689,59 +3730,7 @@ const formatArea = (area: { value: number; unit: string }) => {
       )
 
     default:
-      return (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <Label>Owner Details</Label>
-            <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Owner
-            </Button>
-          </div>
-
-          {detail.ownerRelations.map((relation, index) => (
-            <Card key={relation.id} className="p-3">
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="font-medium">Owner {index + 1}</h4>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => removeOwnerRelation(detail.id, relation.id)}
-                  className="text-red-600"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Owner Name</Label>
-                  <Input
-                    value={relation.ownerName}
-                    onChange={(e) => updateOwnerRelation(
-                      detail.id, 
-                      relation.id, 
-                      { ownerName: e.target.value }
-                    )}
-                    placeholder="Enter owner name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Area</Label>
-                  {areaFields({
-                    area: relation.area,
-                    onChange: (newArea) => updateOwnerRelation(
-                      detail.id, 
-                      relation.id, 
-                      { area: newArea }
-                    )
-                  })}
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )
+      return null;
   }
 };
 

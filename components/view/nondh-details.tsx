@@ -290,7 +290,7 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
             {detail.sdDate && (
               <div>
                 <Label>SD Date</Label>
-                <p className="mt-1">{detail.sdDate}</p>
+                <p className="mt-1">{new Date(detail.sdDate).toLocaleDateString('en-GB')}</p>
               </div>
             )}
             {detail.amount && (
@@ -317,7 +317,7 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
               {detail.hukamDate && (
                 <div>
                   <Label>Hukam Date</Label>
-                  <p className="mt-1">{detail.hukamDate}</p>
+                  <p className="mt-1">{new Date(detail.hukamDate).toLocaleDateString('en-GB')}</p>
                 </div>
               )}
               <div>
@@ -507,7 +507,7 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                          <div>
                           <Label>Date</Label>
-                          <p className="mt-1">{detail.date || 'N/A'}</p>
+                          <p className="mt-1">{detail.date ? new Date(detail.date).toLocaleDateString('en-GB') : 'N/A'}</p>
                         </div>
                         
                         <div>
