@@ -1194,6 +1194,7 @@ static async get712Documents(landRecordId: string) {
 
   // Create a new nondh detail
   static async createNondhDetail(data: any) {
+    console.log('Creating nondh detail with data:', data);
   // Remove id if it exists - let database generate it
   const { id, ...insertData } = data;
   
@@ -1220,6 +1221,7 @@ static async get712Documents(landRecordId: string) {
 
   // Create a new owner relation
   static async createNondhOwnerRelation(data: any) {
+    console.log('Creating nondh owner relation with data:', data);
     const { id, ...insertData } = data;
     return await supabase
       .from('nondh_owner_relations')

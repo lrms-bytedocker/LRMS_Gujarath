@@ -668,17 +668,66 @@ useEffect(() => {
           
           console.log('Nondh numbers from DB:', formattedNondhs.map(n => n.number));
           
-          // Check if we need to load nondh details from database
-          const needsDetails = !stepData.nondhDetails || stepData.nondhDetails.length === 0;
+          // Check if we need to load nondh details from database (first time)
+          const needsFullLoad = !stepData.nondhDetails || stepData.nondhDetails.length === 0;
           
-          if (needsDetails) {
+          if (needsFullLoad) {
             // Load details from database - pass nondhs to avoid reloading
             await loadDataFromDatabase(formattedNondhs);
           } else {
-            // Use nondhs from DB but keep nondhDetails from step data
+            // NEW: Check for newly added nondhs and initialize them
+            const existingNondhIds = new Set(stepData.nondhDetails.map(d => d.nondhId));
+            const newNondhs = formattedNondhs.filter(n => !existingNondhIds.has(n.id));
+            
+            console.log('New nondhs detected:', newNondhs.length);
+            
+            // Initialize new nondh details
+            const newDetails = newNondhs.map(nondh => {
+              const shouldInitializeOwner = !["Hakkami", "Vehchani"].includes(nondh.type || '');
+              
+              return {
+                id: `temp_${nondh.id}`, // Temporary ID marker
+                nondhId: nondh.id,
+                sNo: nondh.affectedSNos?.[0] || '',
+                type: nondh.type || 'Kabjedaar',
+                reason: "",
+                date: "",
+                vigat: "",
+                status: "valid",
+                invalidReason: "",
+                showInOutput: true,
+                hasDocuments: false,
+                docUpload: "",
+                oldOwner: "",
+                hukamDate: "",
+                hukamType: "SSRD",
+                hukamStatus: "valid",
+                hukamInvalidReason: "",
+                affectedNondhNo: "",
+                ganot: "",
+                restrainingOrder: "no",
+                sdDate: "",
+                tenure: "Navi",
+                amount: null,
+                affectedNondhDetails: [],
+                ownerRelations: shouldInitializeOwner ? [{
+                  id: `temp_rel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  ownerName: "",
+                  sNo: nondh.affectedSNos?.[0] || '',
+                  area: { value: 0, unit: "sq_m" },
+                  isValid: true,
+                  surveyNumber: "",
+                  surveyNumberType: "s_no"
+                }] : []
+              };
+            });
+            
+            // Merge existing details with new ones
+            const allDetails = [...stepData.nondhDetails, ...newDetails];
+            
             setLocalState({
               nondhs: formattedNondhs,
-              nondhDetails: stepData.nondhDetails || [],
+              nondhDetails: allDetails,
               originalDetails: stepData.originalDetails || [],
               collapsedNondhs: new Set(stepData.collapsedNondhs || []),
               equalDistribution: stepData.equalDistribution || {},
@@ -689,10 +738,11 @@ useEffect(() => {
               originalAffectedNondhDetails: stepData.originalAffectedNondhDetails || {}
             });
             
-            // Update step data with the new nondhs but keep existing details
+            // Update step data with merged details
             updateStepData({
               ...stepData,
-              nondhs: formattedNondhs
+              nondhs: formattedNondhs,
+              nondhDetails: allDetails
             });
           }
         }
@@ -751,7 +801,7 @@ const loadDataFromDatabase = async (providedNondhs?: any[]) => {
     if (detailError) throw detailError;
 
     const transformedDetails = (detailData || []).map((detail: any) => ({
-        id: detail.id, // ✅ USE DATABASE ID
+        id: detail.id,
         nondhId: detail.nondh_id,
         sNo: detail.s_no,
         type: detail.type,
@@ -779,7 +829,7 @@ const loadDataFromDatabase = async (providedNondhs?: any[]) => {
           ? JSON.parse(detail.affected_nondh_details) 
           : [],
         ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
-          id: rel.id, // ✅ USE DATABASE ID
+          id: rel.id,
           ownerName: rel.owner_name,
           sNo: rel.s_no,
           area: {
@@ -2314,46 +2364,44 @@ const equalArea = newOwnersCount > 0 ? oldOwnerArea / newOwnersCount : oldOwnerA
     const idMap = new Map<string, string>();
 
     // Save nondh details
-    for (const change of changes) {
-      const detail = processedDetails.find(d => d.id === change.id);
-      if (!detail) continue;
-      
-      // FIXED: Properly check if this is a new detail vs existing
-      const isTempDetail = detail.id.toString().startsWith('temp_');
-      const originalDetail = originalDetails.find(od => od.id === detail.id);
-      
-      console.log(`\n🔍 Processing detail: ${detail.id}`);
-      console.log(`   - isTempDetail: ${isTempDetail}`);
-      console.log(`   - originalDetail exists: ${!!originalDetail}`);
-      console.log(`   - nondhId: ${detail.nondhId}`);
-      
-      // Only create new detail if it's temporary AND doesn't exist in original
-      if (isTempDetail && !originalDetail) {
-        // CREATE new detail
-        console.log(`   ➕ CREATING new detail...`);
-        const { data: createdDetail, error } = await LandRecordService.createNondhDetail(change.changes);
-        
-        if (error) {
-          console.error('   ❌ Error creating:', error);
-          throw error;
-        }
-        
-        console.log(`   ✅ Created with ID: ${createdDetail.id}`);
-        idMap.set(detail.id, createdDetail.id); // Track ID change
-        detail.id = createdDetail.id; // Update in memory
-      } else {
-        // UPDATE existing detail (either has original or is not temp)
-        console.log(`   🔄 UPDATING existing detail...`);
-        const { data: updatedDetail, error } = await LandRecordService.updateNondhDetail(detail.id, change.changes);
-        
-        if (error) {
-          console.error('   ❌ Error updating:', error);
-          throw error;
-        }
-        
-        console.log(`   ✅ Updated successfully`);
-      }
+for (const change of changes) {
+  const detail = processedDetails.find(d => d.id === change.id);
+  if (!detail) continue;
+  
+  // FIXED: Check if ID starts with 'temp_' - this is the ONLY reliable indicator
+  const isTempDetail = detail.id.toString().startsWith('temp_');
+  
+  console.log(`\n🔍 Processing detail: ${detail.id}`);
+  console.log(`   - isTempDetail: ${isTempDetail}`);
+  console.log(`   - nondhId: ${detail.nondhId}`);
+  
+  // CREATE if temp, UPDATE otherwise
+  if (isTempDetail) {
+    // CREATE new detail
+    console.log(`   ➕ CREATING new detail...`);
+    const { data: createdDetail, error } = await LandRecordService.createNondhDetail(change.changes);
+    
+    if (error) {
+      console.error('   ❌ Error creating:', error);
+      throw error;
     }
+    
+    console.log(`   ✅ Created with ID: ${createdDetail.id}`);
+    idMap.set(detail.id, createdDetail.id); // Track ID change
+    detail.id = createdDetail.id; // Update in memory
+  } else {
+    // UPDATE existing detail
+    console.log(`   🔄 UPDATING existing detail...`);
+    const { data: updatedDetail, error } = await LandRecordService.updateNondhDetail(detail.id, change.changes);
+    
+    if (error) {
+      console.error('   ❌ Error updating:', error);
+      throw error;
+    }
+    
+    console.log(`   ✅ Updated successfully`);
+  }
+}
 
     console.log('\n👥 Processing owner relations...');
 

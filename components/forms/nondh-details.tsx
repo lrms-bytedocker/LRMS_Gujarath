@@ -2673,7 +2673,7 @@ case "Promulgation":
 case "Bojo":
   return (
     <div className="space-y-4">
-      {/* Owner Details Section - Compact like Kabjedaar */}
+      {/* Owner Details Section */}
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <Label>Owner Details</Label>
