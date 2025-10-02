@@ -1220,9 +1220,10 @@ static async get712Documents(landRecordId: string) {
 
   // Create a new owner relation
   static async createNondhOwnerRelation(data: any) {
+    const { id, ...insertData } = data;
     return await supabase
       .from('nondh_owner_relations')
-      .insert(data)
+      .insert(insertData)
       .select()
       .single();
   }

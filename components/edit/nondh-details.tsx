@@ -802,7 +802,8 @@ const loadDataFromDatabase = async (providedNondhs?: any[]) => {
       .filter(nondh => !existingDetailNondhIds.has(nondh.id))
       .forEach(nondh => {
         console.log('Adding missing detail for nondh:', nondh.id);
-        
+           // Determine if we should initialize with an empty owner relation
+      const shouldInitializeOwner = !["Hakkami", "Vehchani"].includes(nondh.type || '');
         // ✅ Mark as temporary - will be created on save
         const newDetail = {
           id: `temp_${nondh.id}`, // Temporary ID marker
@@ -829,9 +830,17 @@ const loadDataFromDatabase = async (providedNondhs?: any[]) => {
           tenure: "Navi",
           amount: null,
           affectedNondhDetails: [],
-          ownerRelations: [] // ✅ Always start with empty array
-        };
-        
+          ownerRelations: shouldInitializeOwner ? [{
+          id: `temp_rel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          ownerName: "",
+          sNo: nondh.affectedSNos?.[0] || '',
+          area: { value: 0, unit: "sq_m" },
+          isValid: true,
+          surveyNumber: "",
+          surveyNumberType: "s_no"
+        }] : [] // Empty array for Hakkami and Vehchani
+      };
+
         allDetails.push(newDetail);
       });
 
