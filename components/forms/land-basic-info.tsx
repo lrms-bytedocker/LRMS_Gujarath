@@ -930,7 +930,7 @@ const handleSubmit = async () => {
 
         {/* Document Upload */}
         <div className="space-y-2">
-          <Label htmlFor="integrated-712">Integrated 7/12 Document</Label>
+          <Label htmlFor="integrated-712">Integrated 7/12 Document *</Label>
           <div className="flex items-center gap-4">
             <div className="relative">
               <input
