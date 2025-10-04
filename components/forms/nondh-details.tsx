@@ -1205,22 +1205,20 @@ const handleTypeChange = (detailId: string, newType: string) => {
   const detail = nondhDetailData.find(d => d.id === detailId);
   if (!detail) return;
 
-  // If changing to Vechand, Varsai, or Hayati and no owner relations exist, initialize one
-  if (["Vechand", "Varsai", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(newType) && detail.ownerRelations.length === 0) {
-    const newRelation = {
-      id: Date.now().toString() + Math.random(),
-      ownerName: "",
-      area: { value: 0, unit: "sq_m" },
-      isValid: true
-    };
-    
-    updateNondhDetail(detailId, { 
-      type: newType, 
-      ownerRelations: [newRelation] 
-    });
-  } else {
-    updateNondhDetail(detailId, { type: newType });
-  }
+  // Always clear owner relations when type changes
+  const clearedRelations = [{
+    id: Date.now().toString() + Math.random(),
+    ownerName: "",
+    area: { value: 0, unit: "sq_m" },
+    isValid: true
+  }];
+
+  // Update the type, clear owner relations and old owner
+  updateNondhDetail(detailId, { 
+    type: newType, 
+    ownerRelations: clearedRelations,
+    oldOwner: undefined // Clear old owner field
+  });
   
   // Initialize default affected nondh for Hukam type
   if (newType === "Hukam" && (!affectedNondhDetails[detailId] || affectedNondhDetails[detailId].length === 0)) {
@@ -1232,7 +1230,6 @@ const handleTypeChange = (detailId: string, newType: string) => {
     }
   }
 };
-
 // Add a ref to debounce saves
 const saveTimeoutRef = useRef(null);
 
@@ -3135,10 +3132,10 @@ case "Bojo":
                   updateOwnerTransfer(detail.id, transfer.id, { newOwnerAreas: newAreas });
                 }
               }}
-              disabled={transfer.newOwners.length <= 1}
+              disabled={transfer.newOwners.length < 1}
             />
             <Label htmlFor={`equal_dist_${detail.id}_${transfer.id}`}>
-              Equal Distribution of Land {transfer.newOwners.length <= 1 && "(Select multiple owners to enable)"}
+              Equal Distribution of Land
             </Label>
           </div>
 
@@ -3160,7 +3157,12 @@ case "Bojo":
                       
                       // Auto-distribute if equal distribution is enabled
                       if (isEqualDistribution && updatedNewOwners.length > 0) {
-                        const equalArea = (transfer.oldOwnerArea.value || 0) / updatedNewOwners.length;
+                        const oldOwnerArea = transfer.oldOwnerArea.value || 0;
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
+  const equalArea = effectiveArea / updatedNewOwners.length;
                         const newAreas = updatedNewOwners.map(ownerId => ({
                           ownerId,
                           area: { value: equalArea, unit: transfer.oldOwnerArea.unit }
