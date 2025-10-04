@@ -521,10 +521,10 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
     const passbookEntries = [];
 
     for (const relation of ownerRelations) {
-      // Find which nondh this detail belongs to
+      // Find which nondh this detail belongs to AND get the date
       const { data: detailInfo, error: detailError } = await supabase
         .from('nondh_details')
-        .select('nondh_id')
+        .select('nondh_id, date')
         .eq('id', relation.nondh_detail_id)
         .single();
 
@@ -532,6 +532,9 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
         console.warn('Could not find detail info for:', relation.nondh_detail_id);
         continue;
       }
+
+      // Use the date from nondh_details, fallback to created_at
+      const relevantDate = detailInfo.date || relation.created_at;
 
       // Find the nondh number from context
       const nondh = nondhs.find(n => n.id === detailInfo.nondh_id);
@@ -546,15 +549,15 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
         area = relation.square_meters || 0;
       }
 
-      console.log(`Processing: Owner ${relation.owner_name}, Nondh ${nondhNumber}, Area ${area}`);
+      console.log(`Processing: Owner ${relation.owner_name}, Nondh ${nondhNumber}, Area ${area}, Date ${relevantDate}`);
 
       const entry = {
-        year: new Date(relation.created_at).getFullYear(),
+        year: new Date(relevantDate).getFullYear(),
         ownerName: relation.owner_name || '',
         area,
         sNo: relation.s_no || '',
         nondhNumber: nondh ? safeNondhNumber(nondh) : '0',
-        createdAt: relation.created_at || '',
+        createdAt: relevantDate || '',
         // Add affected S.Nos for filtering
         affectedSNos: nondh ? formatAffectedSNos(nondh.affectedSNos) : relation.s_no || ''
       };
@@ -926,9 +929,14 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
 
       // Fetch document URLs just like in query list
       const enhancedData = await fetchDetailedNondhInfo(mappedData);
-      const sortedData = enhancedData.sort(sortNondhsBySNoType);
-      
-      setAllNondhsDataState(sortedData);
+// Format affected S.Nos after fetching enhanced data
+const formattedData = enhancedData.map(nondh => ({
+  ...nondh,
+  affectedSNos: formatAffectedSNos(nondh.affectedSNos)
+}));
+const sortedData = formattedData.sort(sortNondhsBySNoType);
+
+setAllNondhsDataState(sortedData);
       setIsLoadingNondhTable(false);
     };
 

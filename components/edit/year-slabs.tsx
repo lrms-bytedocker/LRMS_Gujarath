@@ -1381,7 +1381,7 @@ const toggleCollapse = (id: string) => {
 
                 </div>
                <div className="space-y-2">
-  <Label>7/12 Document</Label>
+  <Label>7/12 Document *</Label>
   <div className="space-y-2">
     <div className="relative">
       <input
@@ -1713,7 +1713,7 @@ const toggleCollapse = (id: string) => {
 
                             </div>
                <div className="space-y-2">
-  <Label>7/12 Document</Label>
+  <Label>7/12 Document *</Label>
   <div className="space-y-2">
     <div className="relative">
       <input
@@ -1986,7 +1986,7 @@ const toggleCollapse = (id: string) => {
             })}
           </div>
           <div className="space-y-2">
-            <Label>7/12 Document</Label>
+            <Label>7/12 Document *</Label>
             <div className="space-y-2">
               <div className="relative">
                 <input

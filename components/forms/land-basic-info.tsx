@@ -632,10 +632,10 @@ const validateForm = (): boolean => {
     isValid = false
   }
 
-  if (!formData.integrated712) {
-    errors.integrated712 = "Please upload Integrated 7/12 Document"
-    isValid = false
-  }
+  // if (!formData.integrated712) {
+  //   errors.integrated712 = "Please upload Integrated 7/12 Document"
+  //   isValid = false
+  // }
 
   // Validate area based on unit type
   const hasValidArea = (() => {

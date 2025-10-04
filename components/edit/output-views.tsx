@@ -417,11 +417,11 @@ const formatDate = (dateString: string): string => {
     if (nondhError) throw nondhError
     
     const freshNondhs = nondhsData?.map(nondh => ({
-  id: nondh.id,
-  number: nondh.number,
-  affected_s_nos: nondh.affectedSNos || [],
-  nondh_doc_url: nondh.nondhDoc
-})) || []
+      id: nondh.id,
+      number: nondh.number,
+      affected_s_nos: nondh.affectedSNos || [],
+      nondh_doc_url: nondh.nondhDoc
+    })) || []
 
     const { data: nondhDetailsWithRelations, error: detailsError } = 
       await LandRecordService.getNondhDetailsWithRelations(recordId)
@@ -438,6 +438,9 @@ const formatDate = (dateString: string): string => {
     nondhDetailsWithRelations.forEach(detail => {
       const nondh = freshNondhs.find(n => n.id === detail.nondh_id)
       const nondhNumber = nondh ? safeNondhNumber(nondh) : "0"
+      
+      // Use the date from nondh_details, fallback to current date
+      const relevantDate = detail.date || detail.created_at || new Date().toISOString()
 
       detail.owner_relations?.forEach(relation => {
         if (!relation.is_valid) return
@@ -449,17 +452,19 @@ const formatDate = (dateString: string): string => {
         } else {
           area = relation.square_meters || 0
         }
-console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
-    const affectedSNosFormatted = nondh ? formatAffectedSNos(nondh.affected_s_nos) : relation.s_no || '';
-    console.log('Entry affectedSNos after format:', affectedSNosFormatted);
+
+        console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
+        const affectedSNosFormatted = nondh ? formatAffectedSNos(nondh.affected_s_nos) : relation.s_no || '';
+        console.log('Entry affectedSNos after format:', affectedSNosFormatted);
+        
         const entry = {
-          year: new Date(relation.created_at || new Date()).getFullYear(),
+          year: new Date(relevantDate).getFullYear(),
           ownerName: relation.owner_name || '',
           area,
           sNo: relation.s_no || '',
           nondhNumber,
-          createdAt: relation.created_at || new Date().toISOString(),
-          affectedSNos: nondh ? formatAffectedSNos(nondh.affected_s_nos) : relation.s_no || ''
+          createdAt: relevantDate,
+          affectedSNos: affectedSNosFormatted
         }
 
         if (!sNoFilter || 
