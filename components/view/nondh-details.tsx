@@ -565,6 +565,14 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                         </div>
                       )}
 
+{/* Old Ganot for 1st Right Hukam - displayed below tenure */}
+{detail.type === "Hukam" && detail.ganot === "1st Right" && detail.oldOwner && (
+  <div className="space-y-2 mb-6">
+    <Label>Old Ganot</Label>
+    <p className="mt-1">{detail.oldOwner}</p>
+  </div>
+)}
+
                       {/* Owner Relations */}
                       <div className="space-y-4">
                         <Label>Owner Relations</Label>

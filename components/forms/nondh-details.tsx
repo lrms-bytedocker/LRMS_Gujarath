@@ -3055,11 +3055,11 @@ case "Bojo":
           ) || [];
           
           const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
-          const selectedOwner = availableOwners.oldOwners.find(o => o.id === value);
+          const selectedOwner = availableOwners.oldOwners.find(o => o.name === value);
           
           if (selectedOwner) {
             updateNondhDetail(detail.id, { 
-              oldOwner: value,
+              oldOwner: selectedOwner.name,
               ownerRelations: [] // Start fresh like Hakkami
             });
           }
@@ -3077,7 +3077,7 @@ case "Bojo":
             const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
             
             return availableOwners.oldOwners.map((owner) => (
-              <SelectItem key={owner.id} value={owner.id}>
+              <SelectItem key={owner.id} value={owner.name}>
                 {owner.name} - {owner.area.value} {owner.area.unit} (From Nondh: {nondhs.find(n => n.id === owner.nondhId)?.number})
               </SelectItem>
             ));
@@ -3100,7 +3100,7 @@ case "Bojo":
               typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
             ) || [];
             const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
-            const selectedOldOwner = availableOwners.oldOwners.find(o => o.id === detail.oldOwner);
+            const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
             const oldOwnerArea = selectedOldOwner?.area?.value || 0;
             
             // Calculate effective area
@@ -3168,7 +3168,7 @@ case "Bojo":
                     
                     // Auto-distribute if equal distribution is enabled
                     if (equalDistribution[detail.id] && detail.oldOwner) {
-                      const selectedOldOwner = availableOwners.oldOwners.find(o => o.id === detail.oldOwner);
+                      const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
                       const oldOwnerArea = selectedOldOwner?.area?.value || 0;
                       
                       const yearSlabArea = getYearSlabAreaForDate(detail.date);
@@ -3217,7 +3217,7 @@ case "Bojo":
                     typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
                   ) || [];
                   const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
-                  const selectedOldOwner = availableOwners.oldOwners.find(o => o.id === detail.oldOwner);
+                  const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
                   const oldOwnerArea = selectedOldOwner?.area?.value || 0;
                   
                   const otherOwnersTotal = detail.ownerRelations
@@ -3251,7 +3251,7 @@ case "Bojo":
               typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
             ) || [];
             const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
-            const selectedOldOwner = availableOwners.oldOwners.find(o => o.id === detail.oldOwner);
+            const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
             const oldOwnerArea = selectedOldOwner?.area?.value || 0;
             const totalNewOwnerArea = detail.ownerRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
             const remaining = oldOwnerArea - totalNewOwnerArea;
