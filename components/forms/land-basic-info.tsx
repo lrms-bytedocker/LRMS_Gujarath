@@ -632,10 +632,10 @@ const validateForm = (): boolean => {
     isValid = false
   }
 
-  if (!formData.integrated712) {
-    errors.integrated712 = "Please upload Integrated 7/12 Document"
-    isValid = false
-  }
+  // if (!formData.integrated712) {
+  //   errors.integrated712 = "Please upload Integrated 7/12 Document"
+  //   isValid = false
+  // }
 
   // Validate area based on unit type
   const hasValidArea = (() => {
@@ -930,7 +930,7 @@ const handleSubmit = async () => {
 
         {/* Document Upload */}
         <div className="space-y-2">
-          <Label htmlFor="integrated-712">Integrated 7/12 Document *</Label>
+          <Label htmlFor="integrated-712">Integrated 7/12 Document</Label>
           <div className="flex items-center gap-4">
             <div className="relative">
               <input

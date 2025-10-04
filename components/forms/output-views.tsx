@@ -926,9 +926,14 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
 
       // Fetch document URLs just like in query list
       const enhancedData = await fetchDetailedNondhInfo(mappedData);
-      const sortedData = enhancedData.sort(sortNondhsBySNoType);
-      
-      setAllNondhsDataState(sortedData);
+// Format affected S.Nos after fetching enhanced data
+const formattedData = enhancedData.map(nondh => ({
+  ...nondh,
+  affectedSNos: formatAffectedSNos(nondh.affectedSNos)
+}));
+const sortedData = formattedData.sort(sortNondhsBySNoType);
+
+setAllNondhsDataState(sortedData);
       setIsLoadingNondhTable(false);
     };
 

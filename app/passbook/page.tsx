@@ -39,7 +39,7 @@ export default function PassbookLedger() {
   const [searchTerm, setSearchTerm] = useState("")
   const [yearFilter, setYearFilter] = useState("all")
   const [ownerFilter, setOwnerFilter] = useState("all")
-  const [sNoFilter, setSNoFilter] = useState("all")
+  const [sNoFilter, setSNoFilter] = useState<string>("all")
   const [areaDisplayType, setAreaDisplayType] = useState<'sq_m' | 'acre_guntha'>('sq_m')
   const [showFilters, setShowFilters] = useState(false)
 
@@ -80,8 +80,12 @@ export default function PassbookLedger() {
       const entries: PassbookEntry[] = Array.from(uniqueOwnersMap.values())
         .map((entry: any) => {
           const ownerName = String(entry.owner_name ?? '')
-          const surveyNumber = String(entry.s_no ?? '')
-          const surveyNumberType = String(entry.s_no_type ?? 'survey_no')
+          const parsedSurvey = parseSurveyNumber(
+  String(entry.s_no ?? ''),
+  String(entry.s_no_type ?? 'survey_no')
+);
+const surveyNumber = parsedSurvey.number;
+const surveyNumberType = parsedSurvey.type;
           const district = String(entry.district ?? '')
           const taluka = String(entry.taluka ?? '')
           const village = String(entry.village ?? '')
@@ -136,11 +140,34 @@ export default function PassbookLedger() {
     }
   }
 
+  // Helper function to parse survey number from various formats
+const parseSurveyNumber = (sNo: string, sNoType: string) => {
+  try {
+    // Check if s_no contains JSON
+    if (sNo.startsWith('{') && sNo.includes('number')) {
+      const parsed = JSON.parse(sNo);
+      return {
+        number: String(parsed.number || ''),
+        type: String(parsed.type || sNoType || 'survey_no')
+      };
+    }
+  } catch (e) {
+    // If JSON parse fails, treat as plain string
+  }
+  
+  // Return as plain survey number
+  return {
+    number: String(sNo),
+    type: String(sNoType || 'survey_no')
+  };
+};
+
   // Get unique values for filters - only from entries with area > 0
   const years = Array.from(new Set(passbookEntries.map((entry) => entry.year.toString())))
     .sort((a, b) => Number(b) - Number(a));
   const owners = Array.from(new Set(passbookEntries.map((entry) => entry.ownerName)))
-    .sort();
+  .filter(owner => owner && owner.trim() !== '')
+  .sort();
   
   // Get unique survey numbers with their types for S.No filter
   const surveyNumbers = Array.from(
@@ -349,7 +376,7 @@ export default function PassbookLedger() {
               {/* Year filter */}
               <div className="space-y-2">
                 <Label>Year</Label>
-                <Select value={yearFilter} onValueChange={setYearFilter}>
+                <Select value={yearFilter === "all" ? undefined : yearFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All Years" />
                   </SelectTrigger>
@@ -367,25 +394,24 @@ export default function PassbookLedger() {
               {/* Owner filter */}
               <div className="space-y-2">
                 <Label>Owner</Label>
-                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+                <Select value={ownerFilter === "all" ? undefined : ownerFilter} onValueChange={setOwnerFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All Owners" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Owners</SelectItem>
-                    {owners.map((owner) => (
-                      <SelectItem key={owner} value={owner}>
-                        {owner}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
+  {owners.map((owner) => (
+    <SelectItem key={owner} value={owner}>
+      {owner}
+    </SelectItem>
+  ))}
+</SelectContent>
                 </Select>
               </div>
 
               {/* S.No filter */}
               <div className="space-y-2">
                 <Label>Survey No.</Label>
-                <Select value={sNoFilter} onValueChange={setSNoFilter}>
+                <Select value={sNoFilter === "all" ? undefined : sNoFilter} onValueChange={setSNoFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All S.Nos" />
                   </SelectTrigger>
@@ -458,7 +484,7 @@ export default function PassbookLedger() {
                 {/* Year filter */}
                 <div className="space-y-2">
                   <Label>Year</Label>
-                  <Select value={yearFilter} onValueChange={setYearFilter}>
+                  <Select value={yearFilter === "all" ? undefined : yearFilter} onValueChange={setYearFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Years" />
                     </SelectTrigger>
@@ -476,7 +502,7 @@ export default function PassbookLedger() {
                 {/* Owner filter */}
                 <div className="space-y-2">
                   <Label>Owner</Label>
-                  <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+                  <Select value={ownerFilter === "all" ? undefined : ownerFilter} onValueChange={setOwnerFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Owners" />
                     </SelectTrigger>
@@ -495,7 +521,7 @@ export default function PassbookLedger() {
               {/* S.No filter */}
               <div className="space-y-2">
                 <Label>Survey No.</Label>
-                <Select value={sNoFilter} onValueChange={setSNoFilter}>
+                <Select value={sNoFilter === "all" ? undefined : sNoFilter} onValueChange={setSNoFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All S.Nos" />
                   </SelectTrigger>
@@ -689,45 +715,76 @@ export default function PassbookLedger() {
                     </div>
 
                     {/* Year Summary */}
-                    <div className="bg-gray-50 p-3 sm:p-4 rounded-lg print:bg-white print:border print:border-black">
-                      <h4 className="font-medium mb-2 print:text-black text-sm sm:text-base">Year {year} Summary</h4>
-                      
-                      {/* Mobile: Vertical Stack */}
-                      <div className="flex flex-col space-y-2 sm:hidden text-xs">
-                        <div>
-                          <span className="text-muted-foreground print:text-black">Total Entries:</span>
-                          <span className="ml-2 font-medium print:text-black">{entries.length}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground print:text-black">Unique Owners:</span>
-                          <span className="ml-2 font-medium print:text-black">
-                            {new Set(entries.map((e) => e.ownerName)).size}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground print:text-black">Survey Numbers:</span>
-                          <span className="ml-2 font-medium print:text-black">
-                            {new Set(entries.map((e) => e.surveyNumber)).size}
-                          </span>
-                        </div>
-                        <div>
-                          <div>
-                            <span className="text-muted-foreground print:text-black">Total Area:</span>
-                            <span className="ml-2 font-medium print:text-black">
-                              {entries
-                                .reduce((sum, entry) => sum + entry.ownedArea, 0)
-                                .toFixed(2)} Sq.m
-                            </span>
-                          </div>
-                          <div className="ml-[5rem] text-xs text-muted-foreground print:text-black">
-                            ({convertFromSquareMeters(
-                              entries.reduce((sum, entry) => sum + entry.ownedArea, 0),
-                              'acre'
-                            ).toFixed(2)} Acres)
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    {/* Year Summary */}
+<div className="bg-gray-50 p-3 sm:p-4 rounded-lg print:bg-white print:border print:border-black">
+  <h4 className="font-medium mb-2 print:text-black text-sm sm:text-base">Year {year} Summary</h4>
+  
+  {/* Desktop & Tablet: Horizontal Layout */}
+  <div className="hidden sm:flex flex-wrap gap-4 text-sm">
+    <div>
+      <span className="text-muted-foreground print:text-black">Total Entries:</span>
+      <span className="ml-2 font-medium print:text-black">{entries.length}</span>
+    </div>
+    <div>
+      <span className="text-muted-foreground print:text-black">Unique Owners:</span>
+      <span className="ml-2 font-medium print:text-black">
+        {new Set(entries.map((e) => e.ownerName)).size}
+      </span>
+    </div>
+    <div>
+      <span className="text-muted-foreground print:text-black">Survey Numbers:</span>
+      <span className="ml-2 font-medium print:text-black">
+        {new Set(entries.map((e) => e.surveyNumber)).size}
+      </span>
+    </div>
+    <div>
+      <span className="text-muted-foreground print:text-black">Total Area:</span>
+      <span className="ml-2 font-medium print:text-black">
+        {entries.reduce((sum, entry) => sum + entry.ownedArea, 0).toFixed(2)} Sq.m
+      </span>
+      <span className="ml-1 text-xs text-muted-foreground print:text-black">
+        ({convertFromSquareMeters(
+          entries.reduce((sum, entry) => sum + entry.ownedArea, 0),
+          'acre'
+        ).toFixed(2)} Acres)
+      </span>
+    </div>
+  </div>
+  
+  {/* Mobile: Vertical Stack */}
+  <div className="flex flex-col space-y-2 sm:hidden text-xs">
+    <div>
+      <span className="text-muted-foreground print:text-black">Total Entries:</span>
+      <span className="ml-2 font-medium print:text-black">{entries.length}</span>
+    </div>
+    <div>
+      <span className="text-muted-foreground print:text-black">Unique Owners:</span>
+      <span className="ml-2 font-medium print:text-black">
+        {new Set(entries.map((e) => e.ownerName)).size}
+      </span>
+    </div>
+    <div>
+      <span className="text-muted-foreground print:text-black">Survey Numbers:</span>
+      <span className="ml-2 font-medium print:text-black">
+        {new Set(entries.map((e) => e.surveyNumber)).size}
+      </span>
+    </div>
+    <div>
+      <div>
+        <span className="text-muted-foreground print:text-black">Total Area:</span>
+        <span className="ml-2 font-medium print:text-black">
+          {entries.reduce((sum, entry) => sum + entry.ownedArea, 0).toFixed(2)} Sq.m
+        </span>
+      </div>
+      <div className="ml-[5rem] text-xs text-muted-foreground print:text-black">
+        ({convertFromSquareMeters(
+          entries.reduce((sum, entry) => sum + entry.ownedArea, 0),
+          'acre'
+        ).toFixed(2)} Acres)
+      </div>
+    </div>
+  </div>
+</div>
                   </div>
                 ))}
             </div>

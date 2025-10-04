@@ -1022,11 +1022,11 @@ const validateForm = (): boolean => {
     }
 
     // Validate main slab document upload - ONLY if no paiky/ekatrikaran
-    if (!slab.paiky && !slab.ekatrikaran && !slab.integrated712) {
-      slabErrors.integrated712 = "Please upload 7/12 document for this slab";
-      errorMessages.push(`Slab ${slabNumber}: Missing 7/12 document`);
-      isValid = false;
-    }
+    // if (!slab.paiky && !slab.ekatrikaran && !slab.integrated712) {
+    //   slabErrors.integrated712 = "Please upload 7/12 document for this slab";
+    //   errorMessages.push(`Slab ${slabNumber}: Missing 7/12 document`);
+    //   isValid = false;
+    // }
 
     // Validate paiky entries
     if (slab.paiky && slab.paikyEntries && slab.paikyEntries.length > 0) {
@@ -1040,11 +1040,11 @@ const validateForm = (): boolean => {
           errorMessages.push(`Slab ${slabNumber}, Paiky Entry ${entryNumber}: Missing S.No`);
           isValid = false;
         }
-        if (!entry || !entry.integrated712) {
-          entryErrors.integrated712 = "Please upload 7/12 document";
-          errorMessages.push(`Slab ${slabNumber}, Paiky Entry ${entryNumber}: Missing 7/12 document`);
-          isValid = false;
-        }
+        // if (!entry || !entry.integrated712) {
+        //   entryErrors.integrated712 = "Please upload 7/12 document";
+        //   errorMessages.push(`Slab ${slabNumber}, Paiky Entry ${entryNumber}: Missing 7/12 document`);
+        //   isValid = false;
+        // }
         if (Object.keys(entryErrors).length > 0) {
           paikyErrors[index] = entryErrors;
         }
@@ -1066,11 +1066,11 @@ const validateForm = (): boolean => {
           errorMessages.push(`Slab ${slabNumber}, Ekatrikaran Entry ${entryNumber}: Missing S.No`);
           isValid = false;
         }
-        if (!entry || !entry.integrated712) {
-          entryErrors.integrated712 = "Please upload 7/12 document";
-          errorMessages.push(`Slab ${slabNumber}, Ekatrikaran Entry ${entryNumber}: Missing 7/12 document`);
-          isValid = false;
-        }
+        // if (!entry || !entry.integrated712) {
+        //   entryErrors.integrated712 = "Please upload 7/12 document";
+        //   errorMessages.push(`Slab ${slabNumber}, Ekatrikaran Entry ${entryNumber}: Missing 7/12 document`);
+        //   isValid = false;
+        // }
         if (Object.keys(entryErrors).length > 0) {
           ekatrikaranErrors[index] = entryErrors;
         }

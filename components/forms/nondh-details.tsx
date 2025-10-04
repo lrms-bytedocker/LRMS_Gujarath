@@ -1450,14 +1450,18 @@ const addOwnerRelation = (detailId: string) => {
     const yearSlabArea = detail.date ? getYearSlabAreaForDate(detail.date) : null;
     const defaultArea = yearSlabArea || { value: 0, unit: "sq_m" };
     
-    const newRelation = {
-      id: Date.now().toString() + Math.random(),
-      ownerName: "",
-      sNo: detail.sNo,
-      area: defaultArea,
-      tenure: "Navi",
-      isValid: true
-    };
+    const currentTotalArea = detail.ownerRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+const remainingYearSlabArea = yearSlabArea ? yearSlabArea.value - currentTotalArea : 0;
+
+const newRelation = {
+  id: Date.now().toString() + Math.random(),
+  ownerName: "",
+  sNo: detail.sNo,
+  area: { value: Math.max(0, remainingYearSlabArea), unit: defaultArea.unit }, // Use remaining area
+  tenure: "Navi",
+  isValid: true
+};
+
     const updatedRelations = [...detail.ownerRelations, newRelation]
     console.log('Updated relations:', updatedRelations);
     
@@ -1528,6 +1532,22 @@ const updateOwnerRelation = (detailId: string, relationId: string, updates: any)
       relation.id === relationId ? { ...relation, ...updates } : relation,
     );
     
+    // Year slab area validation
+    if (updates.area) {
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  if (yearSlabArea) {
+    const totalArea = updatedRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+    if (totalArea > yearSlabArea.value) {
+      toast({
+        title: "Area validation error",
+        description: `Total area (${totalArea}) cannot exceed year slab area (${yearSlabArea.value})`,
+        variant: "destructive"
+      });
+      return; // Don't update
+    }
+  }
+}
+
     // Area validation for transfer types
     if (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type) && updates.area) {
       const oldOwnerArea = getPreviousOwners(detail.sNo, detail.nondhId)
@@ -2003,7 +2023,7 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
                 
                 updateNondhDetail(detail.id, { 
                   oldOwner: selectedOwner.name,
-                  ownerRelations: [oldOwnerRelation] 
+                  ownerRelations: [] 
                 });
               } else {
                 // For Vechand, Hayati, Varsai - only update oldOwner field
@@ -2051,14 +2071,17 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
             const oldOwnerArea = selectedOldOwner?.area?.value || 0;
             
             // Get only new owners (excluding old owner)
-            const newOwners = detail.ownerRelations.filter(rel => 
-              rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
-            );
-            const newOwnersCount = newOwners.length;
-            
-            if (newOwnersCount > 0) {
-              const equalArea = oldOwnerArea / newOwnersCount;
-              
+            const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
+  
+  const newOwnersCount = detail.ownerRelations.filter(rel => 
+    rel.ownerName !== detail.oldOwner
+  ).length;
+  
+  if (newOwnersCount > 0) {
+    const equalArea = effectiveArea / newOwnersCount;
               const updatedRelations = detail.ownerRelations.map((relation) => {
                 // Don't modify old owner (shouldn't be in relations anyway)
                 if (relation.ownerName === detail.oldOwner) {
@@ -2123,9 +2146,15 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
                       const newOwnersCount = updatedRelations.filter(rel => 
                         rel.ownerName !== detail.oldOwner
                       ).length;
-                      
-                      if (newOwnersCount > 0) {
-                        const equalArea = oldOwnerArea / newOwnersCount;
+
+                      // Use year slab effective area
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
+  
+  if (newOwnersCount > 0) {
+    const equalArea = effectiveArea / newOwnersCount; // Use effective area
                         
                         const redistributed = updatedRelations.map(relation => {
                           // Don't modify old owner (shouldn't be in relations)
@@ -2199,24 +2228,36 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
         {/* Area validation display */}
         <div className="text-sm text-muted-foreground">
           {(() => {
-            // Get old owner area from previous owners data
-            const selectedOldOwner = vehchaniPreviousOwners.find(owner => owner.name === detail.oldOwner);
-            const oldOwnerArea = selectedOldOwner?.area?.value || 0;
-            // Only sum new owners (old owner not in relations)
-            const newOwnersTotal = detail.ownerRelations
-              .filter(rel => rel.ownerName !== detail.oldOwner)
-              .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
-            const remaining = oldOwnerArea - newOwnersTotal;
-            
-            return (
-              <div className={`p-2 rounded ${remaining < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
-                {remaining < 0 && " (⚠️ Exceeds old owner area!)"}
-                {remaining > 0 && " (Old owner retains remaining area)"}
-                {equalDistribution[detail.id] && detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length > 0 && ` (Equal distribution: ${(oldOwnerArea / detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length).toFixed(2)} each)`}
-              </div>
-            );
-          })()}
+  // Get old owner area from previous owners data
+  const selectedOldOwner = vehchaniPreviousOwners.find(owner => owner.name === detail.oldOwner);
+  const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+  
+  // Only sum new owners (old owner not in relations)
+  const newOwnersTotal = detail.ownerRelations
+    .filter(rel => rel.ownerName !== detail.oldOwner)
+    .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+  const remaining = oldOwnerArea - newOwnersTotal;
+  
+  // Get year slab area and calculate effective area for equal distribution
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
+  const exceedsYearSlab = yearSlabArea && (newOwnersTotal > yearSlabArea.value);
+  
+  return (
+    <div className={`p-2 rounded ${
+      remaining < 0 || exceedsYearSlab ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+    }`}>
+      Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+      {yearSlabArea && ` | Year Slab Limit: ${yearSlabArea.value}`}
+      {exceedsYearSlab && " ❌ Exceeds year slab area!"}
+      {remaining < 0 && " ⚠️ Exceeds old owner area!"}
+      {remaining > 0 && " (Old owner retains remaining area)"}
+      {equalDistribution[detail.id] && detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length > 0 && ` (Equal distribution: ${(effectiveArea / detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length).toFixed(2)} each)`}
+    </div>
+  );
+})()}
         </div>
       </div>
     )}
@@ -2226,40 +2267,47 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
       {detail.type === "Hakkami" && (
         <div className="space-y-4">
           {/* Equal distribution checkbox */}
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id={`equal_dist_${detail.id}`}
-              checked={equalDistribution[detail.id] || false}
-              onCheckedChange={(checked) => {
-                setEqualDistribution(prev => ({ ...prev, [detail.id]: checked }));
-                
-                if (checked) {
-                  const oldOwnerRelation = detail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
-                  const oldOwnerArea = oldOwnerRelation?.area?.value || 0;
-                  
-                  // Get only new owners (excluding old owner)
-                  const newOwners = detail.ownerRelations.filter(rel => 
-                    rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
-                  );
-                  const newOwnersCount = newOwners.length;
-                  
-                  if (newOwnersCount > 0) {
-                    const equalArea = oldOwnerArea / newOwnersCount;
-                    
-                    const updatedRelations = detail.ownerRelations.map((relation) => {
-                      if (relation.ownerName === detail.oldOwner) {
-                        return relation; // Keep old owner area unchanged
-                      }
-                      return { ...relation, area: { ...relation.area, value: equalArea } };
-                    });
-                    
-                    updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
-                  }
-                }
-              }}
-            />
-            <Label htmlFor={`equal_dist_${detail.id}`}>Equal Distribution of Land</Label>
-          </div>
+<div className="flex items-center space-x-2">
+  <Checkbox
+    id={`equal_dist_${detail.id}`}
+    checked={equalDistribution[detail.id] || false}
+    onCheckedChange={(checked) => {
+      setEqualDistribution(prev => ({ ...prev, [detail.id]: checked }));
+      
+      if (checked) {
+        // Get old owner area from previous owners
+        const hakkamiPreviousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
+        const selectedOldOwner = hakkamiPreviousOwners.find(owner => owner.name === detail.oldOwner);
+        const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+        
+        // Calculate effective area considering year slab limit
+        const yearSlabArea = getYearSlabAreaForDate(detail.date);
+        const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+          ? yearSlabArea.value 
+          : oldOwnerArea;
+        
+        // Get only new owners (excluding old owner)
+        const newOwnersCount = detail.ownerRelations.filter(rel => 
+          rel.ownerName !== detail.oldOwner
+        ).length;
+        
+        if (newOwnersCount > 0) {
+          const equalArea = effectiveArea / newOwnersCount;
+          
+          const updatedRelations = detail.ownerRelations.map((relation) => {
+            if (relation.ownerName === detail.oldOwner) {
+              return relation; // Keep old owner area unchanged
+            }
+            return { ...relation, area: { ...relation.area, value: equalArea } };
+          });
+          
+          updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+        }
+      }
+    }}
+  />
+  <Label htmlFor={`equal_dist_${detail.id}`}>Equal Distribution of Land</Label>
+</div>
 
           {/* Available Previous Owners as Checkboxes for NEW owners only */}
           <div className="space-y-2">
@@ -2304,13 +2352,24 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
                           updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
                           
                           // Auto-distribute if equal distribution is enabled
-                          if (equalDistribution[detail.id] && oldOwnerRelation) {
-                            const newOwnersCount = updatedRelations.filter(rel => 
-                              rel.ownerName !== detail.oldOwner
-                            ).length;
-                            
-                            if (newOwnersCount > 0) {
-                              const equalArea = oldOwnerArea / newOwnersCount;
+if (equalDistribution[detail.id]) {
+  // Get old owner area from previous owners
+  const hakkamiPreviousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
+  const selectedOldOwner = hakkamiPreviousOwners.find(owner => owner.name === detail.oldOwner);
+  const oldOwnerAreaFromPrevious = selectedOldOwner?.area?.value || 0;
+  
+  // Calculate effective area
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerAreaFromPrevious > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerAreaFromPrevious;
+  
+  const newOwnersCount = updatedRelations.filter(rel => 
+    rel.ownerName !== detail.oldOwner
+  ).length;
+  
+  if (newOwnersCount > 0) {
+    const equalArea = effectiveArea / newOwnersCount; // Use effective area
                               
                               const redistributed = updatedRelations.map(relation => {
                                 if (relation.ownerName === detail.oldOwner) {
@@ -2383,19 +2442,33 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
               {/* Area validation display */}
               <div className="text-sm text-muted-foreground">
                 {(() => {
-                  const oldOwnerRelation = detail.ownerRelations.find(rel => rel.ownerName === detail.oldOwner);
-                  const oldOwnerArea = oldOwnerRelation?.area?.value || 0;
+                   const hakkamiPreviousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
+  const selectedOldOwner = hakkamiPreviousOwners.find(owner => owner.name === detail.oldOwner);
+  const oldOwnerArea = selectedOldOwner?.area?.value || 0;
                   const newOwnersTotal = detail.ownerRelations
                     .filter(rel => rel.ownerName !== detail.oldOwner)
                     .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
                   const remaining = oldOwnerArea - newOwnersTotal;
-                  
+                    // ADD: Year slab validation
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const exceedsYearSlab = yearSlabArea && (newOwnersTotal > yearSlabArea.value);
                   return (
-                    <div className={`p-2 rounded ${remaining < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                      Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+    <div className={`p-2 rounded ${
+      remaining < 0 || exceedsYearSlab ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+    }`}>
+      Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+      {yearSlabArea && ` | Year Slab Limit: ${yearSlabArea.value}`}
+      {exceedsYearSlab && " ❌ Exceeds year slab area!"}
                       {remaining < 0 && " (⚠️ Exceeds old owner area!)"}
                       {remaining > 0 && " (Old owner retains remaining area)"}
-                      {equalDistribution[detail.id] && ` (Equal distribution: ${(oldOwnerArea / detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length).toFixed(2)} each)`}
+                      {equalDistribution[detail.id] && (() => {
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
+  const newOwnersCount = detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length;
+  return ` (Equal distribution: ${(effectiveArea / newOwnersCount).toFixed(2)} each)`;
+})()}
                     </div>
                   );
                 })()}
@@ -2418,7 +2491,10 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
                 // Get old owner area from previous owners data, not from ownerRelations
                 const selectedOldOwner = previousOwners.find(owner => owner.name === detail.oldOwner);
                 const oldOwnerArea = selectedOldOwner?.area?.value || 0;
-                
+                const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
                 // Get only new owners (excluding any potential old owner that might be in relations)
                 const newOwners = detail.ownerRelations.filter(rel => 
                   rel.ownerName.trim() !== "" && rel.ownerName !== detail.oldOwner
@@ -2426,7 +2502,7 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
                 const newOwnersCount = newOwners.length;
                 
                 if (newOwnersCount > 0) {
-                  const equalArea = oldOwnerArea / newOwnersCount;
+                  const equalArea = effectiveArea / newOwnersCount;
                   
                   const updatedRelations = detail.ownerRelations.map((relation) => {
                     // Don't modify old owner area (it shouldn't be in relations anyway)
@@ -2526,18 +2602,28 @@ const vehchaniPreviousOwners = detail.type === "Vehchani"
       .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
       .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
     const remaining = oldOwnerArea - newOwnersTotal;
-    
-    return (
-      <div className={`p-2 rounded ${
-        remaining < 0 ? 'bg-red-50 text-red-600 border border-red-200' : 
-        remaining === 0 ? 'bg-yellow-50 text-yellow-600 border border-yellow-200' :
-        'bg-green-50 text-green-600 border border-green-200'
-      }`}>
-        Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+     // Year slab validation
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const exceedsYearSlab = yearSlabArea && (newOwnersTotal > yearSlabArea.value);
+  
+  return (
+    <div className={`p-2 rounded ${
+      remaining < 0 || exceedsYearSlab ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+    }`}>
+      Old Owner Area: {oldOwnerArea} | New Owners Total: {newOwnersTotal} | Remaining: {remaining}
+      {yearSlabArea && ` | Year Slab Limit: ${yearSlabArea.value}`}
+      {exceedsYearSlab && " ❌ Exceeds year slab area!"}
         {remaining < 0 && " ❌ Exceeds old owner area!"}
         {remaining === 0 && " ✅ Fully allocated"}
         {remaining > 0 && ` ✅ Available: ${remaining}`}
-        {equalDistribution[detail.id] && ` (Auto-distributed: ${(oldOwnerArea / detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length).toFixed(2)} each)`}
+        {equalDistribution[detail.id] && (() => {
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
+  const newOwnersCount = detail.ownerRelations.filter(rel => rel.ownerName !== detail.oldOwner).length;
+  return ` (Auto-distributed: ${(effectiveArea / newOwnersCount).toFixed(2)} each)`;
+})()}
       </div>
     );
   })()}
@@ -3032,12 +3118,20 @@ case "Bojo":
                   }
                 }));
                 
-                if (checked && transfer.newOwners.length > 1) {
-                  const equalArea = (transfer.oldOwnerArea.value || 0) / transfer.newOwners.length;
-                  const newAreas = transfer.newOwners.map(ownerId => ({
-                    ownerId,
-                    area: { value: equalArea, unit: transfer.oldOwnerArea.unit }
-                  }));
+                if (checked && transfer.newOwners.length >= 1) {
+                  // Use effective area
+    const oldOwnerArea = transfer.oldOwnerArea.value || 0;
+    const yearSlabArea = getYearSlabAreaForDate(detail.date);
+    const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+      ? yearSlabArea.value 
+      : oldOwnerArea;
+    const equalArea = effectiveArea / transfer.newOwners.length;
+    
+    const newAreas = transfer.newOwners.map(ownerId => ({
+      ownerId,
+      area: { value: equalArea, unit: transfer.oldOwnerArea.unit }
+    }));
+               
                   updateOwnerTransfer(detail.id, transfer.id, { newOwnerAreas: newAreas });
                 }
               }}
@@ -3136,18 +3230,31 @@ case "Bojo":
               {/* Area validation display */}
               <div className="text-sm text-muted-foreground">
                 {(() => {
-                  const totalNewOwnerArea = transfer.newOwnerAreas.reduce((sum, area) => sum + area.area.value, 0);
-                  const oldOwnerArea = transfer.oldOwnerArea.value || 0;
-                  const remaining = oldOwnerArea - totalNewOwnerArea;
-                  
-                  return (
-                    <div className={`p-2 rounded ${remaining < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                      Old Owner Area: {oldOwnerArea} | New Owners Total: {totalNewOwnerArea} | Remaining: {remaining}
-                      {remaining < 0 && " (⚠️ Exceeds old owner area!)"}
-                      {isEqualDistribution && ` (Equal distribution: ${(oldOwnerArea / transfer.newOwners.length).toFixed(2)} each)`}
-                    </div>
-                  );
-                })()}
+  const totalNewOwnerArea = transfer.newOwnerAreas.reduce((sum, area) => sum + area.area.value, 0);
+  const oldOwnerArea = transfer.oldOwnerArea.value || 0;
+  const remainingFromOldOwner = oldOwnerArea - totalNewOwnerArea;
+  
+  // Get year slab area and calculate effective area for validation
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+    ? yearSlabArea.value 
+    : oldOwnerArea;
+  
+  const exceedsYearSlab = yearSlabArea && (totalNewOwnerArea > yearSlabArea.value);
+  const exceedsOldOwner = totalNewOwnerArea > oldOwnerArea;
+  
+  return (
+    <div className={`p-2 rounded ${
+      remainingFromOldOwner < 0 || exceedsYearSlab ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+    }`}>
+      Old Owner Area: {oldOwnerArea} | New Owners Total: {totalNewOwnerArea} | Remaining: {remainingFromOldOwner}
+      {yearSlabArea && ` | Year Slab Limit: ${yearSlabArea.value}`}
+      {exceedsYearSlab && " ❌ Exceeds year slab area!"}
+      {exceedsOldOwner && " ⚠️ Exceeds old owner area!"}
+      {isEqualDistribution && ` (Equal distribution: ${(effectiveArea / transfer.newOwners.length).toFixed(2)} each)`}
+    </div>
+  );
+})()}
               </div>
             </div>
           )}
@@ -3159,7 +3266,7 @@ case "Bojo":
 {!(detail.hukamType === "ALT Krushipanch" && (detail.ganot === "1st Right" || detail.ganot === "2nd Right")) && (
       <div className="space-y-4">
         <div className="flex justify-between items-center mb-4">
-  <Label>Ganot Details</Label>
+  <Label>Owner Details</Label>
   <Button size="sm" onClick={() => addOwnerRelation(detail.id)}>
     <Plus className="w-4 h-4 mr-2" />
     Add Owner
@@ -3168,7 +3275,7 @@ case "Bojo":
       {detail.ownerRelations.map((relation, index) => (
         <Card key={relation.id} className="p-4">
           <div className="flex justify-between items-center mb-4">
-            <h4 className="font-medium">Ganot {index + 1}</h4>
+            <h4 className="font-medium">Owner {index + 1}</h4>
             <Button
   variant="outline"
   size="sm"
@@ -3182,7 +3289,7 @@ case "Bojo":
           <div className="space-y-4">
             {/* Owner Name - Full width */}
             <div className="space-y-2">
-              <Label>Ganot Name</Label>
+              <Label>Owner Name</Label>
               <Input
                 value={relation.ownerName}
                 onChange={(e) => updateOwnerRelation(detail.id, relation.id, { ownerName: e.target.value })}
@@ -3285,32 +3392,58 @@ const handleGanotChange = (detailId: string, ganot: string) => {
   }
   
   // Auto-populate all previous owners for 2nd Right
-  if (ganot === "2nd Right") {
-    console.log('Processing 2nd Right auto-population');
+if (ganot === "2nd Right") {
+  console.log('Processing 2nd Right auto-population');
+  
+  const currentSNos = currentNondh.affectedSNos.map(sNo => 
+    typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+  );
+  console.log('Current SNos:', currentSNos);
+  
+  const previousOwners = getAvailableOwnersForGanot("2nd Right", currentNondh.id, currentSNos);
+  console.log('Previous owners returned:', previousOwners);
+  console.log('Previous owners count:', previousOwners.length);
+  
+  // Convert all previous owners to owner relations
+  const ownerRelations = previousOwners.map((owner, index) => ({
+    id: (Date.now() + index).toString(),
+    ownerName: owner.name,
+    sNo: owner.sNo,
+    area: owner.area,
+    isValid: true
+  }));
+  
+  console.log('Setting owner relations:', ownerRelations.map(r => r.ownerName));
+  
+  // ADD: Validate total area against year slab
+  const yearSlabArea = getYearSlabAreaForDate(detail.date);
+  if (yearSlabArea) {
+    const totalOwnersArea = ownerRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
     
-    const currentSNos = currentNondh.affectedSNos.map(sNo => 
-      typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
-    );
-    console.log('Current SNos:', currentSNos);
-    
-    const previousOwners = getAvailableOwnersForGanot("2nd Right", currentNondh.id, currentSNos);
-    console.log('Previous owners returned:', previousOwners);
-    console.log('Previous owners count:', previousOwners.length);
-    
-    // Convert all previous owners to owner relations
-    const ownerRelations = previousOwners.map((owner, index) => ({
-      id: (Date.now() + index).toString(),
-      ownerName: owner.name,
-      sNo: owner.sNo,
-      area: owner.area,
-      isValid: true
-    }));
-    
-    console.log('Setting owner relations:', ownerRelations.map(r => r.ownerName));
-    
-    // Update with the new owner relations
-    updateNondhDetail(detailId, { ownerRelations });
+    if (totalOwnersArea > yearSlabArea.value) {
+  console.log('Total owners area exceeds year slab, clearing areas to 0');
+  // Clear all areas to 0
+  const clearedOwnerRelations = ownerRelations.map(rel => ({
+    ...rel,
+    area: { value: 0, unit: rel.area.unit }
+  }));
+  
+  updateNondhDetail(detailId, { ownerRelations: clearedOwnerRelations });
+  
+  // Show warning toast with proper duration
+  toast({
+    title: "Area exceeds year slab limit",
+    description: `Total auto-populated owners area (${totalOwnersArea.toFixed(2)}) exceeds year slab limit (${yearSlabArea.value}). All owner areas have been cleared to 0. Please manually enter areas with total not exceeding ${yearSlabArea.value}.`,
+    variant: "destructive"
+    // Remove duration property to use default behavior, or set it higher like duration: 5000
+  });
+  return;
+}
   }
+  
+  // Update with the new owner relations (if validation passed)
+  updateNondhDetail(detailId, { ownerRelations });
+}
   
   console.log('=== HANDLE GANOT CHANGE END ===\n');
 };
