@@ -464,7 +464,7 @@ useEffect(() => {
   const createDefaultSlab = async (): Promise<YearSlabUI> => {
     const blockNo = await getAutoPopulatedSNoData(recordId, "block_no");
     return {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       startYear: "",
       endYear: 2004,
       sNoTypeUI: "block_no",
@@ -850,7 +850,7 @@ if (yearSlabs.length === 0) {
   const previousSlab = yearSlabs.length > 0 ? yearSlabs[yearSlabs.length - 1] : null;
   const shouldCopyEkatrikaran = previousSlab?.ekatrikaran && previousSlab?.ekatrikaranEntries?.length > 0;
 
-  const newSlabId = generateUUID();
+  const newSlabId = crypto.randomUUID();
 
   const newSlab: YearSlabUI = {
     id: newSlabId,
