@@ -1173,9 +1173,7 @@ const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; error
       //   break;
         
       case "Hukam":
-        if (!detail.hukamDate || !detail.hukamDate.trim()) {
-          errors.push(`Nondh ${nondhNumber}: Hukam Date is required`);
-        }
+       
         // Validate affected nondh details
 const affectedDetails = affectedNondhDetails[detail.id] || [];
 affectedDetails.forEach((affected, idx) => {
@@ -3042,227 +3040,243 @@ case "Bojo":
   </div>
 )}
           {/* 1st Right - Transfer Management */}
-          {detail.ganot === "1st Right" && (
+          {/* 1st Right */}
+{detail.ganot === "1st Right" && (
   <div className="space-y-4">
-    <div className="flex justify-between items-center">
-      <Label>Ganot Transfers</Label>
-      <Button size="sm" onClick={() => addOwnerTransfer(detail.id)}>
-        <Plus className="w-4 h-4 mr-2" />
-        Add Transfer
-      </Button>
+    {/* Old Owner Selection */}
+    <div className="space-y-2">
+      <Label>Old Ganot *</Label>
+      <Select
+        value={detail.oldOwner || ''}
+        onValueChange={(value) => {
+          const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+          const currentSNos = currentNondh?.affectedSNos.map(sNo => 
+            typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+          ) || [];
+          
+          const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
+          const selectedOwner = availableOwners.oldOwners.find(o => o.name === value);
+          
+          if (selectedOwner) {
+            updateNondhDetail(detail.id, { 
+              oldOwner: selectedOwner.name,
+              ownerRelations: [] // Start fresh like Hakkami
+            });
+          }
+        }}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Select old ganot" />
+        </SelectTrigger>
+        <SelectContent>
+          {(() => {
+            const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+            const currentSNos = currentNondh?.affectedSNos.map(sNo => 
+              typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+            ) || [];
+            const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
+            
+            return availableOwners.oldOwners.map((owner) => (
+              <SelectItem key={owner.id} value={owner.name}>
+                {owner.name} - {owner.area.value} {owner.area.unit} (From Nondh: {nondhs.find(n => n.id === owner.nondhId)?.number})
+              </SelectItem>
+            ));
+          })()}
+        </SelectContent>
+      </Select>
     </div>
 
-    {(ownerTransfers[detail.id] || []).map((transfer, transferIndex) => {
-      const currentNondh = nondhs.find(n => n.id === detail.nondhId);
-      const currentSNos = currentNondh?.affectedSNos.map(sNo => 
-        typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
-      ) || [];
-      
-      const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
-      const isEqualDistribution = transferEqualDistribution[detail.id]?.[transfer.id] || false;
-      
-      return (
-        <Card key={transfer.id} className="p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="font-medium">Transfer {transferIndex + 1}</h4>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => removeOwnerTransfer(detail.id, transfer.id)}
-              className="text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-
-          {/* Old Owner Selection */}
-          <div className="space-y-2 mb-4">
-            <Label>Old Ganot *</Label>
-            <Select
-              value={transfer.oldOwner}
-              onValueChange={(value) => {
-                const selectedOwner = availableOwners.oldOwners.find(o => o.id === value);
-                updateOwnerTransfer(detail.id, transfer.id, {
-                  oldOwner: value,
-                  oldOwnerArea: selectedOwner?.area || { value: 0, unit: 'sq_m' }
-                });
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select old owner" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableOwners.oldOwners.map((owner) => (
-                  <SelectItem key={owner.id} value={owner.id}>
-                    {owner.name} - {owner.area.value} {owner.area.unit} (From Nondh: {nondhs.find(n => n.id === owner.nondhId)?.number})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Equal Distribution Checkbox */}
-          <div className="flex items-center space-x-2 mb-4">
-            <Checkbox
-              id={`equal_dist_${detail.id}_${transfer.id}`}
-              checked={isEqualDistribution}
-              onCheckedChange={(checked) => {
-                setTransferEqualDistribution(prev => ({
-                  ...prev,
-                  [detail.id]: {
-                    ...prev[detail.id],
-                    [transfer.id]: checked as boolean
-                  }
-                }));
-                
-                if (checked && transfer.newOwners.length >= 1) {
-                  // Use effective area
-    const oldOwnerArea = transfer.oldOwnerArea.value || 0;
-    const yearSlabArea = getYearSlabAreaForDate(detail.date);
-    const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
-      ? yearSlabArea.value 
-      : oldOwnerArea;
-    const equalArea = effectiveArea / transfer.newOwners.length;
-    
-    const newAreas = transfer.newOwners.map(ownerId => ({
-      ownerId,
-      area: { value: equalArea, unit: transfer.oldOwnerArea.unit }
-    }));
-               
-                  updateOwnerTransfer(detail.id, transfer.id, { newOwnerAreas: newAreas });
-                }
-              }}
-              disabled={transfer.newOwners.length < 1}
-            />
-            <Label htmlFor={`equal_dist_${detail.id}_${transfer.id}`}>
-              Equal Distribution of Land
-            </Label>
-          </div>
-
-          {/* New Owners Selection */}
-          <div className="space-y-2 mb-4">
-            <Label>New Ganot *</Label>
-            <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
-              {availableOwners.newOwners.map((owner) => (
-                <div key={owner.id} className="flex items-center space-x-2 mb-2">
-                  <Checkbox
-                    id={`new_owner_${owner.id}`}
-                    checked={transfer.newOwners.includes(owner.id)}
-                    onCheckedChange={(checked) => {
-                      const updatedNewOwners = checked
-                        ? [...transfer.newOwners, owner.id]
-                        : transfer.newOwners.filter(id => id !== owner.id);
-                      
-                      updateOwnerTransfer(detail.id, transfer.id, { newOwners: updatedNewOwners });
-                      
-                      // Auto-distribute if equal distribution is enabled
-                      if (isEqualDistribution && updatedNewOwners.length > 0) {
-                        const oldOwnerArea = transfer.oldOwnerArea.value || 0;
-  const yearSlabArea = getYearSlabAreaForDate(detail.date);
-  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
-    ? yearSlabArea.value 
-    : oldOwnerArea;
-  const equalArea = effectiveArea / updatedNewOwners.length;
-                        const newAreas = updatedNewOwners.map(ownerId => ({
-                          ownerId,
-                          area: { value: equalArea, unit: transfer.oldOwnerArea.unit }
-                        }));
-                        updateOwnerTransfer(detail.id, transfer.id, { newOwnerAreas: newAreas });
-                      }
-                    }}
-                  />
-                  <Label htmlFor={`new_owner_${owner.id}`} className="flex-1">
-                    {owner.name} - {owner.area.value} {owner.area.unit} (From Nondh: {nondhs.find(n => n.id === owner.nondhId)?.number})
-                  </Label>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Area Distribution for Selected New Owners - Show regardless of equal distribution */}
-          {transfer.newOwners.length > 0 && (
-            <div className="space-y-3">
-              <Label>Area Distribution for New Owners</Label>
-              {transfer.newOwners.map((ownerId) => {
-                const owner = availableOwners.newOwners.find(o => o.id === ownerId);
-                const currentArea = transfer.newOwnerAreas.find(a => a.ownerId === ownerId)?.area || { value: 0, unit: 'sq_m' };
-                
-                return (
-                  <div key={ownerId} className="flex items-center gap-3 p-2 border rounded">
-                    <span className="min-w-0 flex-1 font-medium">{owner?.name}</span>
-                    <div className="flex-shrink-0">
-                      {areaFields({
-  area: currentArea,
-  onChange: (newArea) => {
-    // If equal distribution is enabled, don't allow manual changes
-    if (isEqualDistribution) return;
-    
-    // AREA VALIDATION FOR 1ST RIGHT TRANSFERS
-    const oldOwnerTotalArea = transfer.oldOwnerArea.value || 0;
-    
-    // Calculate total of OTHER new owners (excluding current one being edited)
-    const otherNewOwnersTotal = transfer.newOwnerAreas
-      .filter(a => a.ownerId !== ownerId)
-      .reduce((sum, area) => sum + (area.area.value || 0), 0);
-    
-    const proposedTotal = otherNewOwnersTotal + (newArea.value || 0);
-    
-    // Validate against old owner's area
-    if (proposedTotal > oldOwnerTotalArea) {
-      toast({
-        title: "Area validation error",
-        description: `Total area would exceed old owner's area (${oldOwnerTotalArea}). Maximum allowed for this owner: ${oldOwnerTotalArea - otherNewOwnersTotal}`,
-        variant: "destructive"
-      });
-      return; // Don't update if validation fails
-    }
-    
-    // If validation passes, update the area
-    const updatedAreas = transfer.newOwnerAreas.filter(a => a.ownerId !== ownerId);
-    updatedAreas.push({ ownerId, area: newArea });
-    updateOwnerTransfer(detail.id, transfer.id, { newOwnerAreas: updatedAreas });
-  },
-  disabled: isEqualDistribution
-})}
-                    </div>
-                  </div>
-                );
-              })}
+    {/* Equal Distribution Checkbox */}
+    <div className="flex items-center space-x-2">
+      <Checkbox
+        id={`equal_dist_1st_${detail.id}`}
+        checked={equalDistribution[detail.id] || false}
+        onCheckedChange={(checked) => {
+          setEqualDistribution(prev => ({ ...prev, [detail.id]: checked }));
+          
+          if (checked && detail.oldOwner) {
+            const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+            const currentSNos = currentNondh?.affectedSNos.map(sNo => 
+              typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+            ) || [];
+            const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
+            const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
+            const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+            
+            // Calculate effective area
+            const yearSlabArea = getYearSlabAreaForDate(detail.date);
+            const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+              ? yearSlabArea.value 
+              : oldOwnerArea;
+            
+            const newOwnersCount = detail.ownerRelations.length;
+            
+            if (newOwnersCount > 0) {
+              const equalArea = effectiveArea / newOwnersCount;
               
-              {/* Area validation display */}
-              <div className="text-sm text-muted-foreground">
-                {(() => {
-  const totalNewOwnerArea = transfer.newOwnerAreas.reduce((sum, area) => sum + area.area.value, 0);
-  const oldOwnerArea = transfer.oldOwnerArea.value || 0;
-  const remainingFromOldOwner = oldOwnerArea - totalNewOwnerArea;
-  
-  // Get year slab area and calculate effective area for validation
-  const yearSlabArea = getYearSlabAreaForDate(detail.date);
-  const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
-    ? yearSlabArea.value 
-    : oldOwnerArea;
-  
-  const exceedsYearSlab = yearSlabArea && (totalNewOwnerArea > yearSlabArea.value);
-  const exceedsOldOwner = totalNewOwnerArea > oldOwnerArea;
-  
-  return (
-    <div className={`p-2 rounded ${
-      remainingFromOldOwner < 0 || exceedsYearSlab ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
-    }`}>
-      Old Owner Area: {oldOwnerArea} | New Owners Total: {totalNewOwnerArea} | Remaining: {remainingFromOldOwner}
-      {yearSlabArea && ` | Year Slab Limit: ${yearSlabArea.value}`}
-      {exceedsYearSlab && " ❌ Exceeds year slab area!"}
-      {exceedsOldOwner && " ⚠️ Exceeds old owner area!"}
-      {isEqualDistribution && ` (Equal distribution: ${(effectiveArea / transfer.newOwners.length).toFixed(2)} each)`}
+              const updatedRelations = detail.ownerRelations.map((relation) => ({
+                ...relation,
+                area: { ...relation.area, value: equalArea }
+              }));
+              
+              updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+            }
+          }
+        }}
+      />
+      <Label htmlFor={`equal_dist_1st_${detail.id}`}>Equal Distribution of Land</Label>
     </div>
-  );
-})()}
+
+    {/* New Ganot Selection */}
+    <div className="space-y-2">
+      <Label>Select New Ganot *</Label>
+      <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
+        {(() => {
+          const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+          const currentSNos = currentNondh?.affectedSNos.map(sNo => 
+            typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+          ) || [];
+          const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
+          
+          return availableOwners.newOwners.map((owner) => {
+            const isSelected = detail.ownerRelations.some(rel => rel.ownerName === owner.name);
+            
+            return (
+              <div key={owner.id} className="flex items-center space-x-2 mb-2">
+                <Checkbox
+                  id={`new_ganot_${owner.id}`}
+                  checked={isSelected}
+                  onCheckedChange={(checked) => {
+                    let updatedRelations = [...detail.ownerRelations];
+                    
+                    if (checked) {
+                      // Add new owner
+                      const newRelation = {
+                        id: Date.now().toString(),
+                        ownerName: owner.name,
+                        sNo: detail.sNo,
+                        area: { value: 0, unit: owner.area.unit },
+                        isValid: true
+                      };
+                      updatedRelations.push(newRelation);
+                    } else {
+                      // Remove owner
+                      updatedRelations = updatedRelations.filter(rel => rel.ownerName !== owner.name);
+                    }
+                    
+                    updateNondhDetail(detail.id, { ownerRelations: updatedRelations });
+                    
+                    // Auto-distribute if equal distribution is enabled
+                    if (equalDistribution[detail.id] && detail.oldOwner) {
+                      const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
+                      const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+                      
+                      const yearSlabArea = getYearSlabAreaForDate(detail.date);
+                      const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+                        ? yearSlabArea.value 
+                        : oldOwnerArea;
+                      
+                      if (updatedRelations.length > 0) {
+                        const equalArea = effectiveArea / updatedRelations.length;
+                        
+                        const redistributed = updatedRelations.map(relation => ({
+                          ...relation,
+                          area: { ...relation.area, value: equalArea }
+                        }));
+                        
+                        updateNondhDetail(detail.id, { ownerRelations: redistributed });
+                      }
+                    }
+                  }}
+                />
+                <Label htmlFor={`new_ganot_${owner.id}`} className="flex-1">
+                  {owner.name} - {owner.area.value} {owner.area.unit} (From Nondh: {nondhs.find(n => n.id === owner.nondhId)?.number})
+                </Label>
               </div>
+            );
+          });
+        })()}
+      </div>
+    </div>
+
+    {/* Area Distribution */}
+    {detail.ownerRelations.length > 0 && (
+      <div className="space-y-3">
+        <Label>Area Distribution for New Ganot</Label>
+        {detail.ownerRelations.map((relation) => (
+          <div key={relation.id} className="flex items-center gap-3 p-2 border rounded">
+            <span className="min-w-0 flex-1 font-medium">{relation.ownerName}</span>
+            <div className="flex-shrink-0">
+              {areaFields({
+                area: relation.area,
+                onChange: (newArea) => {
+                  if (equalDistribution[detail.id]) return;
+                  
+                  const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+                  const currentSNos = currentNondh?.affectedSNos.map(sNo => 
+                    typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+                  ) || [];
+                  const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
+                  const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
+                  const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+                  
+                  const otherOwnersTotal = detail.ownerRelations
+                    .filter(rel => rel.id !== relation.id)
+                    .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+                  
+                  const proposedTotal = otherOwnersTotal + (newArea.value || 0);
+                  
+                  if (proposedTotal > oldOwnerArea) {
+                    toast({
+                      title: "Area validation error",
+                      description: `Total area would exceed old ganot's area. Maximum allowed: ${oldOwnerArea - otherOwnersTotal}`,
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+                  
+                  updateOwnerRelation(detail.id, relation.id, { area: newArea });
+                },
+                disabled: equalDistribution[detail.id]
+              })}
             </div>
-          )}
-        </Card>
-      );
-    })}
+          </div>
+        ))}
+        
+        {/* Area validation display */}
+        <div className="text-sm text-muted-foreground">
+          {(() => {
+            const currentNondh = nondhs.find(n => n.id === detail.nondhId);
+            const currentSNos = currentNondh?.affectedSNos.map(sNo => 
+              typeof sNo === 'string' ? JSON.parse(sNo).number : sNo.number
+            ) || [];
+            const availableOwners = getAvailableOwnersForGanot("1st Right", detail.nondhId, currentSNos);
+            const selectedOldOwner = availableOwners.oldOwners.find(o => o.name === detail.oldOwner);
+            const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+            const totalNewOwnerArea = detail.ownerRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+            const remaining = oldOwnerArea - totalNewOwnerArea;
+            
+            const yearSlabArea = getYearSlabAreaForDate(detail.date);
+            const effectiveArea = yearSlabArea && oldOwnerArea > yearSlabArea.value 
+              ? yearSlabArea.value 
+              : oldOwnerArea;
+            const exceedsYearSlab = yearSlabArea && (totalNewOwnerArea > yearSlabArea.value);
+            
+            return (
+              <div className={`p-2 rounded ${
+                remaining < 0 || exceedsYearSlab ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+              }`}>
+                Old Ganot Area: {oldOwnerArea} | New Ganot Total: {totalNewOwnerArea} | Remaining: {remaining}
+                {yearSlabArea && ` | Year Slab Limit: ${yearSlabArea.value}`}
+                {exceedsYearSlab && " ❌ Exceeds year slab area!"}
+                {remaining < 0 && " ⚠️ Exceeds old ganot area!"}
+                {equalDistribution[detail.id] && ` (Equal distribution: ${(effectiveArea / detail.ownerRelations.length).toFixed(2)} each)`}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    )}
   </div>
 )}
 {!(detail.hukamType === "ALT Krushipanch" && (detail.ganot === "1st Right" || detail.ganot === "2nd Right")) && (
@@ -3956,7 +3970,7 @@ if (insertError) throw insertError;
 {detail.type === "Hukam" && (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
     <div className="space-y-2">
-  <Label>Hukam Date *</Label>
+  <Label>Hukam Date</Label>
   <Input
     type="date"
     value={detail.hukamDate || ''}

@@ -1211,7 +1211,6 @@ setAllNondhsDataState(sortedData);
                     <TableRow>
                       <TableHead>Year</TableHead>
                       <TableHead>Owner Name</TableHead>
-                      <TableHead>S.No</TableHead>
                       <TableHead>Affected S.No</TableHead>
                       <TableHead>Area (sq.m)</TableHead>
                       <TableHead>Nondh No.</TableHead>
@@ -1222,7 +1221,6 @@ setAllNondhsDataState(sortedData);
                       <TableRow key={index}>
                         <TableCell>{entry.year}</TableCell>
                         <TableCell>{entry.ownerName}</TableCell>
-                        <TableCell>{entry.sNo}</TableCell>
                         <TableCell>{entry.affectedSNos || entry.sNo}</TableCell>
                         <TableCell>{entry.area?.toFixed(2)}</TableCell>
                         <TableCell>{entry.nondhNumber || "-"}</TableCell>

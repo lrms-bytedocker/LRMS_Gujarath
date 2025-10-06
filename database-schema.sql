@@ -306,9 +306,10 @@ BEGIN
   WITH latest_owner_records AS (
     SELECT 
       nor.owner_name,
-      MAX(nor.created_at) as latest_date
+      MAX(COALESCE(nd.date, nor.created_at)) as latest_date
     FROM 
       nondh_owner_relations nor
+      JOIN nondh_details nd ON nor.nondh_detail_id = nd.id
     WHERE 
       nor.is_valid = TRUE
     GROUP BY 
@@ -323,7 +324,7 @@ BEGIN
     nor.gunthas,
     nor.square_meters,
     nor.area_unit,
-    nor.created_at,
+    COALESCE(nd.date, nor.created_at) as created_at,
     n.number::VARCHAR AS nondh_number,
     lr.id AS land_record_id,
     lr.district,
@@ -336,7 +337,7 @@ BEGIN
     JOIN land_records lr ON n.land_record_id = lr.id
     LEFT JOIN year_slabs ys ON lr.id = ys.land_record_id AND ys.s_no = nor.s_no
     JOIN latest_owner_records lor ON nor.owner_name = lor.owner_name 
-      AND nor.created_at = lor.latest_date
+      AND COALESCE(nd.date, nor.created_at) = lor.latest_date
   WHERE 
     nor.is_valid = TRUE
   ORDER BY 
