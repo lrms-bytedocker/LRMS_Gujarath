@@ -143,6 +143,7 @@ async function getAutoPopulatedSNoData(landRecordId: string, selectedType: SNoTy
     return "";
   }
 }
+
 // Convert from UI-area to context-area
 function fromAreaUI(areaUI: AreaUI): { value: number; unit: "sq_m" | "acre" | "guntha" } {
   if (areaUI.areaType === "sq_m") {
@@ -211,6 +212,7 @@ function toSlabEntryUI(e: SlabEntry): SlabEntryUI {
     integrated712: e.integrated712,
   };
 }
+
 function fromYearSlabUI(s: YearSlabUI): YearSlab {
   return {
     ...s,
@@ -465,7 +467,7 @@ useEffect(() => {
     const blockNo = await getAutoPopulatedSNoData(recordId, "block_no");
     return {
       id: crypto.randomUUID(),
-      startYear: "",
+      startYear: 1900,
       endYear: 2004,
       sNoTypeUI: "block_no",
       sNo: blockNo || "",
@@ -838,7 +840,7 @@ if (yearSlabs.length === 0) {
   let startYear, endYear;
   
   if (yearSlabs.length === 0) {
-    startYear = "";
+    startYear = 1900;
     endYear = 2004;
   } else {
     const previousSlab = yearSlabs[yearSlabs.length - 1];

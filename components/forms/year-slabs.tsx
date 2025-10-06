@@ -33,9 +33,9 @@ import {
 } from "@/contexts/land-record-context";
 import { useToast } from "@/hooks/use-toast";
 import { convertToSquareMeters, convertFromSquareMeters } from "@/lib/supabase";
-import { Loader2 } from "lucide-react"; // For loading spinner
-import { uploadFile } from "@/lib/supabase"; // For file uploads
-import { LandRecordService } from "@/lib/supabase"; // For saving data
+import { Loader2 } from "lucide-react";
+import { uploadFile } from "@/lib/supabase";
+import { LandRecordService } from "@/lib/supabase";
 import { useStepFormData } from "@/hooks/use-step-form-data";
 
 // ---------- UI-only Types ----------
@@ -343,7 +343,7 @@ useEffect(() => {
       if (!slabs.length) {
         setSlabs([{
           id: "1",
-          startYear: "",
+          startYear: 1900,
           endYear: 2004,
           sNoTypeUI: "block_no",
           sNo: getAutoPopulatedSNoData(landBasicInfo, "block_no"),
@@ -900,7 +900,7 @@ if (yearSlabs.length === 0) {
   
   // Calculate years based on existing slabs
   if (slabs.length === 0) {
-    startYear = "";
+    startYear = 1900;
     endYear = 2004;
   } else {
     const previousSlab = slabs[slabs.length - 1];

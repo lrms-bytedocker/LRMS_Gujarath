@@ -53,7 +53,7 @@ export default function LandMaster() {
   const [talukaFilter, setTalukaFilter] = useState("all");
   const [villageFilter, setVillageFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
-
+const [showAddOptions, setShowAddOptions] = useState(false);
   const [selectedLand, setSelectedLand] = useState<string | null>(null);
 const [showBrokerDialog, setShowBrokerDialog] = useState(false);
 const [brokers, setBrokers] = useState([]);
@@ -65,6 +65,20 @@ const [brokerFormData, setBrokerFormData] = useState({
 });
 const [linkedBrokers, setLinkedBrokers] = useState([]);
 const [loadingLinkedBrokers, setLoadingLinkedBrokers] = useState(false);
+
+// close dropdown when clicking outside
+useEffect(() => {
+  const handleClickOutside = (event: MouseEvent) => {
+    const target = event.target as HTMLElement;
+    // Only close if clicking outside the dropdown and button
+    if (showAddOptions && !target.closest('.add-land-dropdown-container')) {
+      setShowAddOptions(false);
+    }
+  };
+  
+  document.addEventListener('mousedown', handleClickOutside);
+  return () => document.removeEventListener('mousedown', handleClickOutside);
+}, [showAddOptions]);
 
   // Fetch land records from Supabase
   useEffect(() => {
@@ -137,9 +151,14 @@ const filteredLands = lands.filter((land) => {
   return matchesSearch && matchesDistrict && matchesTaluka && matchesVillage;
 });
 
-  const handleAddNewLand = () => {
+  const handleAddOptionSelect = (option: string) => {
+  setShowAddOptions(false);
+  if (option === 'manual') {
     router.push("/land-master/forms");
-  };
+  } else if (option === 'json') {
+    router.push("/upload-json");
+  }
+};
 
   const handleRefresh = async () => {
     setLoading(true);
@@ -272,10 +291,33 @@ const handleSubmitBrokerLink = async () => {
               Manage all land records across districts
             </p>
           </div>
-          <Button onClick={handleAddNewLand} className="w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
-            Add New Land
-          </Button>
+
+<div className="relative add-land-dropdown-container">
+  <Button onClick={() => setShowAddOptions(!showAddOptions)} className="w-full sm:w-auto">
+    <Plus className="h-4 w-4 mr-2" />
+    Add New Land
+  </Button>
+  
+  {showAddOptions && (
+  <div 
+    className="absolute top-full left-0 mt-1 w-full sm:w-48 bg-white border rounded-md shadow-lg z-10"
+    onClick={(e) => e.stopPropagation()} // Add this line
+  >
+    <button
+      onClick={() => handleAddOptionSelect('manual')}
+      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+    >
+      Add Manually
+    </button>
+    <button
+      onClick={() => handleAddOptionSelect('json')}
+      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+    >
+      Upload via JSON
+    </button>
+  </div>
+)}
+</div>
         </div>
 
         <Card>
@@ -306,10 +348,32 @@ const handleSubmitBrokerLink = async () => {
             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Refresh
           </Button>
-          <Button onClick={handleAddNewLand} className="w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
-            Add New Land
-          </Button>
+          <div className="relative add-land-dropdown-container">
+  <Button onClick={() => setShowAddOptions(!showAddOptions)} className="w-full sm:w-auto">
+    <Plus className="h-4 w-4 mr-2" />
+    Add New Land
+  </Button>
+  
+  {showAddOptions && (
+  <div 
+    className="absolute top-full left-0 mt-1 w-full sm:w-48 bg-white border rounded-md shadow-lg z-10"
+    onClick={(e) => e.stopPropagation()}
+  >
+    <button
+      onClick={() => handleAddOptionSelect('manual')}
+      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+    >
+      Add Manually
+    </button>
+    <button
+      onClick={() => handleAddOptionSelect('json')}
+      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+    >
+      Upload via JSON
+    </button>
+  </div>
+)}
+</div>
         </div>
       </div>
 

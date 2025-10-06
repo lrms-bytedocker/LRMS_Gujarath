@@ -54,7 +54,7 @@ interface AreaFieldsProps {
     square_meters?: number;
   }) => void;
   disabled?: boolean;
-  maxValue?: number; // New prop for maximum allowed value 
+  maxValue?: number;
 }
 
 const statusTypes = [
@@ -320,21 +320,55 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
           </Select>
         </div>
 
-        {/* Primary Field */}
+        {/* All fields are now editable */}
         {workingArea.unit === "sq_m" ? (
-          <div className="space-y-2 w-full">
-            <Label>Square Meters</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={formatValue(displayValues.sq_m)}
-              onChange={(e) => handleSqmChange(e.target.value)}
-              placeholder="Enter square meters"
-              className="w-full"
-              disabled={disabled}
-            />
-          </div>
+          <>
+            <div className="space-y-2 w-full">
+              <Label>Square Meters</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.sq_m)}
+                onChange={(e) => handleSqmChange(e.target.value)}
+                placeholder="Enter square meters"
+                className="w-full"
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2 w-full">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.acres)}
+                onChange={(e) => handleAcreChange(e.target.value)}
+                placeholder="Enter acres"
+                className="w-full"
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2 w-full">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39"
+                step="1"
+                value={formatValue(displayValues.gunthas)}
+                onChange={(e) => handleGunthaChange(e.target.value)}
+                placeholder="Enter gunthas (0-39)"
+                className="w-full"
+                disabled={disabled}
+                onKeyDown={(e) => {
+                  if (e.key === 'e' || e.key === '-' || e.key === '+') {
+                    e.preventDefault();
+                  }
+                }}
+              />
+            </div>
+          </>
         ) : (
           <>
             <div className="space-y-2 w-full">
@@ -369,58 +403,24 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
                 }}
               />
             </div>
-          </>
-        )}
-
-        {/* Secondary Fields */}
-        {workingArea.unit === "sq_m" ? (
-          <>
             <div className="space-y-2 w-full">
-              <Label>Acres</Label>
+              <Label>Square Meters</Label>
               <Input
                 type="number"
                 min="0"
                 step="0.01"
-                value={formatValue(displayValues.acres)}
-                onChange={(e) => handleAcreChange(e.target.value)}
-                placeholder="Enter or view acres"
-                className="w-full bg-blue-50 border-blue-200"
-                readOnly
-              />
-            </div>
-            <div className="space-y-2 w-full">
-              <Label>Gunthas</Label>
-              <Input
-                type="number"
-                min="0"
-                max="39"
-                step="1"
-                value={formatValue(displayValues.gunthas)}
-                onChange={(e) => handleGunthaChange(e.target.value)}
-                placeholder="Enter gunthas (0-39)"
-                className="w-full bg-blue-50 border-blue-200"
-                readOnly
+                value={formatValue(displayValues.sq_m)}
+                onChange={(e) => handleSqmChange(e.target.value)}
+                placeholder="Enter square meters"
+                className="w-full"
+                disabled={disabled}
               />
             </div>
           </>
-        ) : (
-          <div className="space-y-2 w-full">
-            <Label>Square Meters</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={formatValue(displayValues.sq_m)}
-              onChange={(e) => handleSqmChange(e.target.value)}
-              placeholder="Enter or view sq. meters"
-              className="w-full bg-blue-50 border-blue-200"
-              readOnly
-            />
-          </div>
         )}
       </div>
 
-      {/* On desktop: Original single-row layout with better spacing */}
+      {/* On desktop: All fields editable in single row */}
       <div className="hidden md:flex items-end gap-6">
         {/* Unit Selector */}
         <div className="space-y-2 w-[140px] flex-shrink-0">
@@ -460,21 +460,55 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
           </Select>
         </div>
 
-        {/* Primary Fields */}
+        {/* All fields are now editable */}
         {workingArea.unit === "sq_m" ? (
-          <div className="space-y-2 min-w-[150px] flex-1">
-            <Label>Square Meters</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={formatValue(displayValues.sq_m)}
-              onChange={(e) => handleSqmChange(e.target.value)}
-              placeholder="Enter square meters"
-              className="w-full"
-              disabled={disabled}
-            />
-          </div>
+          <>
+            <div className="space-y-2 min-w-[150px] flex-1">
+              <Label>Square Meters</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.sq_m)}
+                onChange={(e) => handleSqmChange(e.target.value)}
+                placeholder="Enter square meters"
+                className="w-full"
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2 min-w-[120px] flex-1">
+              <Label>Acres</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={formatValue(displayValues.acres)}
+                onChange={(e) => handleAcreChange(e.target.value)}
+                placeholder="Enter acres"
+                className="w-full"
+                disabled={disabled}
+              />
+            </div>
+            <div className="space-y-2 min-w-[100px] flex-1">
+              <Label>Gunthas</Label>
+              <Input
+                type="number"
+                min="0"
+                max="39"
+                step="1"
+                value={formatValue(displayValues.gunthas)}
+                onChange={(e) => handleGunthaChange(e.target.value)}
+                placeholder="Enter gunthas (0-39)"
+                className="w-full"
+                disabled={disabled}
+                onKeyDown={(e) => {
+                  if (e.key === 'e' || e.key === '-' || e.key === '+') {
+                    e.preventDefault();
+                  }
+                }}
+              />
+            </div>
+          </>
         ) : (
           <>
             <div className="space-y-2 min-w-[120px] flex-1">
@@ -509,54 +543,20 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
                 }}
               />
             </div>
-          </>
-        )}
-
-        {/* Secondary Fields */}
-        {workingArea.unit === "sq_m" ? (
-          <>
-            <div className="space-y-2 min-w-[120px] flex-1">
-              <Label>Acres</Label>
+            <div className="space-y-2 min-w-[150px] flex-1">
+              <Label>Square Meters</Label>
               <Input
                 type="number"
                 min="0"
                 step="0.01"
-                value={formatValue(displayValues.acres)}
-                onChange={(e) => handleAcreChange(e.target.value)}
-                placeholder="Enter or view acres"
-                className="w-full bg-blue-50 border-blue-200"
-                readOnly
-              />
-            </div>
-            <div className="space-y-2 min-w-[100px] flex-1">
-              <Label>Gunthas</Label>
-              <Input
-                type="number"
-                min="0"
-                max="39"
-                step="1"
-                value={formatValue(displayValues.gunthas)}
-                onChange={(e) => handleGunthaChange(e.target.value)}
-                placeholder="Enter gunthas (0-39)"
-                className="w-full bg-blue-50 border-blue-200"
-                readOnly
+                value={formatValue(displayValues.sq_m)}
+                onChange={(e) => handleSqmChange(e.target.value)}
+                placeholder="Enter square meters"
+                className="w-full"
+                disabled={disabled}
               />
             </div>
           </>
-        ) : (
-          <div className="space-y-2 min-w-[150px] flex-1">
-            <Label>Square Meters</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={formatValue(displayValues.sq_m)}
-              onChange={(e) => handleSqmChange(e.target.value)}
-              placeholder="Enter or view sq. meters"
-              className="w-full bg-blue-50 border-blue-200"
-              readOnly
-            />
-          </div>
         )}
       </div>
     </div>
@@ -777,9 +777,7 @@ const loadDataFromDatabase = async (providedNondhs?: any[]): Promise<{ allDetail
         sdDate: detail.sd_date || "",
         tenure: detail.tenure || "Navi",
         amount: detail.amount || null,
-        affectedNondhDetails: detail.affected_nondh_details 
-          ? JSON.parse(detail.affected_nondh_details) 
-          : [],
+        affectedNondhDetails: detail.affected_nondh_details || [],
         ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
           id: rel.id,
           ownerName: rel.owner_name,
@@ -849,13 +847,25 @@ const loadDataFromDatabase = async (providedNondhs?: any[]): Promise<{ allDetail
     setNondhDetails(allDetails);
     setOriginalDetails(allDetails);
     
+    const extractedAffectedDetails = {};
+  allDetails.forEach(detail => {
+    if (detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0) {
+      extractedAffectedDetails[detail.id] = detail.affectedNondhDetails;
+    }
+  });
+  
+  setAffectedNondhDetails(extractedAffectedDetails);
+  setOriginalAffectedNondhDetails(JSON.parse(JSON.stringify(extractedAffectedDetails)));
+
     // Update step data with the loaded data
     const currentData = getStepData();
     updateStepData({
       ...currentData,
       nondhs: formattedNondhs,
       nondhDetails: allDetails,
-      originalDetails: allDetails
+      originalDetails: allDetails,
+      affectedNondhDetails: extractedAffectedDetails,
+    originalAffectedNondhDetails: JSON.parse(JSON.stringify(extractedAffectedDetails))  
     });
 
     return { allDetails, dbDetails: transformedDetails };
@@ -875,13 +885,16 @@ const loadDataFromDatabase = async (providedNondhs?: any[]): Promise<{ allDetail
 
   // Check for changes
 useEffect(() => {
+  // Skip check until data is fully initialized
+  if (!isInitialized) return;
+  
   const currentStepData = getStepFormData();
   if (currentStepData.nondhDetails && currentStepData.originalDetails) {
     const dbChanged = !deepEqual(currentStepData.nondhDetails, currentStepData.originalDetails) || 
                      !deepEqual(currentStepData.affectedNondhDetails, currentStepData.originalAffectedNondhDetails);
     setHasChanges(dbChanged);
   }
-}, [nondhDetails, originalDetails, affectedNondhDetails, originalAffectedNondhDetails]);
+}, [nondhDetails, originalDetails, affectedNondhDetails, originalAffectedNondhDetails, isInitialized]); 
 
 useEffect(() => {
   Object.entries(affectedNondhDetails).forEach(([detailId, affectedList]) => {
