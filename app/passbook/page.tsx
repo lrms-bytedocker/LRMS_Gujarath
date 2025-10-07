@@ -81,11 +81,11 @@ export default function PassbookLedger() {
         .map((entry: any) => {
           const ownerName = String(entry.owner_name ?? '')
           const parsedSurvey = parseSurveyNumber(
-  String(entry.s_no ?? ''),
-  String(entry.s_no_type ?? 'survey_no')
-);
-const surveyNumber = parsedSurvey.number;
-const surveyNumberType = parsedSurvey.type;
+            String(entry.s_no ?? ''),
+            String(entry.s_no_type ?? 'survey_no')
+          );
+          const surveyNumber = parsedSurvey.number;
+          const surveyNumberType = parsedSurvey.type;
           const district = String(entry.district ?? '')
           const taluka = String(entry.taluka ?? '')
           const village = String(entry.village ?? '')
@@ -141,33 +141,33 @@ const surveyNumberType = parsedSurvey.type;
   }
 
   // Helper function to parse survey number from various formats
-const parseSurveyNumber = (sNo: string, sNoType: string) => {
-  try {
-    // Check if s_no contains JSON
-    if (sNo.startsWith('{') && sNo.includes('number')) {
-      const parsed = JSON.parse(sNo);
-      return {
-        number: String(parsed.number || ''),
-        type: String(parsed.type || sNoType || 'survey_no')
-      };
+  const parseSurveyNumber = (sNo: string, sNoType: string) => {
+    try {
+      // Check if s_no contains JSON
+      if (sNo.startsWith('{') && sNo.includes('number')) {
+        const parsed = JSON.parse(sNo);
+        return {
+          number: String(parsed.number || ''),
+          type: String(parsed.type || sNoType || 'survey_no')
+        };
+      }
+    } catch (e) {
+      // If JSON parse fails, treat as plain string
     }
-  } catch (e) {
-    // If JSON parse fails, treat as plain string
-  }
-  
-  // Return as plain survey number
-  return {
-    number: String(sNo),
-    type: String(sNoType || 'survey_no')
+    
+    // Return as plain survey number
+    return {
+      number: String(sNo),
+      type: String(sNoType || 'survey_no')
+    };
   };
-};
 
   // Get unique values for filters - only from entries with area > 0
   const years = Array.from(new Set(passbookEntries.map((entry) => entry.year.toString())))
     .sort((a, b) => Number(b) - Number(a));
   const owners = Array.from(new Set(passbookEntries.map((entry) => entry.ownerName)))
-  .filter(owner => owner && owner.trim() !== '')
-  .sort();
+    .filter(owner => owner && owner.trim() !== '')
+    .sort();
   
   // Get unique survey numbers with their types for S.No filter
   const surveyNumbers = Array.from(
@@ -181,6 +181,7 @@ const parseSurveyNumber = (sNo: string, sNoType: string) => {
     )
   )
     .map(str => JSON.parse(str))
+    .filter(sNo => sNo.number && sNo.number.trim() !== '') // Filter out empty survey numbers
     .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
 
   // Helper function to get S.No display label
@@ -376,7 +377,7 @@ const parseSurveyNumber = (sNo: string, sNoType: string) => {
               {/* Year filter */}
               <div className="space-y-2">
                 <Label>Year</Label>
-                <Select value={yearFilter === "all" ? undefined : yearFilter}>
+                <Select value={yearFilter} onValueChange={setYearFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All Years" />
                   </SelectTrigger>
@@ -394,31 +395,32 @@ const parseSurveyNumber = (sNo: string, sNoType: string) => {
               {/* Owner filter */}
               <div className="space-y-2">
                 <Label>Owner</Label>
-                <Select value={ownerFilter === "all" ? undefined : ownerFilter} onValueChange={setOwnerFilter}>
+                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All Owners" />
                   </SelectTrigger>
                   <SelectContent>
-  {owners.map((owner) => (
-    <SelectItem key={owner} value={owner}>
-      {owner}
-    </SelectItem>
-  ))}
-</SelectContent>
+                    <SelectItem value="all">All Owners</SelectItem>
+                    {owners.map((owner) => (
+                      <SelectItem key={owner} value={owner}>
+                        {owner}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
 
               {/* S.No filter */}
               <div className="space-y-2">
                 <Label>Survey No.</Label>
-                <Select value={sNoFilter === "all" ? undefined : sNoFilter} onValueChange={setSNoFilter}>
+                <Select value={sNoFilter} onValueChange={setSNoFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All S.Nos" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All S.Nos</SelectItem>
                     {surveyNumbers.map((sNo, index) => (
-                      <SelectItem key={index} value={sNo.number}>
+                      <SelectItem key={`sno-${index}-${sNo.number}`} value={sNo.number}>
                         {getSNoDisplayLabel(sNo)}
                       </SelectItem>
                     ))}
@@ -484,7 +486,7 @@ const parseSurveyNumber = (sNo: string, sNoType: string) => {
                 {/* Year filter */}
                 <div className="space-y-2">
                   <Label>Year</Label>
-                  <Select value={yearFilter === "all" ? undefined : yearFilter} onValueChange={setYearFilter}>
+                  <Select value={yearFilter} onValueChange={setYearFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Years" />
                     </SelectTrigger>
@@ -502,7 +504,7 @@ const parseSurveyNumber = (sNo: string, sNoType: string) => {
                 {/* Owner filter */}
                 <div className="space-y-2">
                   <Label>Owner</Label>
-                  <Select value={ownerFilter === "all" ? undefined : ownerFilter} onValueChange={setOwnerFilter}>
+                  <Select value={ownerFilter} onValueChange={setOwnerFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Owners" />
                     </SelectTrigger>
@@ -521,14 +523,14 @@ const parseSurveyNumber = (sNo: string, sNoType: string) => {
               {/* S.No filter */}
               <div className="space-y-2">
                 <Label>Survey No.</Label>
-                <Select value={sNoFilter === "all" ? undefined : sNoFilter} onValueChange={setSNoFilter}>
+                <Select value={sNoFilter} onValueChange={setSNoFilter}>
                   <SelectTrigger>
                     <SelectValue placeholder="All S.Nos" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All S.Nos</SelectItem>
                     {surveyNumbers.map((sNo, index) => (
-                      <SelectItem key={index} value={sNo.number}>
+                      <SelectItem key={`sno-mobile-${index}-${sNo.number}`} value={sNo.number}>
                         {getSNoDisplayLabel(sNo)}
                       </SelectItem>
                     ))}
@@ -715,9 +717,8 @@ const parseSurveyNumber = (sNo: string, sNoType: string) => {
                     </div>
 
                     {/* Year Summary */}
-                    {/* Year Summary */}
-<div className="bg-gray-50 p-3 sm:p-4 rounded-lg print:bg-white print:border print:border-black">
-  <h4 className="font-medium mb-2 print:text-black text-sm sm:text-base">Year {year} Summary</h4>
+                    <div className="bg-gray-50 p-3 sm:p-4 rounded-lg print:bg-white print:border print:border-black">
+                      <h4 className="font-medium mb-2 print:text-black text-sm sm:text-base">Year {year} Summary</h4>
   
   {/* Desktop & Tablet: Horizontal Layout */}
   <div className="hidden sm:flex flex-wrap gap-4 text-sm">

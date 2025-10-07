@@ -526,33 +526,38 @@ useEffect(() => {
 
   // --- UI rendering helpers ---
 const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) => void }) => {
-  // Define workingArea at component level so it's accessible throughout
-  const workingArea = area || { areaType: "acre_guntha", acre: 0, guntha: 0 };
+  const workingArea = area || { areaType: "acre_guntha", acre: 0, guntha: 0, sq_m: 0 };
   
-  const displayValues = (() => {
-  if (workingArea.areaType === "sq_m") {
-    return {
-      sq_m: workingArea.sq_m,
-      acre: workingArea.sq_m ? Math.floor(convertFromSquareMeters(workingArea.sq_m, "acre")) : undefined,
-      guntha: workingArea.sq_m ? Math.round(convertFromSquareMeters(workingArea.sq_m, "guntha") % 40) : undefined
-    };
-  } else {
-    const calculatedSqm = workingArea.sq_m || ((workingArea.acre || 0) * 4046.86 + (workingArea.guntha || 0) * 101.17);
-    return {
-      sq_m: calculatedSqm ? Math.round(calculatedSqm * 100) / 100 : calculatedSqm, // Round to 2 decimal places
-      acre: workingArea.acre ? Math.floor(workingArea.acre) : workingArea.acre,
-      guntha: workingArea.guntha ? Math.round(workingArea.guntha) : workingArea.guntha
-    };
-  }
-})();
+  const SQM_PER_GUNTHA = 101.17;
+  const SQM_PER_ACRE = 4046.86;
+
+  const convertToSquareMeters = (value: number, unit: string) => {
+    if (unit === "acre") return value * SQM_PER_ACRE;
+    if (unit === "guntha") return value * SQM_PER_GUNTHA;
+    return value;
+  };
+
+  const convertFromSquareMeters = (sqm: number, unit: string) => {
+    if (unit === "acre") return sqm / SQM_PER_ACRE;
+    if (unit === "guntha") return sqm / SQM_PER_GUNTHA;
+    return sqm;
+  };
+
+  // Always derive from sq_m
+  const sqmValue = workingArea.sq_m || 0;
+  const displayValues = {
+    sq_m: Math.round(sqmValue * 100) / 100,
+    acre: Math.floor(convertFromSquareMeters(sqmValue, "acre")),
+    guntha: Math.round(convertFromSquareMeters(sqmValue, "guntha") % 40)
+  };
 
   const handleSqmChange = (value: string) => {
     if (value === "") {
       onChange({
         ...workingArea,
-        sq_m: undefined,
-        acre: undefined,
-        guntha: undefined
+        sq_m: 0,
+        acre: 0,
+        guntha: 0
       });
       return;
     }
@@ -574,76 +579,57 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
 
   const handleAcreChange = (value: string) => {
     if (value === "") {
+      const remainingSqm = displayValues.guntha ? Math.round(convertToSquareMeters(displayValues.guntha, "guntha") * 100) / 100 : 0;
       onChange({
         ...workingArea,
-        acre: undefined,
-        guntha: workingArea.guntha,
-        sq_m: workingArea.guntha ? Math.round(convertToSquareMeters(workingArea.guntha, "guntha") * 100) / 100 : undefined
+        sq_m: remainingSqm,
+        acre: 0,
+        guntha: displayValues.guntha
       });
       return;
     }
 
     const num = parseFloat(value);
     if (!isNaN(num)) {
-      if (workingArea.areaType === "sq_m") {
-        const newSqm = convertToSquareMeters(num, "acre") + 
-                      (displayValues.guntha ? convertToSquareMeters(displayValues.guntha, "guntha") : 0);
-        onChange({
-          ...workingArea,
-          sq_m: Math.round(newSqm * 100) / 100, // Round to 2 decimal places
-          acre: num,
-          guntha: displayValues.guntha
-        });
-      } else {
-        const newSqm = convertToSquareMeters(num, "acre") + 
-                      (workingArea.guntha ? convertToSquareMeters(workingArea.guntha, "guntha") : 0);
-        onChange({
-          ...workingArea,
-          areaType: "acre_guntha",
-          acre: num,
-          sq_m: Math.round(newSqm * 100) / 100 // Round to 2 decimal places
-        });
-      }
+      const guntha = displayValues.guntha || 0;
+      const totalSqm = Math.round((convertToSquareMeters(num, "acre") + 
+                      convertToSquareMeters(guntha, "guntha")) * 100) / 100;
+      onChange({ 
+        ...workingArea, 
+        sq_m: totalSqm,
+        acre: num,
+        guntha: guntha
+      });
     }
   };
 
   const handleGunthaChange = (value: string) => {
     if (value === "") {
+      const remainingSqm = displayValues.acre ? Math.round(convertToSquareMeters(displayValues.acre, "acre") * 100) / 100 : 0;
       onChange({
         ...workingArea,
-        guntha: undefined,
-        acre: workingArea.acre,
-        sq_m: workingArea.acre ? Math.round(convertToSquareMeters(workingArea.acre, "acre") * 100) / 100 : undefined
+        sq_m: remainingSqm,
+        guntha: 0,
+        acre: displayValues.acre
       });
       return;
     }
 
-    const num = parseFloat(value);
+    let num = parseFloat(value);
     if (!isNaN(num)) {
       if (num >= 40) {
-        toast({ title: "Guntha must be less than 40" });
-        return;
+        num = 39;
       }
       
-      if (workingArea.areaType === "sq_m") {
-        const newSqm = (displayValues.acre ? convertToSquareMeters(displayValues.acre, "acre") : 0) + 
-                      convertToSquareMeters(num, "guntha");
-        onChange({
-          ...workingArea,
-          sq_m: Math.round(newSqm * 100) / 100, // Round to 2 decimal places
-          acre: displayValues.acre,
-          guntha: num
-        });
-      } else {
-        const newSqm = (workingArea.acre ? convertToSquareMeters(workingArea.acre, "acre") : 0) +
-                      convertToSquareMeters(num, "guntha");
-        onChange({
-          ...workingArea,
-          areaType: "acre_guntha",
-          guntha: num,
-          sq_m: Math.round(newSqm * 100) / 100 // Round to 2 decimal places
-        });
-      }
+      const acre = displayValues.acre || 0;
+      const totalSqm = Math.round((convertToSquareMeters(acre, "acre") + 
+                      convertToSquareMeters(num, "guntha")) * 100) / 100;
+      onChange({ 
+        ...workingArea, 
+        sq_m: totalSqm,
+        guntha: num,
+        acre: acre
+      });
     }
   };
 
@@ -677,7 +663,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
             <Input
               type="number"
               min={0}
-              step="0.01"
+              step="1"
               value={formatValue(displayValues.acre)}
               onChange={(e) => handleAcreChange(e.target.value)}
               placeholder="Enter acres"
@@ -689,7 +675,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
               type="number"
               min={0}
               max={39.99}
-              step="0.01"
+              step="1"
               value={formatValue(displayValues.guntha)}
               onChange={(e) => handleGunthaChange(e.target.value)}
               placeholder="Enter guntha (≤40)"
@@ -714,7 +700,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
               <Input
                 type="number"
                 min={0}
-                step="0.01"
+                step="1"
                 value={formatValue(displayValues.acre)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter or view acres"
@@ -727,7 +713,7 @@ const areaFields = ({ area, onChange }: { area?: AreaUI; onChange: (a: AreaUI) =
                 type="number"
                 min={0}
                 max={39.99}
-                step="0.01"
+                step="1"
                 value={formatValue(displayValues.guntha)}
                 onChange={(e) => handleGunthaChange(e.target.value)}
                 placeholder="Enter guntha (≤40)"

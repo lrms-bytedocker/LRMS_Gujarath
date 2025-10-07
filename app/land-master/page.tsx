@@ -40,6 +40,7 @@ interface LandRecord {
   village: string;
   block_no: string;
   re_survey_no: string;
+  json_uploaded?: boolean;
 }
 
 export default function LandMaster() {
@@ -632,7 +633,14 @@ const handleSubmitBrokerLink = async () => {
                 ) : (
                   filteredLands.map((land) => (
                     <TableRow key={land.id}>
-                      <TableCell className="font-medium">{land.district}</TableCell>
+                      <TableCell className="font-medium">
+  <div className="flex items-center gap-2">
+    {land.district}
+    {land.json_uploaded && (
+      <Badge variant="outline" className="text-xs">JSON Upload</Badge>
+    )}
+  </div>
+</TableCell>
                       <TableCell>{land.taluka}</TableCell>
                       <TableCell>{land.village}</TableCell>
                       <TableCell>{land.block_no}</TableCell>
@@ -683,14 +691,19 @@ const handleSubmitBrokerLink = async () => {
                 <Card key={land.id} className="p-4">
                   <div className="space-y-3">
                     <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <div className="font-medium text-sm">{land.district}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {land.taluka} • {land.village}
-                        </div>
-                      </div>
-                      <Badge variant="secondary" className="text-xs">Active</Badge>
-                    </div>
+  <div className="space-y-1">
+    <div className="font-medium text-sm flex items-center gap-2">
+      {land.district}
+      {land.json_uploaded && (
+        <Badge variant="outline" className="text-xs">JSON</Badge>
+      )}
+    </div>
+    <div className="text-muted-foreground text-xs">
+      {land.taluka} • {land.village}
+    </div>
+  </div>
+  <Badge variant="secondary" className="text-xs">Active</Badge>
+</div>
                     
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>

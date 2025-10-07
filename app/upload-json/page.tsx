@@ -3,6 +3,109 @@ import React, { useState } from 'react';
 import { Upload, Download, AlertCircle, CheckCircle, FileJson, Loader2 } from 'lucide-react';
 import { LandRecordService } from '@/lib/supabase';
 
+interface Area {
+  sqm?: number;
+  acre?: number;
+  guntha?: number;
+}
+
+interface NondhOwner {
+  name: string;
+  area: Area;
+  surveyNumber?: string;
+  surveyNumberType?: string;
+}
+
+interface NondhDetail {
+  nondhNumber: string;
+  type: string;
+  date: string;
+  vigat: string;
+  tenure: string;
+  status?: string;
+  invalidReason?: string;
+  showInOutput?: boolean;
+  oldOwner?: string;
+  owners?: NondhOwner[];
+  newOwners?: NondhOwner[];
+  sdDate?: string;
+  amount?: number;
+  hukamType?: string;
+  hukamDate?: string;
+  restrainingOrder?: string;
+  ganotType?: string;
+  affectedNondhDetails?: Array<{ nondhNo: string; status: string; invalidReason: string; }>;
+  validationErrors?: string[];
+}
+
+interface UploadResult {
+  success: boolean;
+  message: string;
+  stats?: {
+    yearSlabs: number;
+    panipatraks: number;
+    farmers: number;
+    nondhs: number;
+    nondhDetails: number;
+    totalOwners: number;
+    skippedNondhDetails: number;
+  };
+  landRecordId?: string;
+}
+
+interface JsonData {
+  basicInfo: {
+    district: string;
+    taluka: string;
+    village: string;
+    blockNo?: string;
+    reSurveyNo?: string;
+    isPromulgation?: boolean;
+  };
+  yearSlabs?: Array<any>;
+  panipatraks?: Array<any>;
+  nondhs?: Array<any>;
+  nondhDetails?: NondhDetail[];
+}
+
+const NONDH_TYPES = [
+  "Kabjedaar",
+  "Ekatrikaran",
+  "Varsai",
+  "Hayati_ma_hakh_dakhal",
+  "Hakkami",
+  "Vechand",
+  "Durasti",
+  "Promulgation",
+  "Hukam",
+  "Vehchani",
+  "Bojo",
+  "Other",
+] as const;
+
+const TENURE_TYPES = [
+  "Navi",
+  "Juni",
+  "Kheti_Kheti_ma_Juni",
+  "NA",
+  "Bin_Kheti_Pre_Patra",
+  "Prati_bandhit_satta_prakar"
+] as const;
+
+const HUKAM_TYPES = [
+  "SSRD",
+  "Collector",
+  "Collector_ganot",
+  "Prant",
+  "Mamlajdaar",
+  "GRT",
+  "Jasu",
+  "ALT Krushipanch",
+  "DILR"
+] as const;
+
+const GANOT_OPTIONS = ["1st Right", "2nd Right"] as const;
+
 // Area conversion utilities
 const convertToSquareMeters = (value, unit) => {
   switch (unit) {
@@ -18,20 +121,28 @@ const convertToSquareMeters = (value, unit) => {
 };
 
 const LandRecordJSONUpload = () => {
-  const [file, setFile] = useState(null);
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [errors, setErrors] = useState([]);
+  const [result, setResult] = useState<UploadResult>(null);
+  const [errors, setErrors] = useState<string[]>([]);
 
   const sampleJSON = {
     basicInfo: {
-      district: "Mysuru",
-      taluka: "Mysuru",
-      village: "Yelawala",
-      blockNo: "123",
-    reSurveyNo: "245/2",
-      isPromulgation: true,
-    },
+  district: "Mysuru",
+  taluka: "Mysuru",
+  village: "Yelawala",
+  blockNo: "123",
+  reSurveyNo: "245/2",
+  isPromulgation: true,
+  area: {
+    acre: 5,
+    guntha: 20
+  }
+  // OR alternatively:
+  // area: {
+  //   sqm: 22257.3
+  // }
+},
     yearSlabs: [
       {
         startYear: 2010,
@@ -58,55 +169,50 @@ const LandRecordJSONUpload = () => {
       }
     ],
     panipatraks: [
-  {
-    year: 2012,
-    farmers: [
       {
-        name: "Farmer Name 1",
-        area: {
-          acre: 3,
-          guntha: 0
-        }
-        // No paikyNumber or ekatrikaranNumber for regular farmers
+        year: 2012,
+        farmers: [
+          {
+            name: "Farmer Name 1",
+            area: {
+              acre: 3,
+              guntha: 0
+            }
+          },
+          {
+            name: "Farmer Name 2",
+            area: {
+              sqm: 10117
+            }
+          }
+        ]
       },
       {
-        name: "Farmer Name 2",
-        area: {
-          sqm: 10117
-        }
-        // No paikyNumber or ekatrikaranNumber for regular farmers
+        year: 2018,
+        farmers: [
+          {
+            name: "Main Land Owner",
+            area: {
+              sqm: 8000
+            }
+          },
+          {
+            name: "Paiky Owner 1",
+            area: {
+              sqm: 5058.5
+            },
+            paikyNumber: 1
+          },
+          {
+            name: "Ekatrikaran Owner 1",
+            area: {
+              sqm: 3000
+            },
+            ekatrikaranNumber: 1
+          }
+        ]
       }
-    ]
-  },
-  {
-    year: 2018,
-    farmers: [
-      {
-        name: "Main Land Owner",
-        area: {
-          sqm: 8000
-        }
-        // Regular owner - no numbers
-      },
-      {
-        name: "Paiky Owner 1",
-        area: {
-          sqm: 5058.5
-        },
-        paikyNumber: 1
-        // Only paikyNumber, no ekatrikaranNumber
-      },
-      {
-        name: "Ekatrikaran Owner 1",
-        area: {
-          sqm: 3000
-        },
-        ekatrikaranNumber: 1
-        // Only ekatrikaranNumber, no paikyNumber
-      }
-    ]
-  }
-],
+    ],
     nondhs: [
       {
         number: "1",
@@ -129,7 +235,7 @@ const LandRecordJSONUpload = () => {
         date: "15012015",
         vigat: "Initial possession entry",
         tenure: "Navi",
-        status: "valid",
+        status: "Pramaanik",
         showInOutput: true,
         owners: [
           {
@@ -153,7 +259,7 @@ const LandRecordJSONUpload = () => {
         date: "20052018",
         vigat: "Transfer from Owner 1 to new owners",
         tenure: "Navi",
-        status: "valid",
+        status: "Pramaanik",
         oldOwner: "Owner 1",
         showInOutput: true,
         newOwners: [
@@ -182,12 +288,13 @@ const LandRecordJSONUpload = () => {
         restrainingOrder: "no",
         vigat: "Court order regarding land dispute",
         tenure: "Navi",
-        status: "valid",
+        status: "Radd",
+        invalidReason: "Superseded by court order",
         showInOutput: true,
-         affectedNondhDetails: [
+        affectedNondhDetails: [
           {
             nondhNo: "1",
-            status: "invalid",
+            status: "Radd",
             invalidReason: "Superseded by court order"
           }
         ],
@@ -208,7 +315,7 @@ const LandRecordJSONUpload = () => {
         amount: 500000,
         vigat: "Sale transaction",
         tenure: "Navi",
-        status: "valid",
+        status: "Pramaanik",
         oldOwner: "Owner 2",
         showInOutput: true,
         newOwners: [
@@ -227,7 +334,7 @@ const LandRecordJSONUpload = () => {
         date: "20082021",
         vigat: "Possession transfer",
         tenure: "Navi",
-        status: "valid",
+        status: "Pramaanik",
         oldOwner: "New Owner 1",
         showInOutput: true,
         newOwners: [
@@ -251,7 +358,7 @@ const LandRecordJSONUpload = () => {
         date: "10012022",
         vigat: "Correction entry",
         tenure: "Navi",
-        status: "valid",
+        status: "Pramaanik",
         showInOutput: true,
         owners: [
           {
@@ -271,7 +378,7 @@ const LandRecordJSONUpload = () => {
         date: "25052022",
         vigat: "Load entry",
         tenure: "Navi",
-        status: "invalid",
+        status: "Na Manjoor",
         invalidReason: "Entry canceled due to documentation error",
         showInOutput: false,
         owners: [
@@ -336,6 +443,15 @@ const LandRecordJSONUpload = () => {
     return { value: 0, unit: 'sq_m' };
   };
 
+  const mapStatusFromJSON = (jsonStatus: string): "valid" | "invalid" | "nullified" => {
+    switch (jsonStatus) {
+      case "Pramaanik": return "valid";
+      case "Radd": return "invalid";
+      case "Na Manjoor": return "nullified";
+      default: return "valid";
+    }
+  };
+
   const findSlabForYear = (year, yearSlabs) => {
     return yearSlabs.find(slab => 
       year >= slab.startYear && year < slab.endYear
@@ -365,105 +481,165 @@ const LandRecordJSONUpload = () => {
     }
 
     if (data.panipatraks) {
-    data.panipatraks.forEach((panip, i) => {
-      if (!panip.year) {
-        validationErrors.push(`Panipatrak ${i + 1}: Missing year`);
-      } else {
-        const matchingSlab = findSlabForYear(panip.year, data.yearSlabs);
-        if (!matchingSlab) {
-          validationErrors.push(
-            `Panipatrak ${i + 1}: Year ${panip.year} does not fall within any year slab range`
-          );
-        }
-      }
-      
-      if (!panip.farmers || panip.farmers.length === 0) {
-        validationErrors.push(`Panipatrak ${i + 1}: Must have at least one farmer`);
-      }
-      
-      panip.farmers?.forEach((farmer, j) => {
-        if (!farmer.name) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Missing name`);
+      data.panipatraks.forEach((panip, i) => {
+        if (!panip.year) {
+          validationErrors.push(`Panipatrak ${i + 1}: Missing year`);
+        } else {
+          const matchingSlab = findSlabForYear(panip.year, data.yearSlabs);
+          if (!matchingSlab) {
+            validationErrors.push(
+              `Panipatrak ${i + 1}: Year ${panip.year} does not fall within any year slab range`
+            );
+          }
         }
         
-        // Remove mandatory validation for paikyNumber and ekatrikaranNumber
-        // Add validation for mutual exclusivity
-        if (farmer.paikyNumber !== undefined && farmer.ekatrikaranNumber !== undefined) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Cannot have both paikyNumber and ekatrikaranNumber`);
+        if (!panip.farmers || panip.farmers.length === 0) {
+          validationErrors.push(`Panipatrak ${i + 1}: Must have at least one farmer`);
         }
         
-        // Validate that if numbers are provided, they are positive
-        if (farmer.paikyNumber !== undefined && farmer.paikyNumber < 0) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: paikyNumber must be 0 or positive`);
-        }
-        if (farmer.ekatrikaranNumber !== undefined && farmer.ekatrikaranNumber < 0) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: ekatrikaranNumber must be 0 or positive`);
-        }
-      });
-    });
-  }
-
-    // Enhanced validation for nondh details from 2nd version
-    if (data.nondhDetails) {
-      data.nondhDetails.forEach((detail, i) => {
-        if (!detail.nondhNumber) {
-          validationErrors.push(`Nondh detail ${i + 1}: Missing nondh number`);
-        }
-        if (!detail.type) {
-          validationErrors.push(`Nondh detail ${i + 1}: Missing type`);
-        }
-        if (!detail.date) {
-          validationErrors.push(`Nondh detail ${i + 1}: Missing date`);
-        } else if (detail.date.length !== 8) {
-          validationErrors.push(`Nondh detail ${i + 1}: Date must be in ddmmyyyy format (e.g., 15012020)`);
-        }
-        if (!detail.vigat) {
-          validationErrors.push(`Nondh detail ${i + 1}: Missing vigat`);
-        }
-
-        // Type-specific validations
-        // const transferTypes = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"];
-        // if (transferTypes.includes(detail.type)) {
-        //   if (!detail.oldOwner) {
-        //     validationErrors.push(`Nondh detail ${i + 1}: Transfer type '${detail.type}' requires oldOwner`);
-        //   }
-        //   if (!detail.newOwners || detail.newOwners.length === 0) {
-        //     validationErrors.push(`Nondh detail ${i + 1}: Transfer type '${detail.type}' requires at least one new owner`);
-        //   }
-        // } else if (!["Hukam"].includes(detail.type)) {
-        //   if (!detail.owners || detail.owners.length === 0) {
-        //     validationErrors.push(`Nondh detail ${i + 1}: Requires at least one owner`);
-        //   }
-        // }
-
-        // // Vechand specific
-        // if (detail.type === "Vechand") {
-        //   if (!detail.sdDate) {
-        //     validationErrors.push(`Nondh detail ${i + 1}: Vechand type requires sdDate`);
-        //   }
-        //   if (!detail.amount) {
-        //     validationErrors.push(`Nondh detail ${i + 1}: Vechand type requires amount`);
-        //   }
-        // }
-
-        // // Hukam specific
-        // if (detail.type === "Hukam") {
-        //   if (!detail.hukamType) {
-        //     validationErrors.push(`Nondh detail ${i + 1}: Hukam type requires hukamType`);
-        //   }
-        //   if (!detail.restrainingOrder) {
-        //     validationErrors.push(`Nondh detail ${i + 1}: Hukam type requires restrainingOrder (yes/no)`);
-        //   }
-        // }
-
-        // Status validation
-        if (detail.status === "invalid" && !detail.invalidReason) {
-          validationErrors.push(`Nondh detail ${i + 1}: Invalid status requires invalidReason`);
-        }
+        panip.farmers?.forEach((farmer, j) => {
+          if (!farmer.name) {
+            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Missing name`);
+          }
+          
+          if (farmer.paikyNumber !== undefined && farmer.ekatrikaranNumber !== undefined) {
+            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Cannot have both paikyNumber and ekatrikaranNumber`);
+          }
+          
+          if (farmer.paikyNumber !== undefined && farmer.paikyNumber < 0) {
+            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: paikyNumber must be 0 or positive`);
+          }
+          if (farmer.ekatrikaranNumber !== undefined && farmer.ekatrikaranNumber < 0) {
+            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: ekatrikaranNumber must be 0 or positive`);
+          }
+        });
       });
     }
 
     return validationErrors;
+  };
+
+  const validateNondhDetail = (detail: NondhDetail, index: number): string[] => {
+    const errors: string[] = [];
+
+    if (!detail.nondhNumber) {
+      errors.push(`Missing nondh number`);
+    }
+    if (!detail.type) {
+      errors.push(`Missing type`);
+    } else if (!NONDH_TYPES.includes(detail.type as any)) {
+      errors.push(`Invalid nondh type '${detail.type}'. Must be one of: ${NONDH_TYPES.join(', ')}`);
+    }
+    if (!detail.date) {
+      errors.push(`Missing date`);
+    } else if (detail.date.length !== 8) {
+      errors.push(`Date must be in ddmmyyyy format (e.g., 15012020)`);
+    }
+    if (!detail.vigat) {
+      errors.push(`Missing vigat`);
+    }
+    if (!detail.tenure) {
+      errors.push(`Missing tenure`);
+    } else if (!TENURE_TYPES.includes(detail.tenure as any)) {
+      errors.push(`Invalid tenure type '${detail.tenure}'. Must be one of: ${TENURE_TYPES.join(', ')}`);
+    }
+
+    if (detail.type === "Hukam") {
+      if (!HUKAM_TYPES.includes(detail.hukamType as any)) {
+        errors.push(`Invalid hukam type '${detail.hukamType}'. Must be one of: ${HUKAM_TYPES.join(', ')}`);
+      }
+      if (detail.hukamType === "ALT Krushipanch" && detail.ganotType) {
+        if (!GANOT_OPTIONS.includes(detail.ganotType as any)) {
+          errors.push(`Invalid ganot type '${detail.ganotType}'. Must be one of: ${GANOT_OPTIONS.join(', ')}`);
+        }
+      }
+    }
+
+    const mappedStatus = detail.status ? mapStatusFromJSON(detail.status) : "valid";
+    if (mappedStatus === "invalid" && !detail.invalidReason) {
+      errors.push(`Radd status requires invalidReason`);
+    }
+
+    return errors;
+  };
+
+  const getPrimarySNoType = (affectedSNos: any[]): string => {
+    if (!affectedSNos || affectedSNos.length === 0) return 's_no';
+    
+    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+    
+    const types = affectedSNos.map(sNo => {
+      try {
+        if (typeof sNo === 'string') {
+          const parsed = JSON.parse(sNo);
+          return parsed.type || 's_no';
+        } else if (typeof sNo === 'object' && sNo.type) {
+          return sNo.type;
+        }
+        return 's_no';
+      } catch (e) {
+        return 's_no';
+      }
+    });
+    
+    for (const type of priorityOrder) {
+      if (types.includes(type)) {
+        return type;
+      }
+    }
+    
+    return 's_no';
+  };
+
+  const sortNondhs = (nondhs: any[]) => {
+    return [...nondhs].sort((a, b) => {
+      const aType = getPrimarySNoType(a.affectedSNos);
+      const bType = getPrimarySNoType(b.affectedSNos);
+
+      const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+      const aPriority = priorityOrder.indexOf(aType);
+      const bPriority = priorityOrder.indexOf(bType);
+
+      if (aPriority !== bPriority) return aPriority - bPriority;
+
+      const aNum = parseInt(a.number.toString()) || 0;
+      const bNum = parseInt(b.number.toString()) || 0;
+      return aNum - bNum;
+    });
+  };
+
+  const processValidityChain = (
+    validDetails: any[],
+    sortedNondhs: any[]
+  ) => {
+    const nondhDetailMap = new Map();
+    validDetails.forEach(detail => {
+      nondhDetailMap.set(detail.nondhNumber, detail);
+    });
+
+    const affectingCounts = new Map<string, number>();
+    
+    sortedNondhs.forEach((nondh, index) => {
+      let count = 0;
+      
+      for (let i = index + 1; i < sortedNondhs.length; i++) {
+        const affectingNondh = sortedNondhs[i];
+        const affectingDetail = nondhDetailMap.get(affectingNondh.number);
+        if (affectingDetail?.mappedStatus === 'invalid') {
+          count++;
+        }
+      }
+      
+      affectingCounts.set(nondh.number, count);
+    });
+
+    validDetails.forEach(detail => {
+      const affectingCount = affectingCounts.get(detail.nondhNumber) || 0;
+      const shouldBeValid = affectingCount % 2 === 0;
+      detail.isValid = shouldBeValid;
+    });
+
+    return validDetails;
   };
 
   const processUpload = async (jsonData) => {
@@ -479,20 +655,23 @@ const LandRecordJSONUpload = () => {
       }
 
       // Step 1: Save land record basic info
+      const basicInfoArea = parseArea(jsonData.basicInfo.area);
+      
       const landRecordData = {
-        district: jsonData.basicInfo.district,
-        taluka: jsonData.basicInfo.taluka,
-        village: jsonData.basicInfo.village,
-        block_no: jsonData.basicInfo.blockNo || null,
-        re_survey_no: jsonData.basicInfo.reSurveyNo || null,
-        is_promulgation: jsonData.basicInfo.isPromulgation || false,
-        s_no_type: jsonData.basicInfo.blockNo ? 'block_no' : 're_survey_no',
-        s_no: jsonData.basicInfo.blockNo || jsonData.basicInfo.reSurveyNo,
-        area_value: 0,
-        area_unit: 'sq_m',
-        status: 'draft',
-        current_step: 1
-      };
+  district: jsonData.basicInfo.district,
+  taluka: jsonData.basicInfo.taluka,
+  village: jsonData.basicInfo.village,
+  block_no: jsonData.basicInfo.blockNo || null,
+  re_survey_no: jsonData.basicInfo.reSurveyNo || null,
+  is_promulgation: jsonData.basicInfo.isPromulgation || false,
+  s_no_type: jsonData.basicInfo.blockNo ? 'block_no' : 're_survey_no',
+  s_no: jsonData.basicInfo.blockNo || jsonData.basicInfo.reSurveyNo,
+  area_value: basicInfoArea.value,  // CHANGED from 0
+  area_unit: basicInfoArea.unit,     // CHANGED from 'sq_m'
+  json_uploaded: true,               // NEW FIELD
+  status: 'draft',
+  current_step: 1
+};
 
       const { data: savedRecord, error: recordError } = await LandRecordService.saveLandRecord(landRecordData);
       
@@ -502,108 +681,11 @@ const LandRecordJSONUpload = () => {
 
       const landRecordId = savedRecord.id;
 
-      // Step 2: Save year slabs
-      // const yearSlabsData = jsonData.yearSlabs.map(slab => {
-      //   const area = parseArea(slab.area);
-      //   return {
-      //     land_record_id: landRecordId,
-      //     start_year: slab.startYear,
-      //     end_year: slab.endYear,
-      //     s_no: slab.sNo,
-      //     s_no_type: slab.sNoType,
-      //     area_value: area.value,
-      //     area_unit: area.unit,
-      //     paiky: slab.paiky || false,
-      //     paiky_count: slab.paikyEntries?.length || 0,
-      //     ekatrikaran: slab.ekatrikaran || false,
-      //     ekatrikaran_count: slab.ekatrikaranEntries?.length || 0,
-      //     paiky_entries: slab.paikyEntries?.map(entry => ({
-      //       s_no: entry.sNo,
-      //       s_no_type: entry.sNoType,
-      //       area_value: parseArea(entry.area).value,
-      //       area_unit: parseArea(entry.area).unit,
-      //       entry_type: 'paiky'
-      //     })) || [],
-      //     ekatrikaran_entries: slab.ekatrikaranEntries?.map(entry => ({
-      //       s_no: entry.sNo,
-      //       s_no_type: entry.sNoType,
-      //       area_value: parseArea(entry.area).value,
-      //       area_unit: parseArea(entry.area).unit,
-      //       entry_type: 'ekatrikaran'
-      //     })) || []
-      //   };
-      // });
-
-      // const { data: savedSlabs, error: slabsError } = await LandRecordService.saveYearSlabs(
-      //   landRecordId, 
-      //   yearSlabsData
-      // );
-      
-      // if (slabsError) {
-      //   throw new Error(`Failed to save year slabs: ${slabsError.message}`);
-      // }
-
-      // Step 3: Save panipatraks with year-based matching and foreign key
-// if (jsonData.panipatraks && jsonData.panipatraks.length > 0) {
-//   const panipatraksData = jsonData.panipatraks.map(panip => {
-//     // Find matching slab based on year
-//     const matchingSlabData = jsonData.yearSlabs.find(slab => 
-//       panip.year >= slab.startYear && panip.year < slab.endYear
-//     );
-    
-//     // Find the corresponding saved slab by matching start and end years
-//     const savedSlab = (savedSlabs.slabs || savedSlabs).find(s => 
-//   s.start_year === matchingSlabData.startYear && 
-//   s.end_year === matchingSlabData.endYear
-// );
-//     if (!savedSlab) {
-//   throw new Error(`Could not find matching year slab for panipatrak year ${panip.year}`);
-// }
-//     return {
-//       yearslab_id: savedSlab.id, // Foreign key to year_slabs table
-//       land_record_id: landRecordId,
-//       s_no: matchingSlabData.sNo,
-//       year: panip.year,
-//       farmers: panip.farmers.map(farmer => {
-//         const area = parseArea(farmer.area);
-        
-//         // AUTO-DETECT farmer type based on numbers (not mandatory)
-//         let farmerType = 'regular';
-//         let paikyNumber = null;
-//         let ekatrikaranNumber = null;
-        
-//         if (farmer.paikyNumber !== undefined && farmer.paikyNumber > 0) {
-//           farmerType = 'paiky';
-//           paikyNumber = farmer.paikyNumber;
-//         } else if (farmer.ekatrikaranNumber !== undefined && farmer.ekatrikaranNumber > 0) {
-//           farmerType = 'ekatrikaran';
-//           ekatrikaranNumber = farmer.ekatrikaranNumber;
-//         }
-        
-//         return {
-//           name: farmer.name,
-//           area_value: area.value,
-//           area_unit: area.unit,
-//           type: farmerType,
-//           paiky_number: paikyNumber,
-//           ekatrikaran_number: ekatrikaranNumber
-//         };
-//       })
-//     };
-//   });
-
-//   const { error: panipError } = await LandRecordService.savePanipatraks(panipatraksData);
-  
-//   if (panipError) {
-//     throw new Error(`Failed to save panipatraks: ${panipError.message}`);
-//   }
-// }
-
-      // Step 4: Save nondhs
+      // Step 2: Save nondhs
       let savedNondhs = [];
       if (jsonData.nondhs && jsonData.nondhs.length > 0) {
         const nondhsData = jsonData.nondhs.map(nondh => ({
-          id: crypto.randomUUID(), // Temporary ID for mapping
+          id: crypto.randomUUID(),
           land_record_id: landRecordId,
           number: nondh.number,
           affected_s_nos: nondh.affectedSNos
@@ -617,100 +699,147 @@ const LandRecordJSONUpload = () => {
         savedNondhs = nondhsResult || [];
       }
 
-      // Step 5: Save nondh details with foreign keys
-  let savedNondhDetails = [];
-if (jsonData.nondhDetails && jsonData.nondhDetails.length > 0) {
-  for (const detail of jsonData.nondhDetails) {
-    // Find the corresponding nondh
-    const correspondingNondh = savedNondhs.find(n => n.number === detail.nondhNumber);
-    
-    const nondhDetailData = {
-      nondh_id: correspondingNondh?.id || null, // Foreign key to nondhs table
-      type: detail.type,
-      date: parseDate(detail.date),
-      sd_date: detail.sdDate ? parseDate(detail.sdDate) : null,
-      hukam_date: detail.hukamDate ? parseDate(detail.hukamDate) : null,
-      hukam_type: detail.hukamType || null,
-      restraining_order: detail.restrainingOrder || null,
-      amount: detail.amount || null,
-      vigat: detail.vigat,
-      tenure: detail.tenure || 'Navi',
-      status: detail.status || 'valid',
-      invalid_reason: detail.invalidReason || null,
-      show_in_output: detail.showInOutput !== false,
-      old_owner: detail.oldOwner || null,
-      affected_nondh_details: detail.affectedNondhDetails || [],
-    };
+      const sortedNondhs = sortNondhs(savedNondhs);
+      
+      let validNondhDetails = [];
+      let skippedNondhDetails = [];
+      let totalOwnersInserted = 0;
+      let savedNondhDetailsWithIds = [];
 
-    const { data: nondhDetailResult, error: nondhDetailsError } = await LandRecordService.createNondhDetail(nondhDetailData);
-    
-    if (nondhDetailsError) {
-      throw new Error(`Failed to save nondh details: ${nondhDetailsError.message}`);
-    }
-    
-    // Store the result along with original detail for Step 6 mapping
-    if (nondhDetailResult) {
-      const savedDetail = Array.isArray(nondhDetailResult) ? nondhDetailResult[0] : nondhDetailResult;
-      savedNondhDetails.push({
-        ...savedDetail,
-        originalDetail: detail // Keep reference to original for owner processing
-      });
-    }
-  }
-}
+      // Step 3: Process and save nondh details (with individual validation)
+      if (jsonData.nondhDetails && jsonData.nondhDetails.length > 0) {
+        for (const detail of jsonData.nondhDetails) {
+          const detailValidationErrors = validateNondhDetail(detail, validNondhDetails.length);
+          
+          if (detailValidationErrors.length > 0) {
+            skippedNondhDetails.push(
+              `Nondh ${detail.nondhNumber || 'unknown'}: ${detailValidationErrors.join(', ')}`
+            );
+            continue;
+          }
 
-      // Step 6: Save owner relations with foreign keys
-let totalOwnersInserted = 0;
-if (savedNondhDetails.length > 0) {
-  for (const nondhDetail of savedNondhDetails) {
-    const originalDetail = nondhDetail.originalDetail; // Use the stored reference
+          const correspondingNondh = savedNondhs.find(
+            n => n.number.toString() === detail.nondhNumber.toString()
+          );
 
-    if (!originalDetail) continue;
+          if (!correspondingNondh) {
+            skippedNondhDetails.push(
+              `Nondh ${detail.nondhNumber}: No matching nondh found in nondhs array`
+            );
+            continue;
+          }
+
+          const mappedStatus = detail.status ? mapStatusFromJSON(detail.status) : "valid";
+
+          const nondhDetailData = {
+            nondh_id: correspondingNondh.id,
+            type: detail.type,
+            date: parseDate(detail.date),
+            sd_date: detail.sdDate ? parseDate(detail.sdDate) : null,
+            hukam_date: detail.hukamDate ? parseDate(detail.hukamDate) : null,
+            hukam_type: detail.hukamType || null,
+            restraining_order: detail.restrainingOrder || null,
+            amount: detail.amount || null,
+            vigat: detail.vigat,
+            tenure: detail.tenure || 'Navi',
+            status: mappedStatus,
+            invalid_reason: mappedStatus === 'invalid' ? detail.invalidReason : null,
+            show_in_output: detail.showInOutput !== false,
+            old_owner: detail.oldOwner || null,
+            affected_nondh_details: detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0
+              ? JSON.stringify(detail.affectedNondhDetails.map(a => ({
+                  nondhNo: a.nondhNo,
+                  status: mapStatusFromJSON(a.status),
+                  invalidReason: a.invalidReason || null
+                })))
+              : null,
+            ganot: detail.hukamType === "ALT Krushipanch" ? detail.ganotType : null,
+          };
+
+          const { data: nondhDetailResult, error: nondhDetailsError } = await LandRecordService.createNondhDetail(nondhDetailData);
+          
+          if (nondhDetailsError) {
+            skippedNondhDetails.push(`Nondh ${detail.nondhNumber || 'unknown'}: Database error - ${nondhDetailsError.message}`);
+            continue;
+          }
+
+          if (nondhDetailResult) {
+            const savedDetail = Array.isArray(nondhDetailResult) ? nondhDetailResult[0] : nondhDetailResult;
+            
+            savedNondhDetailsWithIds.push({
+              ...savedDetail,
+              originalDetail: detail,
+              nondhNumber: detail.nondhNumber,
+              mappedStatus: mappedStatus,
+              isValid: true
+            });
+            
+            validNondhDetails.push(savedDetail);
+          }
+        }
+
+        // Apply validity chain to saved details
+        const detailsWithValidityChain = processValidityChain(
+          savedNondhDetailsWithIds,
+          sortedNondhs
+        );
+
+        // Step 4: Save owner relations with validity chain applied
+        for (const nondhDetail of detailsWithValidityChain) {
+          const originalDetail = nondhDetail.originalDetail;
+          if (!originalDetail) continue;
 
           // Process regular owners
-    if (originalDetail.owners && originalDetail.owners.length > 0) {
-      for (const owner of originalDetail.owners) {
-        const area = parseArea(owner.area);
-        const { error } = await LandRecordService.createNondhOwnerRelation({
-          nondh_detail_id: nondhDetail.id,
-          owner_name: owner.name,
-          square_meters: area.value,
-          area_unit: area.unit,
-          survey_number: owner.surveyNumber || null,
-          survey_number_type: owner.surveyNumberType || null
-        });
-        
-        if (!error) totalOwnersInserted++; // Count successful inserts
-      }
-    }
+          if (originalDetail.owners && originalDetail.owners.length > 0) {
+            for (const owner of originalDetail.owners) {
+              const area = parseArea(owner.area);
+              const { error } = await LandRecordService.createNondhOwnerRelation({
+                nondh_detail_id: nondhDetail.id,
+                owner_name: owner.name,
+                square_meters: area.value,
+                area_unit: area.unit,
+                survey_number: owner.surveyNumber || null,
+                survey_number_type: owner.surveyNumberType || null,
+                is_valid: nondhDetail.isValid
+              });
+              
+              if (!error) totalOwnersInserted++;
+            }
+          }
 
-    // Process new owners for transfer types
-    if (originalDetail.newOwners && originalDetail.newOwners.length > 0) {
-      for (const newOwner of originalDetail.newOwners) {
-        const area = parseArea(newOwner.area);
-        const { error } = await LandRecordService.createNondhOwnerRelation({
-          nondh_detail_id: nondhDetail.id,
-          owner_name: newOwner.name,
-          square_meters: area.value,
-          area_unit: area.unit,
-          survey_number: newOwner.surveyNumber || null,
-          survey_number_type: newOwner.surveyNumberType || null
-        });
-        
-        if (!error) totalOwnersInserted++; // Count successful inserts
+          // Process new owners for transfer types
+          if (originalDetail.newOwners && originalDetail.newOwners.length > 0) {
+            for (const newOwner of originalDetail.newOwners) {
+              const area = parseArea(newOwner.area);
+              const { error } = await LandRecordService.createNondhOwnerRelation({
+                nondh_detail_id: nondhDetail.id,
+                owner_name: newOwner.name,
+                square_meters: area.value,
+                area_unit: area.unit,
+                survey_number: newOwner.surveyNumber || null,
+                survey_number_type: newOwner.surveyNumberType || null,
+                is_valid: nondhDetail.isValid
+              });
+              
+              if (!error) totalOwnersInserted++;
+            }
+          }
+        }
       }
-    }
-  }
-}
 
       const stats = {
-        yearSlabs: jsonData.yearSlabs?.length || 0,
-        panipatraks: jsonData.panipatraks?.length || 0,
-        farmers: jsonData.panipatraks?.reduce((sum, p) => sum + p.farmers.length, 0) || 0,
-        nondhs: jsonData.nondhs?.length || 0,
-        nondhDetails: jsonData.nondhDetails?.length || 0,
-        totalOwners: totalOwnersInserted
+        yearSlabs: 0, // Not implemented in this upload flow
+        panipatraks: 0, // Not implemented in this upload flow
+        farmers: 0, // Not implemented in this upload flow
+        nondhs: savedNondhs.length,
+        nondhDetails: validNondhDetails.length,
+        totalOwners: totalOwnersInserted,
+        skippedNondhDetails: skippedNondhDetails.length
       };
+
+      if (skippedNondhDetails.length > 0) {
+        setErrors(["Skipped nondh details:", ...skippedNondhDetails]);
+      }
 
       setResult({
         success: true,
@@ -770,26 +899,29 @@ if (savedNondhDetails.length > 0) {
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-  <h3 className="font-semibold mb-2 flex items-center gap-2">
-    <AlertCircle className="w-5 h-5" />
-    Instructions
-  </h3>
-  <ul className="space-y-1 text-sm">
-    <li>• <strong>Year Matching:</strong> Panipatrak year is automatically matched to correct year slab</li>
-    <li>• <strong>Farmer Types:</strong> 
-      <ul className="ml-4 mt-1">
-        <li>- Regular farmers: No paikyNumber or ekatrikaranNumber needed</li>
-        <li>- Paiky farmers: Provide only paikyNumber (positive integer)</li>
-        <li>- Ekatrikaran farmers: Provide only ekatrikaranNumber (positive integer)</li>
-        <li>- Cannot have both numbers for same farmer</li>
-      </ul>
-    </li>
-    <li>• <strong>Nondh Types:</strong> Supports Kabjedaar, Varsai, Hukam, Vechand, Hakkami, Durasti, Bojo with type-specific fields</li>
-    <li>• <strong>Foreign Keys:</strong> All relationships are automatically set</li>
-    <li>• <strong>Area format:</strong> Provide either sqm OR acre + guntha (converted to sq_m)</li>
-    <li>• <strong>Date format:</strong> All dates must be in ddmmyyyy format</li>
-  </ul>
-</div>
+          <h3 className="font-semibold mb-2 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            Instructions
+          </h3>
+          <ul className="space-y-1 text-sm">
+            <li>• <strong>Year Matching:</strong> Panipatrak year is automatically matched to correct year slab</li>
+            <li>• <strong>Farmer Types:</strong> 
+              <ul className="ml-4 mt-1">
+                <li>- Regular farmers: No paikyNumber or ekatrikaranNumber needed</li>
+                <li>- Paiky farmers: Provide only paikyNumber (positive integer)</li>
+                <li>- Ekatrikaran farmers: Provide only ekatrikaranNumber (positive integer)</li>
+                <li>- Cannot have both numbers for same farmer</li>
+              </ul>
+            </li>
+            <li>• <strong>Status Mapping:</strong> Use "Pramaanik" for valid, "Radd" for invalid, "Na Manjoor" for nullified</li>
+            <li>• <strong>Validation:</strong> Each nondh detail validated individually - failures are skipped with reason shown</li>
+            <li>• <strong>Validity Chain:</strong> Automatically applied based on sorted nondh order and invalid status</li>
+            <li>• <strong>Nondh Types:</strong> Supports all types with type-specific fields</li>
+            <li>• <strong>Foreign Keys:</strong> All relationships are automatically set</li>
+            <li>• <strong>Area format:</strong> Provide either sqm OR acre + guntha (converted to sq_m)</li>
+            <li>• <strong>Date format:</strong> All dates must be in ddmmyyyy format</li>
+          </ul>
+        </div>
 
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6">
           <input
@@ -817,7 +949,7 @@ if (savedNondhDetails.length > 0) {
         {loading && (
           <div className="flex items-center justify-center gap-3 p-4 bg-blue-50 rounded-lg mb-6">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Processing land record with intelligent year matching and foreign key relationships...</span>
+            <span>Processing land record with validity chain and individual nondh detail validation...</span>
           </div>
         )}
 
@@ -843,7 +975,7 @@ if (savedNondhDetails.length > 0) {
               <CheckCircle className="w-5 h-5" />
               {result.message}
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-3">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm mb-3">
               <div className="bg-white rounded p-3">
                 <div className="text-gray-500 text-xs">Year Slabs</div>
                 <div className="text-2xl font-bold text-green-600">
@@ -874,6 +1006,18 @@ if (savedNondhDetails.length > 0) {
                   {result.stats.nondhDetails}
                 </div>
               </div>
+              <div className="bg-white rounded p-3">
+                <div className="text-gray-500 text-xs">Total Owners</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {result.stats.totalOwners}
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded p-3 mb-3">
+              <div className="text-gray-500 text-xs">Skipped Nondh Details</div>
+              <div className="text-2xl font-bold text-amber-600">
+                {result.stats.skippedNondhDetails}
+              </div>
             </div>
             <div className="text-xs text-gray-600 bg-white p-2 rounded">
               <strong>Land Record ID:</strong> {result.landRecordId}
@@ -891,7 +1035,7 @@ if (savedNondhDetails.length > 0) {
             </pre>
           </details>
         </div>
-
+{/* 
         <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
           <h3 className="font-semibold mb-2 text-amber-800">Database Relationships</h3>
           <div className="text-sm space-y-2">
@@ -907,6 +1051,23 @@ if (savedNondhDetails.length > 0) {
             </p>
           </div>
         </div>
+
+        <div className="mt-4 bg-purple-50 border border-purple-200 rounded-lg p-4">
+          <h3 className="font-semibold mb-2 text-purple-800">Validity Chain Processing</h3>
+          <div className="text-sm space-y-2">
+            <p><strong>How it works:</strong></p>
+            <ul className="ml-4 space-y-1">
+              <li>• Nondhs are sorted by S.No type priority (s_no → block_no → re_survey_no) then by nondh number</li>
+              <li>• For each nondh, counts how many subsequent nondhs have "Radd" (invalid) status</li>
+              <li>• If affected by ODD number of invalid nondhs → owners marked as invalid</li>
+              <li>• If affected by EVEN number (or zero) of invalid nondhs → owners marked as valid</li>
+              <li>• Owner validity is automatically set based on this chain calculation</li>
+            </ul>
+            <p className="text-xs text-purple-700 mt-2">
+              Example: If Nondh 1 and 2 are Pramaanik, but Nondh 3 (which comes after them) is Radd, then BOTH Nondh 1 and Nondh 2's owners will be marked invalid due to the validity chain (1 invalid nondh = odd count = invalid). If Nondh 4 is also Radd, then Nondh 1 and 2's owners become valid again (2 invalid nondhs = even count = valid).
+            </p>
+          </div>
+        </div> */}
       </div>
     </div>
   );

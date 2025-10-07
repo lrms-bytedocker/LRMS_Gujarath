@@ -341,7 +341,7 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
               <Input
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 value={formatValue(displayValues.acres)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter acres"
@@ -376,7 +376,7 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
               <Input
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 value={formatValue(displayValues.acres)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter acres"
@@ -481,7 +481,7 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
               <Input
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 value={formatValue(displayValues.acres)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter acres"
@@ -516,7 +516,7 @@ const areaFields = ({ area, onChange, disabled = false, maxValue }: AreaFieldsPr
               <Input
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 value={formatValue(displayValues.acres)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter acres"
