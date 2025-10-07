@@ -777,7 +777,9 @@ const loadDataFromDatabase = async (providedNondhs?: any[]): Promise<{ allDetail
         sdDate: detail.sd_date || "",
         tenure: detail.tenure || "Navi",
         amount: detail.amount || null,
-        affectedNondhDetails: detail.affected_nondh_details || [],
+        affectedNondhDetails: Array.isArray(detail.affected_nondh_details)
+  ? detail.affected_nondh_details
+  : (detail.affected_nondh_details ? JSON.parse(detail.affected_nondh_details) : []),
         ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
           id: rel.id,
           ownerName: rel.owner_name,
@@ -848,11 +850,14 @@ const loadDataFromDatabase = async (providedNondhs?: any[]): Promise<{ allDetail
     setOriginalDetails(allDetails);
     
     const extractedAffectedDetails = {};
-  allDetails.forEach(detail => {
-    if (detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0) {
-      extractedAffectedDetails[detail.id] = detail.affectedNondhDetails;
-    }
-  });
+allDetails.forEach(detail => {
+  if (detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0) {
+    // Ensure it's an array before setting
+    extractedAffectedDetails[detail.id] = Array.isArray(detail.affectedNondhDetails)
+      ? detail.affectedNondhDetails
+      : JSON.parse(detail.affectedNondhDetails);
+  }
+});
   
   setAffectedNondhDetails(extractedAffectedDetails);
   setOriginalAffectedNondhDetails(JSON.parse(JSON.stringify(extractedAffectedDetails)));

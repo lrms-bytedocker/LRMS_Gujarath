@@ -119,7 +119,9 @@ export default function NondhDetails() {
             restrainingOrder: detail.restraining_order || "no",
             sdDate: detail.sd_date || "",
             amount: detail.amount || null,
-            affectedNondhDetails: detail.affected_nondh_details || [],
+            affectedNondhDetails: Array.isArray(detail.affected_nondh_details) 
+  ? detail.affected_nondh_details 
+  : JSON.parse(detail.affected_nondh_details || '[]'),
             ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
               id: rel.id,
               ownerName: rel.owner_name,
@@ -341,7 +343,7 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
               <div>
                 <Label>Affected Nondh Details</Label>
                 <div className="mt-2 space-y-2">
-                  {detail.affectedNondhDetails.map((affected: any, index: number) => (
+                  {detail.affectedNondhDetails?.map((affected: any, index: number) => (
                     <Card key={index} className="p-3">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                         <div>

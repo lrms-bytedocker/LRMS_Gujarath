@@ -3618,13 +3618,19 @@ if (!validation.isValid) {
     doc_upload_url: detail.docUpload || null,
     hukam_status: detail.hukamStatus || 'valid',
     hukam_invalid_reason: detail.hukamInvalidReason || null,
-    affected_nondh_details: affectedNondhDetails[detail.id] && affectedNondhDetails[detail.id].length > 0 
-      ? JSON.stringify(affectedNondhDetails[detail.id].map(a => ({
-          nondhNo: a.nondhNo,
-          status: a.status,
-          invalidReason: a.invalidReason || null
-        }))) 
-      : null,
+    affected_nondh_details: (() => {
+  const affected = affectedNondhDetails[detail.id];
+  // Filter out empty/incomplete affected nondhs (those without nondhNo)
+  const validAffected = affected?.filter(a => a.nondhNo && a.nondhNo.trim() !== '');
+  
+  return validAffected && validAffected.length > 0
+    ? JSON.stringify(validAffected.map(a => ({
+        nondhNo: a.nondhNo,
+        status: a.status,
+        invalidReason: a.invalidReason || null
+      })))
+    : null;
+})(),
     ganot: detail.ganot || null,
     restraining_order: detail.restrainingOrder || 'no',
     sd_date: detail.sdDate || null,
