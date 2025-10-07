@@ -46,7 +46,7 @@ export default function NondhAdd() {
     
     // Add S.Nos from year slabs (step 2)
     yearSlabs.forEach((slab) => {
-      if (slab.sNo.trim() !== "") {
+      if (slab.sNo?.trim() !== "") {
         sNos.set(slab.sNo, { type: slab.sNoType });
       }
       

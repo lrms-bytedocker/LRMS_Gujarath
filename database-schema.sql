@@ -100,7 +100,7 @@ CREATE TABLE nondhs (
 CREATE TABLE nondh_details (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     nondh_id UUID REFERENCES nondhs(id) ON DELETE CASCADE,
-    s_no VARCHAR(255) NOT NULL,
+    s_no VARCHAR(255),
     type VARCHAR(255) NOT NULL,
     reason TEXT,
     date DATE,
@@ -128,7 +128,7 @@ CREATE TABLE nondh_owner_relations (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     nondh_detail_id UUID REFERENCES nondh_details(id) ON DELETE CASCADE,
     owner_name VARCHAR(255) NOT NULL,
-    s_no VARCHAR(255) NOT NULL,
+    s_no VARCHAR(255),
     survey_number VARCHAR(255),
     survey_number_type VARCHAR(50) CHECK (survey_number_type IN ('s_no', 'block_no', 're_survey_no')),
     acres NUMERIC,

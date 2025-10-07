@@ -119,9 +119,7 @@ export default function NondhDetails() {
             restrainingOrder: detail.restraining_order || "no",
             sdDate: detail.sd_date || "",
             amount: detail.amount || null,
-            affectedNondhDetails: detail.affected_nondh_details 
-              ? JSON.parse(detail.affected_nondh_details) 
-              : [],
+            affectedNondhDetails: detail.affected_nondh_details || [],
             ownerRelations: (detail.owner_relations || []).map((rel: any) => ({
               id: rel.id,
               ownerName: rel.owner_name,

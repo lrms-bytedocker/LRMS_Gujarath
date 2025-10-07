@@ -31,6 +31,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Plus,
   Search,
   Loader2,
@@ -451,40 +459,53 @@ export default function BrokerDashboard() {
                           No lands assigned
                         </p>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {broker.land_records.map((land) => (
-                            <Card key={land.id} className="p-3">
-  <div className="space-y-2">
-    <div className="flex justify-between items-start">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">
-          {land.district}
-        </p>
-        <p className="text-xs text-muted-foreground truncate">
-          {land.village}
-        </p>
-        <div className="text-xs text-muted-foreground mt-1">
-          <div>Block: {land.block_no}</div>
-          {land.re_survey_no && <div>Re-Survey: {land.re_survey_no}</div>}
-        </div>
-      </div>
-      <Badge variant="outline" className="text-xs ml-2">
-        {land.status}
-      </Badge>
-    </div>
-    {land.last_offer && (
-      <p className="text-sm font-semibold text-green-600">
-        ₹{land.last_offer.toLocaleString("en-IN")}
-      </p>
-    )}
-    <Link href={`/brokers/update/${broker.id}?land=${land.id}`}>
-      <Button variant="ghost" size="sm" className="w-full text-xs">
-        View/Update
-      </Button>
-    </Link>
-  </div>
-</Card>
-                          ))}
+                        <div className="border rounded-lg overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>District</TableHead>
+                                  <TableHead>Village</TableHead>
+                                  <TableHead>Block No</TableHead>
+                                  <TableHead>Re-Survey No</TableHead>
+                                  <TableHead>Status</TableHead>
+                                  <TableHead className="text-right">Last Offer</TableHead>
+                                  <TableHead className="text-center">Action</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {broker.land_records.map((land) => (
+                                  <TableRow key={land.id}>
+                                    <TableCell className="font-medium">{land.district}</TableCell>
+                                    <TableCell>{land.village}</TableCell>
+                                    <TableCell>{land.block_no}</TableCell>
+                                    <TableCell>{land.re_survey_no || "-"}</TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline" className="text-xs">
+                                        {land.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {land.last_offer ? (
+                                        <span className="font-semibold text-green-600">
+                                          ₹{land.last_offer.toLocaleString("en-IN")}
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">-</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Link href={`/brokers/update/${broker.id}?land=${land.id}`}>
+                                        <Button variant="ghost" size="sm">
+                                          View/Update
+                                        </Button>
+                                      </Link>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
                         </div>
                       )}
                     </div>

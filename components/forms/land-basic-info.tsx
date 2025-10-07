@@ -49,13 +49,6 @@ interface ValidationErrors {
   area?: string
 }
 
-const GUNTHAS_PER_ACRE = 40;
-const SQM_PER_GUNTHA = 101.1714; // Approx 1 guntha = 101.1714 sq meters
-const SQM_PER_ACRE = SQM_PER_GUNTHA * GUNTHAS_PER_ACRE; // Approx 1 acre = 4046.856 sq meters
-
-
-type AreaUnit = "acre" | "guntha" | "sq_m";
-
 interface AreaFieldsProps {
   area: { 
     value: number; 
@@ -93,35 +86,22 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
     return sqm;
   };
 
-  // Define workingArea at component level
-  const workingArea = area || { unit: "acre_guntha", value: 0, acres: 0, gunthas: 0 };
-
-  // Calculate display values based on current state - exactly like your working example
-  const displayValues = (() => {
-    if (workingArea.unit === "sq_m") {
-      return {
-        sq_m: workingArea.value,
-        acres: workingArea.value ? Math.floor(convertFromSquareMeters(workingArea.value, "acre")) : undefined,
-        gunthas: workingArea.value ? Math.round(convertFromSquareMeters(workingArea.value, "guntha") % 40) : undefined
-      };
-    } else {
-      const calculatedSqm = workingArea.sq_m || ((workingArea.acres || 0) * SQM_PER_ACRE + (workingArea.gunthas || 0) * SQM_PER_GUNTHA);
-      return {
-        sq_m: calculatedSqm ? parseFloat(calculatedSqm.toFixed(2)) : calculatedSqm, // Round to 2 decimal places
-        acres: workingArea.acres ? Math.floor(workingArea.acres) : workingArea.acres,
-        gunthas: workingArea.gunthas ? Math.round(workingArea.gunthas) : workingArea.gunthas
-      };
-    }
-  })();
+  // Calculate display values based on current area with rounded sq_m
+  const displayValues = {
+    sq_m: Math.round((area.value || 0) * 100) / 100, // Round to 2 decimal places
+    acre: Math.floor(convertFromSquareMeters(area.value || 0, "acre")),
+    guntha: Math.round(convertFromSquareMeters(area.value || 0, "guntha") % 40)
+  };
 
   const handleSqmChange = (value: string) => {
     if (value === "") {
       onChange({
-        ...workingArea,
-        value: undefined,
+        ...area,
+        value: 0,
+        unit: "sq_m",
         acres: undefined,
         gunthas: undefined,
-        sq_m: undefined
+        square_meters: undefined
       });
       return;
     }
@@ -132,99 +112,80 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
       const acres = Math.floor(totalAcres);
       const remainingGuntha = Math.round((totalAcres - acres) * 40);
       
-      if (workingArea.unit === "sq_m") {
-        // Square meter is primary
-        onChange({
-          ...workingArea,
-          value: num,
-          acres,
-          gunthas: remainingGuntha
-        });
-      } else {
-        // Square meter is secondary - update acre/guntha values
-        onChange({
-          ...workingArea,
-          unit: "acre_guntha",
-          acres,
-          gunthas: remainingGuntha,
-          sq_m: parseFloat(num.toFixed(2)) // Round to 2 decimal places
-        });
-      }
+      onChange({
+        ...area,
+        value: num,
+        unit: "sq_m",
+        acres: acres,
+        gunthas: remainingGuntha,
+        square_meters: num
+      });
     }
   };
 
   const handleAcreChange = (value: string) => {
     if (value === "") {
+      const remainingSqm = area.gunthas ? Math.round(convertToSquareMeters(area.gunthas, "guntha") * 100) / 100 : undefined;
       onChange({
-        ...workingArea,
+        ...area,
+        value: remainingSqm || 0,
+        unit: area.unit,
         acres: undefined,
-        gunthas: workingArea.gunthas,
-        value: workingArea.unit === "sq_m" ? (workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : undefined) : workingArea.value,
-        sq_m: workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : undefined
+        gunthas: area.gunthas,
+        square_meters: remainingSqm
       });
       return;
     }
 
     const num = parseFloat(value);
     if (!isNaN(num)) {
-      if (workingArea.unit === "sq_m") {
-        const newSqm = convertToSquareMeters(num, "acre") + 
-                      (displayValues.gunthas ? convertToSquareMeters(displayValues.gunthas, "guntha") : 0);
-        onChange({
-          ...workingArea,
-          value: newSqm,
-          acres: num,
-          gunthas: displayValues.gunthas
-        });
-      } else {
-        onChange({
-          ...workingArea,
-          unit: "acre_guntha",
-          acres: num,
-          sq_m: parseFloat((convertToSquareMeters(num, "acre") + 
-               (workingArea.gunthas ? convertToSquareMeters(workingArea.gunthas, "guntha") : 0)).toFixed(2))
-        });
-      }
+      const guntha = area.gunthas || 0;
+      const totalSqm = Math.round((convertToSquareMeters(num, "acre") + 
+                      convertToSquareMeters(guntha, "guntha")) * 100) / 100; // Round to 2 decimal places
+      onChange({ 
+        ...area, 
+        value: totalSqm,
+        unit: area.unit,
+        acres: num,
+        gunthas: guntha,
+        square_meters: totalSqm
+      });
     }
   };
 
   const handleGunthaChange = (value: string) => {
     if (value === "") {
+      const remainingSqm = area.acres ? Math.round(convertToSquareMeters(area.acres, "acre") * 100) / 100 : undefined;
       onChange({
-        ...workingArea,
+        ...area,
+        value: remainingSqm || 0,
+        unit: area.unit,
         gunthas: undefined,
-        acres: workingArea.acres,
-        value: workingArea.unit === "sq_m" ? (workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : undefined) : workingArea.value,
-        sq_m: workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : undefined
+        acres: area.acres,
+        square_meters: remainingSqm
       });
       return;
     }
 
-    const num = parseFloat(value);
+    let num = parseFloat(value);
     if (!isNaN(num)) {
       if (num >= 40) {
-        // Handle guntha >= 40 like in your working example
-        return;
+        num = 39;
+        // You might want to add toast here if needed
+        console.warn("Guntha must be less than 40");
       }
       
-      if (workingArea.unit === "sq_m") {
-        const newSqm = (displayValues.acres ? convertToSquareMeters(displayValues.acres, "acre") : 0) + 
-                      convertToSquareMeters(num, "guntha");
-        onChange({
-          ...workingArea,
-          value: newSqm,
-          acres: displayValues.acres,
-          gunthas: num
-        });
-      } else {
-        onChange({
-          ...workingArea,
-          unit: "acre_guntha",
-          gunthas: num,
-          sq_m: parseFloat(((workingArea.acres ? convertToSquareMeters(workingArea.acres, "acre") : 0) +
-               convertToSquareMeters(num, "guntha")).toFixed(2))
-        });
-      }
+      const acre = area.acres || 0;
+      const totalSqm = Math.round((convertToSquareMeters(acre, "acre") + 
+                      convertToSquareMeters(num, "guntha")) * 100) / 100; // Round to 2 decimal places
+      onChange({ 
+        ...area, 
+        value: totalSqm,
+        unit: area.unit,
+        gunthas: num,
+        acres: acre,
+        square_meters: totalSqm
+      });
     }
   };
 
@@ -240,29 +201,14 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
         <div className="space-y-2 w-full">
           <Label>Unit</Label>
           <Select
-            value={workingArea.unit}
+            value={area.unit}
             onValueChange={(unit) => {
-              const newUnit = unit as AreaUnit;
-              if (newUnit === "sq_m") {
-                // Convert to sq_m mode - preserve the sq_m value
-                const sqmValue = displayValues.sq_m || 0;
-                onChange({ 
-                  ...workingArea, 
-                  unit: "sq_m",
-                  value: sqmValue,
-                  acres: displayValues.acres,
-                  gunthas: displayValues.gunthas
-                });
-              } else {
-                // Convert to acre_guntha mode - preserve acre/guntha values
-                onChange({ 
-                  ...workingArea, 
-                  unit: "acre_guntha",
-                  acres: displayValues.acres || 0,
-                  gunthas: displayValues.gunthas || 0,
-                  sq_m: displayValues.sq_m
-                });
-              }
+              const newUnit = unit as 'acre_guntha' | 'sq_m';
+              onChange({
+                ...area,
+                unit: newUnit,
+                value: area.value || 0
+              });
             }}
           >
             <SelectTrigger className="w-full px-1.5">
@@ -276,7 +222,7 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
         </div>
 
         {/* Primary Field */}
-        {workingArea.unit === "sq_m" ? (
+        {area.unit === "sq_m" ? (
           <div className="space-y-2 w-full">
             <Label>Square Meters</Label>
             <Input
@@ -297,8 +243,8 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
               <Input
                 type="number"
                 min="0"
-                step="0.01"
-                value={formatValue(displayValues.acres)}
+                step="1"
+                value={formatValue(displayValues.acre)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter acres"
                 className="w-full"
@@ -312,7 +258,7 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
                 min="0"
                 max="39"
                 step="1"
-                value={formatValue(displayValues.gunthas)}
+                value={formatValue(displayValues.guntha)}
                 onChange={(e) => handleGunthaChange(e.target.value)}
                 placeholder="Enter gunthas (0-39)"
                 className="w-full"
@@ -328,18 +274,19 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
         )}
 
         {/* Secondary Fields */}
-        {workingArea.unit === "sq_m" ? (
+        {area.unit === "sq_m" ? (
           <>
             <div className="space-y-2 w-full">
               <Label>Acres</Label>
               <Input
                 type="number"
                 min="0"
-                step="0.01"
-                value={formatValue(displayValues.acres)}
+                step="1"
+                value={formatValue(displayValues.acre)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter or view acres"
                 className="w-full bg-blue-50 border-blue-200"
+                disabled={disabled}
               />
             </div>
             <div className="space-y-2 w-full">
@@ -349,10 +296,11 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
                 min="0"
                 max="39"
                 step="1"
-                value={formatValue(displayValues.gunthas)}
+                value={formatValue(displayValues.guntha)}
                 onChange={(e) => handleGunthaChange(e.target.value)}
                 placeholder="Enter gunthas (0-39)"
                 className="w-full bg-blue-50 border-blue-200"
+                disabled={disabled}
                 onKeyDown={(e) => {
                   if (e.key === 'e' || e.key === '-' || e.key === '+') {
                     e.preventDefault();
@@ -372,6 +320,7 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
               onChange={(e) => handleSqmChange(e.target.value)}
               placeholder="Enter or view sq. meters"
               className="w-full bg-blue-50 border-blue-200"
+              disabled={disabled}
             />
           </div>
         )}
@@ -383,29 +332,14 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
         <div className="space-y-2 w-[140px] flex-shrink-0">
           <Label>Unit</Label>
           <Select
-            value={workingArea.unit}
+            value={area.unit}
             onValueChange={(unit) => {
-              const newUnit = unit as AreaUnit;
-              if (newUnit === "sq_m") {
-                // Convert to sq_m mode - preserve the sq_m value
-                const sqmValue = displayValues.sq_m || 0;
-                onChange({ 
-                  ...workingArea, 
-                  unit: "sq_m",
-                  value: sqmValue,
-                  acres: displayValues.acres,
-                  gunthas: displayValues.gunthas
-                });
-              } else {
-                // Convert to acre_guntha mode - preserve acre/guntha values
-                onChange({ 
-                  ...workingArea, 
-                  unit: "acre_guntha",
-                  acres: displayValues.acres || 0,
-                  gunthas: displayValues.gunthas || 0,
-                  sq_m: displayValues.sq_m
-                });
-              }
+              const newUnit = unit as 'acre_guntha' | 'sq_m';
+              onChange({
+                ...area,
+                unit: newUnit,
+                value: area.value || 0
+              });
             }}
           >
             <SelectTrigger className="w-[140px] px-1.5">
@@ -419,7 +353,7 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
         </div>
 
         {/* Primary Fields */}
-        {workingArea.unit === "sq_m" ? (
+        {area.unit === "sq_m" ? (
           <div className="space-y-2 min-w-[150px] flex-1">
             <Label>Square Meters</Label>
             <Input
@@ -430,6 +364,7 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
               onChange={(e) => handleSqmChange(e.target.value)}
               placeholder="Enter square meters"
               className="w-full"
+              disabled={disabled}
             />
           </div>
         ) : (
@@ -439,11 +374,12 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
               <Input
                 type="number"
                 min="0"
-                step="0.01"
-                value={formatValue(displayValues.acres)}
+                step="1"
+                value={formatValue(displayValues.acre)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter acres"
                 className="w-full"
+                disabled={disabled}
               />
             </div>
             <div className="space-y-2 min-w-[100px] flex-1">
@@ -453,10 +389,11 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
                 min="0"
                 max="39"
                 step="1"
-                value={formatValue(displayValues.gunthas)}
+                value={formatValue(displayValues.guntha)}
                 onChange={(e) => handleGunthaChange(e.target.value)}
                 placeholder="Enter gunthas (0-39)"
                 className="w-full"
+                disabled={disabled}
                 onKeyDown={(e) => {
                   if (e.key === 'e' || e.key === '-' || e.key === '+') {
                     e.preventDefault();
@@ -468,18 +405,19 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
         )}
 
         {/* Secondary Fields */}
-        {workingArea.unit === "sq_m" ? (
+        {area.unit === "sq_m" ? (
           <>
             <div className="space-y-2 min-w-[120px] flex-1">
               <Label>Acres</Label>
               <Input
                 type="number"
                 min="0"
-                step="0.01"
-                value={formatValue(displayValues.acres)}
+                step="1"
+                value={formatValue(displayValues.acre)}
                 onChange={(e) => handleAcreChange(e.target.value)}
                 placeholder="Enter or view acres"
                 className="w-full bg-blue-50 border-blue-200"
+                disabled={disabled}
               />
             </div>
             <div className="space-y-2 min-w-[100px] flex-1">
@@ -489,10 +427,11 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
                 min="0"
                 max="39"
                 step="1"
-                value={formatValue(displayValues.gunthas)}
+                value={formatValue(displayValues.guntha)}
                 onChange={(e) => handleGunthaChange(e.target.value)}
                 placeholder="Enter gunthas (0-39)"
                 className="w-full bg-blue-50 border-blue-200"
+                disabled={disabled}
                 onKeyDown={(e) => {
                   if (e.key === 'e' || e.key === '-' || e.key === '+') {
                     e.preventDefault();
@@ -512,6 +451,7 @@ const AreaFields = ({ area, onChange, disabled = false }: AreaFieldsProps) => {
               onChange={(e) => handleSqmChange(e.target.value)}
               placeholder="Enter or view sq. meters"
               className="w-full bg-blue-50 border-blue-200"
+              disabled={disabled}
             />
           </div>
         )}
