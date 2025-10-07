@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Upload, Download, AlertCircle, CheckCircle, FileJson, Loader2 } from 'lucide-react';
 import { LandRecordService } from '@/lib/supabase';
+import { AuthProvider } from '@/components/auth-provider';
 
 interface Area {
   sqm?: number;
@@ -882,6 +883,7 @@ const LandRecordJSONUpload = () => {
   };
 
   return (
+    <AuthProvider>
     <div className="max-w-6xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
         <div className="flex items-center justify-between mb-6">
@@ -1070,6 +1072,7 @@ const LandRecordJSONUpload = () => {
         </div> */}
       </div>
     </div>
+    </AuthProvider>
   );
 };
 
