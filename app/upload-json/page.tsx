@@ -129,9 +129,9 @@ const LandRecordJSONUpload = () => {
 
   const sampleJSON = {
     basicInfo: {
-  district: "Mysuru",
-  taluka: "Mysuru",
-  village: "Yelawala",
+  district: "Ahmedabad",
+  taluka: "Mandal",
+  village: "Ukardi",
   blockNo: "123",
   reSurveyNo: "245/2",
   isPromulgation: true,
