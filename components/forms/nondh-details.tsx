@@ -1111,24 +1111,6 @@ const addOwnerTransfer = (detailId: string) => {
   }));
 };
 
-// Function to remove a transfer
-const removeOwnerTransfer = (detailId: string, transferId: string) => {
-  setOwnerTransfers(prev => ({
-    ...prev,
-    [detailId]: (prev[detailId] || []).filter(t => t.id !== transferId)
-  }));
-};
-
-// Function to update transfer data
-const updateOwnerTransfer = (detailId: string, transferId: string, updates: any) => {
-  setOwnerTransfers(prev => ({
-    ...prev,
-    [detailId]: (prev[detailId] || []).map(transfer =>
-      transfer.id === transferId ? { ...transfer, ...updates } : transfer
-    )
-  }));
-};
-
 const validateNondhDetails = (details: NondhDetail[]): { isValid: boolean; errors: string[] } => {
   const errors: string[] = [];
   
@@ -1523,42 +1505,43 @@ const newRelation = {
 const updateOwnerRelation = (detailId: string, relationId: string, updates: any) => {
   const detail = nondhDetailData.find((d) => d.id === detailId);
   if (detail) {
+
     const updatedRelations = detail.ownerRelations.map((relation) =>
       relation.id === relationId ? { ...relation, ...updates } : relation,
     );
     
-    // Year slab area validation
     if (updates.area) {
-  const yearSlabArea = getYearSlabAreaForDate(detail.date);
-  if (yearSlabArea) {
-    const totalArea = updatedRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
-    if (totalArea > yearSlabArea.value) {
-      toast({
-        title: "Area validation error",
-        description: `Total area (${totalArea}) cannot exceed year slab area (${yearSlabArea.value})`,
-        variant: "destructive"
-      });
-      return; // Don't update
-    }
-  }
-}
+      // Year slab area validation (applies to ALL types)
+      const yearSlabArea = getYearSlabAreaForDate(detail.date);
+      if (yearSlabArea) {
+        const totalArea = updatedRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+        if (totalArea > yearSlabArea.value) {
+          toast({
+            title: "Area validation error",
+            description: `Total area (${totalArea.toFixed(2)}) cannot exceed year slab area (${yearSlabArea.value})`,
+            variant: "destructive"
+          });
+          return;
+        }
+      }
 
-    // Area validation for transfer types
-    if (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type) && updates.area) {
-      const oldOwnerArea = getPreviousOwners(detail.sNo, detail.nondhId)
-        .find(owner => owner.name === detail.oldOwner)?.area?.value || 0;
-      
-      const newOwnersTotal = updatedRelations
-        .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
-        .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
-      
-      if (newOwnersTotal > oldOwnerArea) {
-        toast({
-          title: "Area validation error",
-          description: `Total new owners area (${newOwnersTotal}) cannot exceed old owner's area (${oldOwnerArea})`,
-          variant: "destructive"
-        });
-        return; // Don't update if validation fails
+      // Area validation for transfer types
+      if (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type)) {
+        const oldOwnerArea = getPreviousOwners(detail.sNo, detail.nondhId)
+          .find(owner => owner.name === detail.oldOwner)?.area?.value || 0;
+        
+        const newOwnersTotal = updatedRelations
+          .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+          .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+        
+        if (newOwnersTotal > oldOwnerArea) {
+          toast({
+            title: "Area validation error",
+            description: `Total new owners area (${newOwnersTotal.toFixed(2)}) cannot exceed old owner's area (${oldOwnerArea})`,
+            variant: "destructive"
+          });
+          return;
+        }
       }
     }
     
