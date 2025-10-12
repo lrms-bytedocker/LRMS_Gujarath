@@ -618,29 +618,30 @@ const getYearSlabAreaForDate = (date: string) => {
   if (!date) return null;
   
   const year = new Date(date).getFullYear();
-  
-  // Find matching year slab
   const matchingYearSlab = yearSlabs.find(slab => 
     year >= slab.startYear && year <= slab.endYear
   );
   
   if (!matchingYearSlab) return null;
   
-  // Calculate total area including paiky and ekatrikaran entries
-  let totalArea = matchingYearSlab.area?.value || 0;
-  const unit = matchingYearSlab.area?.unit || 'sq_m';
+  // Check if there are any paiky or ekatrikaran entries
+const hasPaikyEntries = matchingYearSlab.paikyEntries && matchingYearSlab.paikyEntries.length > 0;
+const hasEkatrikaranEntries = matchingYearSlab.ekatrikaranEntries && matchingYearSlab.ekatrikaranEntries.length > 0;
+
+// Start with base area only if there are NO paiky/ekatrikaran entries
+let totalArea = (hasPaikyEntries || hasEkatrikaranEntries) ? 0 : (matchingYearSlab.area?.value || 0);
+const unit = matchingYearSlab.area?.unit || 'sq_m';
   
-  // Add paiky entries area
+  // Sum paiky entries
   matchingYearSlab.paikyEntries?.forEach(entry => {
     if (entry.area?.unit === unit) {
       totalArea += entry.area.value || 0;
     } else {
-      // Convert units if different - you'll need conversion logic here
       totalArea += convertAreaUnits(entry.area?.value || 0, entry.area?.unit || 'sq_m', unit);
     }
   });
   
-  // Add ekatrikaran entries area
+  // Sum ekatrikaran entries  
   matchingYearSlab.ekatrikaranEntries?.forEach(entry => {
     if (entry.area?.unit === unit) {
       totalArea += entry.area.value || 0;
