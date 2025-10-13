@@ -36,6 +36,7 @@ interface NondhDetail {
   hasDocuments: boolean
   docUploadUrl?: string
   createdAt: string
+  date: string
   nondhNumber?: string
   affectedSNos?: string
   nondhDocUrl?: string
@@ -398,9 +399,10 @@ const formatDate = (dateString: string): string => {
       hasDocuments: Boolean(detail.has_documents),
       showInOutput: Boolean(detail.show_in_output),
       createdAt: detail.created_at || new Date().toISOString(),
+      date: detail.date || detail.created_at || new Date().toISOString(), // ADD THIS LINE
       docUploadUrl: detail.doc_upload_url || null,
       invalidReason: detail.invalid_reason || '',
-      hukamType: detail.hukam_type || '' // ADD THIS LINE
+      hukamType: detail.hukam_type || ''
     })) || []
 
     setNondhDetails(processedDetails)
@@ -515,31 +517,34 @@ const formatDate = (dateString: string): string => {
   }
 
   const updateDateWiseFilter = () => {
-    let filteredDetails = nondhDetails;
-    
-    if (dateFilter) {
-      filteredDetails = nondhDetails.filter(detail => detail.createdAt?.includes(dateFilter));
-    }
-    
-    let mappedDetails = filteredDetails.map(detail => {
-      const nondh = nondhs.find(n => n.id === detail.nondhId)
-      return {
-        ...detail,
-        nondhNumber: nondh ? safeNondhNumber(nondh) : 0,
-        affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
-        nondhDocUrl: nondh?.nondh_doc_url || null
-      }
-    });
-
-    // Apply S.No filter
-    if (sNoFilter) {
-      mappedDetails = mappedDetails.filter(nondh => {
-        return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
-      });
-    }
-    
-    setDateWiseFilteredData(mappedDetails.sort(sortNondhsBySNoType));
+  let filteredDetails = nondhDetails;
+  
+  if (dateFilter) {
+    // Change from createdAt to date
+    filteredDetails = nondhDetails.filter(detail => detail.date?.includes(dateFilter));
   }
+  
+  let mappedDetails = filteredDetails.map(detail => {
+    const nondh = nondhs.find(n => n.id === detail.nondhId)
+    return {
+      ...detail,
+      nondhNumber: nondh ? safeNondhNumber(nondh) : 0,
+      affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
+      nondhDocUrl: nondh?.nondh_doc_url || null,
+      // Ensure date is available
+      date: detail.date || detail.createdAt
+    }
+  });
+
+  // Apply S.No filter
+  if (sNoFilter) {
+    mappedDetails = mappedDetails.filter(nondh => {
+      return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
+    });
+  }
+  
+  setDateWiseFilteredData(mappedDetails.sort(sortNondhsBySNoType));
+}
 
   const exportToExcel = async () => {
     if (!landBasicInfo) {
@@ -564,10 +569,8 @@ const formatDate = (dateString: string): string => {
           affectedSNos: nondh?.affectedSNos || [detail.sNo],
           nondhType: nondh?.type || detail.type,
           hukamType: detail.hukamType || detail.subType || '-',
-          createdAt: detail.createdAt || new Date().toISOString().split("T")[0]
         }
       })
-
 
       const sortedData = allData.sort(sortNondhsBySNoType)
 
@@ -575,10 +578,11 @@ const formatDate = (dateString: string): string => {
       const formatDate = (dateStr: string) => {
         if (!dateStr) return '-'
         const date = new Date(dateStr)
+        if (isNaN(date.getTime())) return '-' // Check for invalid date
         const day = String(date.getDate()).padStart(2, '0')
         const month = String(date.getMonth() + 1).padStart(2, '0')
         const year = date.getFullYear()
-        return `${day}${month}${year}`
+        return `${day}/${month}/${year}`
       }
 
       // Clean affected S.Nos by removing type labels
@@ -606,7 +610,7 @@ const formatDate = (dateString: string): string => {
           index + 1,
           row.nondhNumber || '-',
           row.nondhType || '-',
-          formatDate(row.createdAt),
+          row.date ? formatDate(row.date) : '-',
           row.vigat || '-',
           cleanAffectedSNos(row.affectedSNos),
           getStatusDisplayName(row.status || 'valid')
@@ -618,62 +622,63 @@ const formatDate = (dateString: string): string => {
       const ws = XLSX.utils.aoa_to_sheet(wsData)
 
       // Apply styles to header row (A1)
-const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-for (let C = range.s.c; C <= range.e.c; ++C) {
-  const address = XLSX.utils.encode_col(C) + "1";
-  if (!ws[address]) continue;
-  ws[address].s = {
-    font: { bold: true, sz: 12 },
-    alignment: { horizontal: "center", vertical: "center", wrapText: true }
-  };
-}
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const address = XLSX.utils.encode_col(C) + "1";
+        if (!ws[address]) continue;
+        ws[address].s = {
+          font: { bold: true, sz: 12 },
+          alignment: { horizontal: "center", vertical: "center", wrapText: true }
+        };
+      }
 
-// Apply styles to column headers (row 3)
-for (let C = range.s.c; C <= range.e.c; ++C) {
-  const address = XLSX.utils.encode_col(C) + "3";
-  if (!ws[address]) continue;
-  ws[address].s = {
-    font: { bold: true },
-    alignment: { horizontal: "center", vertical: "center" },
-    fill: { fgColor: { rgb: "CCCCCC" } }
-  };
-}
-// Set column widths
-ws['!cols'] = [
-  { wch: 10 },  // Serial No
-  { wch: 12 },  // Nondh No
-  { wch: 15 },  // Nondh Type
-  { wch: 12 },  // Nondh Date
-  { wch: 40 },  // Vigat (wider for Gujarati text)
-  { wch: 25 },  // Affected Survey Numbers
-  { wch: 12 }   // Status
-]
+      // Apply styles to column headers (row 3)
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const address = XLSX.utils.encode_col(C) + "3";
+        if (!ws[address]) continue;
+        ws[address].s = {
+          font: { bold: true },
+          alignment: { horizontal: "center", vertical: "center" },
+          fill: { fgColor: { rgb: "CCCCCC" } }
+        };
+      }
+      
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 10 },  // Serial No
+        { wch: 12 },  // Nondh No
+        { wch: 15 },  // Nondh Type
+        { wch: 12 },  // Nondh Date
+        { wch: 40 },  // Vigat (wider for Gujarati text)
+        { wch: 25 },  // Affected Survey Numbers
+        { wch: 12 }   // Status
+      ]
 
-// Merge first row (header info) across all columns
-ws['!merges'] = [
-  { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }
-]
+      // Merge first row (header info) across all columns
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }
+      ]
 
-// Style the header row (bold and centered)
-const headerCell = ws['A1']
-if (headerCell) {
-  headerCell.s = {
-    font: { bold: true, sz: 12 },
-    alignment: { horizontal: 'center', vertical: 'center' }
-  }
-}
+      // Style the header row (bold and centered)
+      const headerCell = ws['A1']
+      if (headerCell) {
+        headerCell.s = {
+          font: { bold: true, sz: 12 },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        }
+      }
 
-// Style column headers (bold and centered)
-const columnHeaders = ['A3', 'B3', 'C3', 'D3', 'E3', 'F3', 'G3']
-columnHeaders.forEach(cellRef => {
-  if (ws[cellRef]) {
-    ws[cellRef].s = {
-      font: { bold: true },
-      alignment: { horizontal: 'center', vertical: 'center' },
-      fill: { fgColor: { rgb: 'E0E0E0' } }
-    }
-  }
-})
+      // Style column headers (bold and centered)
+      const columnHeaders = ['A3', 'B3', 'C3', 'D3', 'E3', 'F3', 'G3']
+      columnHeaders.forEach(cellRef => {
+        if (ws[cellRef]) {
+          ws[cellRef].s = {
+            font: { bold: true },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            fill: { fgColor: { rgb: 'E0E0E0' } }
+          }
+        }
+      })
 
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(wb, ws, 'Output Views')
@@ -781,7 +786,7 @@ columnHeaders.forEach(cellRef => {
             <div className="font-medium text-sm">Nondh #{nondh.nondhNumber}</div>
             <div className="text-muted-foreground text-xs flex items-center gap-1">
               <Calendar className="w-3 h-3" />
-              {formatDate(nondh.createdAt)}
+              {formatDate(nondh.date)}
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -1244,7 +1249,7 @@ columnHeaders.forEach(cellRef => {
                       <TableBody>
                         {dateWiseFilteredData.map((nondh, index) => (
                           <TableRow key={nondh.id || index}>
-                            <TableCell>{formatDate(nondh.createdAt)}</TableCell>
+                            <TableCell>{formatDate(nondh.date)}</TableCell>
                             <TableCell>{nondh.nondhNumber}</TableCell>
                             <TableCell>{nondh.affectedSNos || nondh.sNo}</TableCell>
                             <TableCell>{nondh.type}</TableCell>
