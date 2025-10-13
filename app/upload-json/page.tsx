@@ -255,7 +255,7 @@ const LandRecordJSONUpload = () => {
         ]
       },
       {
-        nondhNumber: "3",
+        nondhNumber: "2",
         type: "Varsai",
         date: "20052018",
         vigat: "Transfer from Owner 1 to new owners",
@@ -281,10 +281,11 @@ const LandRecordJSONUpload = () => {
         ]
       },
       {
-        nondhNumber: "2",
+        nondhNumber: "3",
         type: "Hukam",
         date: "10032019",
         hukamDate: "05032019",
+        hukamType: "SSRD",
         restrainingOrder: "no",
         vigat: "Court order regarding land dispute",
         status: "Radd",
