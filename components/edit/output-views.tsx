@@ -541,41 +541,161 @@ const formatDate = (dateString: string): string => {
     setDateWiseFilteredData(mappedDetails.sort(sortNondhsBySNoType));
   }
 
-  const exportToCSV = (data: any[], filename: string) => {
-    if (!data || data.length === 0) {
+  const exportToExcel = async () => {
+    if (!landBasicInfo) {
       toast({
-        title: 'No Data',
-        description: 'No data available to export',
+        title: 'Error',
+        description: 'Land basic information is required',
         variant: 'destructive'
       })
       return
     }
 
-    const headers = Object.keys(data[0] || {})
-    const csvContent = [
-      headers.join(","), 
-      ...data.map(row => 
-        headers.map(header => {
-          const value = row[header]
-          return typeof value === 'string' && value.includes(',') 
-            ? `"${value}"` 
-            : value
-        }).join(",")
-      )
-    ].join("\n")
+    try {
+      // Dynamically import xlsx
+      const XLSX = await import('xlsx-js-style')
 
-    const blob = new Blob([csvContent], { type: "text/csv" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${filename}.csv`
-    a.click()
-    window.URL.revokeObjectURL(url)
+      // Get all nondh data
+      let allData = nondhDetails.map((detail) => {
+        const nondh = nondhs.find((n) => n.id === detail.nondhId)
+        return {
+          ...detail,
+          nondhNumber: nondh?.number || 0,
+          affectedSNos: nondh?.affectedSNos || [detail.sNo],
+          nondhType: nondh?.type || detail.type,
+          hukamType: detail.hukamType || detail.subType || '-',
+          createdAt: detail.createdAt || new Date().toISOString().split("T")[0]
+        }
+      })
 
-    toast({
-      title: 'Success',
-      description: `${filename}.csv exported successfully`,
-    })
+
+      const sortedData = allData.sort(sortNondhsBySNoType)
+
+      // Format date as DDMMYYYY
+      const formatDate = (dateStr: string) => {
+        if (!dateStr) return '-'
+        const date = new Date(dateStr)
+        const day = String(date.getDate()).padStart(2, '0')
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const year = date.getFullYear()
+        return `${day}${month}${year}`
+      }
+
+      // Clean affected S.Nos by removing type labels
+      const cleanAffectedSNos = (sNos: any) => {
+        const formatted = formatAffectedSNos(sNos)
+        if (!formatted || formatted === '-') return '-'
+        return formatted.replace(/\s*\((Survey|Block|Re-survey)\)/g, '')
+      }
+
+      // Create header info
+      const headerInfo = [
+        `District: ${landBasicInfo.district || 'N/A'}`,
+        `Taluka: ${landBasicInfo.taluka || 'N/A'}`,
+        `Village: ${landBasicInfo.village || 'N/A'}`,
+        `Block No: ${landBasicInfo.blockNo || 'N/A'}`,
+        landBasicInfo.reSurveyNo ? `Re-survey No: ${landBasicInfo.reSurveyNo}` : ''
+      ].filter(Boolean).join(', ')
+
+      // Create worksheet data
+      const wsData = [
+        [headerInfo], // Header row
+        [], // Empty row
+        ['Serial No', 'Nondh No.', 'Nondh Type', 'Nondh Date', 'Vigat', 'Affected Survey Numbers', 'Status'], // Column headers
+        ...sortedData.map((row, index) => [
+          index + 1,
+          row.nondhNumber || '-',
+          row.nondhType || '-',
+          formatDate(row.createdAt),
+          row.vigat || '-',
+          cleanAffectedSNos(row.affectedSNos),
+          getStatusDisplayName(row.status || 'valid')
+        ])
+      ]
+
+      // Create workbook and worksheet
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.aoa_to_sheet(wsData)
+
+      // Apply styles to header row (A1)
+const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+for (let C = range.s.c; C <= range.e.c; ++C) {
+  const address = XLSX.utils.encode_col(C) + "1";
+  if (!ws[address]) continue;
+  ws[address].s = {
+    font: { bold: true, sz: 12 },
+    alignment: { horizontal: "center", vertical: "center", wrapText: true }
+  };
+}
+
+// Apply styles to column headers (row 3)
+for (let C = range.s.c; C <= range.e.c; ++C) {
+  const address = XLSX.utils.encode_col(C) + "3";
+  if (!ws[address]) continue;
+  ws[address].s = {
+    font: { bold: true },
+    alignment: { horizontal: "center", vertical: "center" },
+    fill: { fgColor: { rgb: "CCCCCC" } }
+  };
+}
+// Set column widths
+ws['!cols'] = [
+  { wch: 10 },  // Serial No
+  { wch: 12 },  // Nondh No
+  { wch: 15 },  // Nondh Type
+  { wch: 12 },  // Nondh Date
+  { wch: 40 },  // Vigat (wider for Gujarati text)
+  { wch: 25 },  // Affected Survey Numbers
+  { wch: 12 }   // Status
+]
+
+// Merge first row (header info) across all columns
+ws['!merges'] = [
+  { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }
+]
+
+// Style the header row (bold and centered)
+const headerCell = ws['A1']
+if (headerCell) {
+  headerCell.s = {
+    font: { bold: true, sz: 12 },
+    alignment: { horizontal: 'center', vertical: 'center' }
+  }
+}
+
+// Style column headers (bold and centered)
+const columnHeaders = ['A3', 'B3', 'C3', 'D3', 'E3', 'F3', 'G3']
+columnHeaders.forEach(cellRef => {
+  if (ws[cellRef]) {
+    ws[cellRef].s = {
+      font: { bold: true },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      fill: { fgColor: { rgb: 'E0E0E0' } }
+    }
+  }
+})
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Output Views')
+
+      // Generate filename
+      const filename = `output-${landBasicInfo.blockNo || 'NA'}.xlsx`
+
+      // Write file with UTF-8 support for Gujarati
+      XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary', cellStyles: true })
+
+      toast({
+        title: 'Success',
+        description: 'Excel file exported successfully',
+      })
+    } catch (error) {
+      console.error('Error exporting to Excel:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to export Excel file',
+        variant: 'destructive'
+      })
+    }
   }
 
   const handleCompleteProcess = () => {
@@ -749,6 +869,14 @@ const formatDate = (dateString: string): string => {
       <Download className="w-4 h-4" />
       {isGeneratingPDF ? 'Generating...' : 'Download Integrated Document'}
     </Button>
+    <Button
+  onClick={exportToExcel}
+  className="flex items-center gap-2 w-full sm:w-auto"
+  variant="outline"
+>
+  <Download className="w-4 h-4" />
+  Export Output
+</Button>
   </div>
   <Tabs defaultValue="nondh-table" className="w-full">
           <TabsList className="grid w-full grid-cols-4 mb-4">
@@ -767,30 +895,6 @@ const formatDate = (dateString: string): string => {
       
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <SNoFilterComponent />
-        <Button 
-          onClick={() => {
-  const allNondhsData = nondhDetails.map((detail) => {
-    const nondh = nondhs.find((n) => n.id === detail.nondhId)
-    return {
-      ...detail,
-      nondhNumber: nondh?.number || 0,
-      affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
-      nondhType: detail.type,
-      hukamType: detail.hukamType || '-'
-    }
-  }).filter(nondh => {
-    if (!sNoFilter) return true;
-    return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
-  }).sort(sortNondhsBySNoType);
-  exportToCSV(allNondhsData, "all-nondhs-table");
-}}
-          className="flex items-center gap-2 w-full sm:w-auto"
-          disabled={nondhDetails.length === 0}
-          size="sm"
-        >
-          <Download className="w-4 h-4" />
-          Export CSV
-        </Button>
       </div>
     </div>
   </div>
@@ -965,15 +1069,6 @@ const formatDate = (dateString: string): string => {
                 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   <SNoFilterComponent />
-                  <Button 
-                    onClick={() => exportToCSV(filteredNondhs, "query-list")} 
-                    className="flex items-center gap-2 w-full sm:w-auto"
-                    disabled={filteredNondhs.length === 0}
-                    size="sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    Export CSV
-                  </Button>
                 </div>
               </div>
             </div>
@@ -1051,15 +1146,6 @@ const formatDate = (dateString: string): string => {
                 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   <SNoFilterComponent />
-                  <Button 
-                    onClick={() => exportToCSV(passbookData, "passbook-data")} 
-                    className="flex items-center gap-2 w-full sm:w-auto"
-                    disabled={passbookData.length === 0}
-                    size="sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    Export CSV
-                  </Button>
                 </div>
               </div>
             </div>
@@ -1126,15 +1212,6 @@ const formatDate = (dateString: string): string => {
                       className="w-full sm:w-40"
                     />
                   </div>
-                  <Button
-                    onClick={() => exportToCSV(dateWiseFilteredData, "date-wise-nondhs")}
-                    className="flex items-center gap-2 w-full sm:w-auto"
-                    size="sm"
-                    disabled={dateWiseFilteredData.length === 0}
-                  >
-                    <Download className="w-4 h-4" />
-                    Export CSV
-                  </Button>
                 </div>
               </div>
             </div>
