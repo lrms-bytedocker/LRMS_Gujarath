@@ -233,20 +233,20 @@ export const processUpload = async (jsonData) => {
           date: parseDate(detail.date),
           sd_date: detail.sdDate ? parseDate(detail.sdDate) : null,
           hukam_date: detail.hukamDate ? parseDate(detail.hukamDate) : null,
-          hukam_type: detail.hukamType || null,
+          hukam_type: detail.type === "Hukam" ? (detail.hukamType || "SSRD") : null,
           restraining_order: detail.restrainingOrder || null,
           amount: detail.amount || null,
           vigat: detail.vigat,
           tenure: detail.tenure || 'Navi',
           status: mappedStatus,
-          invalid_reason: mappedStatus === 'invalid' ? detail.invalidReason : null,
+          invalid_reason: mappedStatus === "invalid" ? (detail.invalidReason || "NA") : null,
           show_in_output: detail.showInOutput !== false,
           old_owner: detail.oldOwner || null,
           affected_nondh_details: detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0
             ? JSON.stringify(detail.affectedNondhDetails.map(a => ({
                 nondhNo: a.nondhNo,
                 status: mapStatusFromJSON(a.status),
-                invalidReason: a.invalidReason || null
+                invalidReason: mapStatusFromJSON(a.status) === "invalid" ? (a.invalidReason || "NA") : null
               })))
             : null,
           ganot: detail.hukamType === "ALT Krushipanch" ? detail.ganotType : null,

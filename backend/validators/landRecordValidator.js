@@ -61,45 +61,45 @@ export const validateJSON = (data) => {
     }
   }
 
-  if (!data.yearSlabs || !Array.isArray(data.yearSlabs) || data.yearSlabs.length === 0) {
-    validationErrors.push("At least one year slab is required");
-  }
+  // if (!data.yearSlabs || !Array.isArray(data.yearSlabs) || data.yearSlabs.length === 0) {
+  //   validationErrors.push("At least one year slab is required");
+  // }
 
-  if (data.panipatraks && Array.isArray(data.panipatraks)) {
-    data.panipatraks.forEach((panip, i) => {
-      if (!panip.year) {
-        validationErrors.push(`Panipatrak ${i + 1}: Missing year`);
-      } else {
-        const matchingSlab = findSlabForYear(panip.year, data.yearSlabs);
-        if (!matchingSlab) {
-          validationErrors.push(
-            `Panipatrak ${i + 1}: Year ${panip.year} does not fall within any year slab range`
-          );
-        }
-      }
+  // if (data.panipatraks && Array.isArray(data.panipatraks)) {
+  //   data.panipatraks.forEach((panip, i) => {
+  //     if (!panip.year) {
+  //       validationErrors.push(`Panipatrak ${i + 1}: Missing year`);
+  //     } else {
+  //       const matchingSlab = findSlabForYear(panip.year, data.yearSlabs);
+  //       if (!matchingSlab) {
+  //         validationErrors.push(
+  //           `Panipatrak ${i + 1}: Year ${panip.year} does not fall within any year slab range`
+  //         );
+  //       }
+  //     }
 
-      if (!panip.farmers || panip.farmers.length === 0) {
-        validationErrors.push(`Panipatrak ${i + 1}: Must have at least one farmer`);
-      }
+  //     if (!panip.farmers || panip.farmers.length === 0) {
+  //       validationErrors.push(`Panipatrak ${i + 1}: Must have at least one farmer`);
+  //     }
 
-      panip.farmers?.forEach((farmer, j) => {
-        if (!farmer.name) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Missing name`);
-        }
+  //     panip.farmers?.forEach((farmer, j) => {
+  //       if (!farmer.name) {
+  //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Missing name`);
+  //       }
 
-        if (farmer.paikyNumber !== undefined && farmer.ekatrikaranNumber !== undefined) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Cannot have both paikyNumber and ekatrikaranNumber`);
-        }
+  //       if (farmer.paikyNumber !== undefined && farmer.ekatrikaranNumber !== undefined) {
+  //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Cannot have both paikyNumber and ekatrikaranNumber`);
+  //       }
 
-        if (farmer.paikyNumber !== undefined && farmer.paikyNumber < 0) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: paikyNumber must be 0 or positive`);
-        }
-        if (farmer.ekatrikaranNumber !== undefined && farmer.ekatrikaranNumber < 0) {
-          validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: ekatrikaranNumber must be 0 or positive`);
-        }
-      });
-    });
-  }
+  //       if (farmer.paikyNumber !== undefined && farmer.paikyNumber < 0) {
+  //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: paikyNumber must be 0 or positive`);
+  //       }
+  //       if (farmer.ekatrikaranNumber !== undefined && farmer.ekatrikaranNumber < 0) {
+  //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: ekatrikaranNumber must be 0 or positive`);
+  //       }
+  //     });
+  //   });
+  // }
 
   return validationErrors;
 };
@@ -119,13 +119,15 @@ export const validateNondhDetail = (detail) => {
   if (!detail.date) errors.push('Missing date');
   else if (detail.date.length !== 8) errors.push('Date must be in ddmmyyyy format (e.g., 15012020)');
   if (!detail.vigat) errors.push('Missing vigat');
-  if (!detail.tenure) errors.push('Missing tenure');
-  else if (!TENURE_TYPES.includes(detail.tenure)) {
+  
+  // CHANGED: Remove required validation for tenure, only validate if provided
+  if (detail.tenure && !TENURE_TYPES.includes(detail.tenure)) {
     errors.push(`Invalid tenure type '${detail.tenure}'. Must be one of: ${TENURE_TYPES.join(', ')}`);
   }
 
   if (detail.type === 'Hukam') {
-    if (!HUKAM_TYPES.includes(detail.hukamType)) {
+    // CHANGED: Remove required validation for hukamType, only validate if provided
+    if (detail.hukamType && !HUKAM_TYPES.includes(detail.hukamType)) {
       errors.push(`Invalid hukam type '${detail.hukamType}'. Must be one of: ${HUKAM_TYPES.join(', ')}`);
     }
     if (detail.hukamType === 'ALT Krushipanch' && detail.ganotType) {
@@ -133,11 +135,6 @@ export const validateNondhDetail = (detail) => {
         errors.push(`Invalid ganot type '${detail.ganotType}'. Must be one of: ${GANOT_OPTIONS.join(', ')}`);
       }
     }
-  }
-
-  const mappedStatus = detail.status ? mapStatusFromJSON(detail.status) : 'valid';
-  if (mappedStatus === 'invalid' && !detail.invalidReason) {
-    errors.push('Radd status requires invalidReason');
   }
 
   return errors;

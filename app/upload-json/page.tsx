@@ -144,76 +144,76 @@ const LandRecordJSONUpload = () => {
   //   sqm: 22257.3
   // }
 },
-    yearSlabs: [
-      {
-        startYear: 2010,
-        endYear: 2015,
-        sNo: "123",
-        sNoType: "block_no",
-        area: {
-          sqm: 22257.3
-        }
-      },
-      {
-        startYear: 2016,
-        endYear: 2020,
-        paiky: true,
-        paikyEntries: [
-          {
-            sNo: "124/1",
-            sNoType: "s_no",
-            area: {
-              sqm: 5058.5
-            }
-          }
-        ]
-      }
-    ],
-    panipatraks: [
-      {
-        year: 2012,
-        farmers: [
-          {
-            name: "Farmer Name 1",
-            area: {
-              acre: 3,
-              guntha: 0
-            }
-          },
-          {
-            name: "Farmer Name 2",
-            area: {
-              sqm: 10117
-            }
-          }
-        ]
-      },
-      {
-        year: 2018,
-        farmers: [
-          {
-            name: "Main Land Owner",
-            area: {
-              sqm: 8000
-            }
-          },
-          {
-            name: "Paiky Owner 1",
-            area: {
-              sqm: 5058.5
-            },
-            paikyNumber: 1
-          },
-          {
-            name: "Ekatrikaran Owner 1",
-            area: {
-              sqm: 3000
-            },
-            ekatrikaranNumber: 1
-          }
-        ]
-      }
-    ],
+    // yearSlabs: [
+    //   {
+    //     startYear: 2010,
+    //     endYear: 2015,
+    //     sNo: "123",
+    //     sNoType: "block_no",
+    //     area: {
+    //       sqm: 22257.3
+    //     }
+    //   },
+    //   {
+    //     startYear: 2016,
+    //     endYear: 2020,
+    //     paiky: true,
+    //     paikyEntries: [
+    //       {
+    //         sNo: "124/1",
+    //         sNoType: "s_no",
+    //         area: {
+    //           sqm: 5058.5
+    //         }
+    //       }
+    //     ]
+    //   }
+    // ],
+    // panipatraks: [
+    //   {
+    //     year: 2012,
+    //     farmers: [
+    //       {
+    //         name: "Farmer Name 1",
+    //         area: {
+    //           acre: 3,
+    //           guntha: 0
+    //         }
+    //       },
+    //       {
+    //         name: "Farmer Name 2",
+    //         area: {
+    //           sqm: 10117
+    //         }
+    //       }
+    //     ]
+    //   },
+    //   {
+    //     year: 2018,
+    //     farmers: [
+    //       {
+    //         name: "Main Land Owner",
+    //         area: {
+    //           sqm: 8000
+    //         }
+    //       },
+    //       {
+    //         name: "Paiky Owner 1",
+    //         area: {
+    //           sqm: 5058.5
+    //         },
+    //         paikyNumber: 1
+    //       },
+    //       {
+    //         name: "Ekatrikaran Owner 1",
+    //         area: {
+    //           sqm: 3000
+    //         },
+    //         ekatrikaranNumber: 1
+    //       }
+    //     ]
+    //   }
+    // ],
     nondhs: [
       {
         number: "1",
@@ -255,7 +255,7 @@ const LandRecordJSONUpload = () => {
         ]
       },
       {
-        nondhNumber: "2",
+        nondhNumber: "3",
         type: "Varsai",
         date: "20052018",
         vigat: "Transfer from Owner 1 to new owners",
@@ -281,16 +281,13 @@ const LandRecordJSONUpload = () => {
         ]
       },
       {
-        nondhNumber: "3",
+        nondhNumber: "2",
         type: "Hukam",
         date: "10032019",
         hukamDate: "05032019",
-        hukamType: "SSRD",
         restrainingOrder: "no",
         vigat: "Court order regarding land dispute",
-        tenure: "Navi",
         status: "Radd",
-        invalidReason: "Superseded by court order",
         showInOutput: true,
         affectedNondhDetails: [
           {
@@ -477,92 +474,87 @@ const LandRecordJSONUpload = () => {
       }
     }
 
-    if (!data.yearSlabs || !Array.isArray(data.yearSlabs) || data.yearSlabs.length === 0) {
-      validationErrors.push("At least one year slab is required");
-    }
+    // if (!data.yearSlabs || !Array.isArray(data.yearSlabs) || data.yearSlabs.length === 0) {
+    //   validationErrors.push("At least one year slab is required");
+    // }
 
-    if (data.panipatraks) {
-      data.panipatraks.forEach((panip, i) => {
-        if (!panip.year) {
-          validationErrors.push(`Panipatrak ${i + 1}: Missing year`);
-        } else {
-          const matchingSlab = findSlabForYear(panip.year, data.yearSlabs);
-          if (!matchingSlab) {
-            validationErrors.push(
-              `Panipatrak ${i + 1}: Year ${panip.year} does not fall within any year slab range`
-            );
-          }
-        }
+    // if (data.panipatraks) {
+    //   data.panipatraks.forEach((panip, i) => {
+    //     if (!panip.year) {
+    //       validationErrors.push(`Panipatrak ${i + 1}: Missing year`);
+    //     } else {
+    //       const matchingSlab = findSlabForYear(panip.year, data.yearSlabs);
+    //       if (!matchingSlab) {
+    //         validationErrors.push(
+    //           `Panipatrak ${i + 1}: Year ${panip.year} does not fall within any year slab range`
+    //         );
+    //       }
+    //     }
         
-        if (!panip.farmers || panip.farmers.length === 0) {
-          validationErrors.push(`Panipatrak ${i + 1}: Must have at least one farmer`);
-        }
+    //     if (!panip.farmers || panip.farmers.length === 0) {
+    //       validationErrors.push(`Panipatrak ${i + 1}: Must have at least one farmer`);
+    //     }
         
-        panip.farmers?.forEach((farmer, j) => {
-          if (!farmer.name) {
-            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Missing name`);
-          }
+    //     panip.farmers?.forEach((farmer, j) => {
+    //       if (!farmer.name) {
+    //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Missing name`);
+    //       }
           
-          if (farmer.paikyNumber !== undefined && farmer.ekatrikaranNumber !== undefined) {
-            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Cannot have both paikyNumber and ekatrikaranNumber`);
-          }
+    //       if (farmer.paikyNumber !== undefined && farmer.ekatrikaranNumber !== undefined) {
+    //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: Cannot have both paikyNumber and ekatrikaranNumber`);
+    //       }
           
-          if (farmer.paikyNumber !== undefined && farmer.paikyNumber < 0) {
-            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: paikyNumber must be 0 or positive`);
-          }
-          if (farmer.ekatrikaranNumber !== undefined && farmer.ekatrikaranNumber < 0) {
-            validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: ekatrikaranNumber must be 0 or positive`);
-          }
-        });
-      });
-    }
+    //       if (farmer.paikyNumber !== undefined && farmer.paikyNumber < 0) {
+    //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: paikyNumber must be 0 or positive`);
+    //       }
+    //       if (farmer.ekatrikaranNumber !== undefined && farmer.ekatrikaranNumber < 0) {
+    //         validationErrors.push(`Panipatrak ${i + 1}, Farmer ${j + 1}: ekatrikaranNumber must be 0 or positive`);
+    //       }
+    //     });
+    //   });
+    // }
 
     return validationErrors;
   };
 
   const validateNondhDetail = (detail: NondhDetail, index: number): string[] => {
-    const errors: string[] = [];
+  const errors: string[] = [];
 
-    if (!detail.nondhNumber) {
-      errors.push(`Missing nondh number`);
-    }
-    if (!detail.type) {
-      errors.push(`Missing type`);
-    } else if (!NONDH_TYPES.includes(detail.type as any)) {
-      errors.push(`Invalid nondh type '${detail.type}'. Must be one of: ${NONDH_TYPES.join(', ')}`);
-    }
-    if (!detail.date) {
-      errors.push(`Missing date`);
-    } else if (detail.date.length !== 8) {
-      errors.push(`Date must be in ddmmyyyy format (e.g., 15012020)`);
-    }
-    if (!detail.vigat) {
-      errors.push(`Missing vigat`);
-    }
-    if (!detail.tenure) {
-      errors.push(`Missing tenure`);
-    } else if (!TENURE_TYPES.includes(detail.tenure as any)) {
-      errors.push(`Invalid tenure type '${detail.tenure}'. Must be one of: ${TENURE_TYPES.join(', ')}`);
-    }
+  if (!detail.nondhNumber) {
+    errors.push(`Missing nondh number`);
+  }
+  if (!detail.type) {
+    errors.push(`Missing type`);
+  } else if (!NONDH_TYPES.includes(detail.type as any)) {
+    errors.push(`Invalid nondh type '${detail.type}'. Must be one of: ${NONDH_TYPES.join(', ')}`);
+  }
+  if (!detail.date) {
+    errors.push(`Missing date`);
+  } else if (detail.date.length !== 8) {
+    errors.push(`Date must be in ddmmyyyy format (e.g., 15012020)`);
+  }
+  if (!detail.vigat) {
+    errors.push(`Missing vigat`);
+  }
+  
+  // CHANGED: Remove required validation for tenure, set default in processing
+  if (detail.tenure && !TENURE_TYPES.includes(detail.tenure as any)) {
+    errors.push(`Invalid tenure type '${detail.tenure}'. Must be one of: ${TENURE_TYPES.join(', ')}`);
+  }
 
-    if (detail.type === "Hukam") {
-      if (!HUKAM_TYPES.includes(detail.hukamType as any)) {
-        errors.push(`Invalid hukam type '${detail.hukamType}'. Must be one of: ${HUKAM_TYPES.join(', ')}`);
-      }
-      if (detail.hukamType === "ALT Krushipanch" && detail.ganotType) {
-        if (!GANOT_OPTIONS.includes(detail.ganotType as any)) {
-          errors.push(`Invalid ganot type '${detail.ganotType}'. Must be one of: ${GANOT_OPTIONS.join(', ')}`);
-        }
-      }
+  // CHANGED: Remove required validation for hukamType, set default in processing
+  if (detail.type === "Hukam" && detail.hukamType && !HUKAM_TYPES.includes(detail.hukamType as any)) {
+    errors.push(`Invalid hukam type '${detail.hukamType}'. Must be one of: ${HUKAM_TYPES.join(', ')}`);
+  }
+  
+  if (detail.type === "Hukam" && detail.hukamType === "ALT Krushipanch" && detail.ganotType) {
+    if (!GANOT_OPTIONS.includes(detail.ganotType as any)) {
+      errors.push(`Invalid ganot type '${detail.ganotType}'. Must be one of: ${GANOT_OPTIONS.join(', ')}`);
     }
+  }
 
-    const mappedStatus = detail.status ? mapStatusFromJSON(detail.status) : "valid";
-    if (mappedStatus === "invalid" && !detail.invalidReason) {
-      errors.push(`Radd status requires invalidReason`);
-    }
-
-    return errors;
-  };
+  return errors;
+};
 
   const getPrimarySNoType = (affectedSNos: any[]): string => {
     if (!affectedSNos || affectedSNos.length === 0) return 's_no';
@@ -738,20 +730,20 @@ const LandRecordJSONUpload = () => {
             date: parseDate(detail.date),
             sd_date: detail.sdDate ? parseDate(detail.sdDate) : null,
             hukam_date: detail.hukamDate ? parseDate(detail.hukamDate) : null,
-            hukam_type: detail.hukamType || null,
+            hukam_type: detail.type === "Hukam" ? (detail.hukamType || "SSRD") : null,
             restraining_order: detail.restrainingOrder || null,
             amount: detail.amount || null,
             vigat: detail.vigat,
             tenure: detail.tenure || 'Navi',
             status: mappedStatus,
-            invalid_reason: mappedStatus === 'invalid' ? detail.invalidReason : null,
+            invalid_reason: mappedStatus === "invalid" ? (detail.invalidReason || "NA") : null,
             show_in_output: detail.showInOutput !== false,
             old_owner: detail.oldOwner || null,
             affected_nondh_details: detail.affectedNondhDetails && detail.affectedNondhDetails.length > 0
               ? JSON.stringify(detail.affectedNondhDetails.map(a => ({
                   nondhNo: a.nondhNo,
                   status: mapStatusFromJSON(a.status),
-                  invalidReason: a.invalidReason || null
+                  invalidReason: mapStatusFromJSON(a.status) === "invalid" ? (a.invalidReason || "NA") : null
                 })))
               : null,
             ganot: detail.hukamType === "ALT Krushipanch" ? detail.ganotType : null,
