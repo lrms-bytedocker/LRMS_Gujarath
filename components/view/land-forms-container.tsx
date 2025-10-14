@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle, Circle } from "lucide-react";
 import { useLandRecord } from "@/contexts/land-record-context";
 import { useStepFormData } from "@/hooks/use-step-form-data";
+import { useSearchParams } from 'next/navigation'
 
 // Import your form components
 import LandBasicInfoComponent from "./land-basic-info";
@@ -39,7 +40,7 @@ export function ViewFormsContainer() {
     formData,
     recordId,
   } = useLandRecord();
-
+  const searchParams = useSearchParams()
   console.log('ViewFormsContainer rendered');
   console.log('Record ID from context:', recordId);
 
@@ -93,9 +94,17 @@ export function ViewFormsContainer() {
   }, []);
 
   // Sync active step with context
-  useEffect(() => {
-    setActiveStep(currentStep);
-  }, [currentStep]);
+// Handle step parameter from URL
+useEffect(() => {
+  const stepParam = searchParams.get('step')
+  if (stepParam) {
+    const targetStep = parseInt(stepParam, 10)
+    if (targetStep >= 1 && targetStep <= 6) {
+      setCurrentStep(targetStep)
+      setActiveStep(targetStep)
+    }
+  }
+}, [searchParams, setCurrentStep])
 
   // Handle step changes
   const handleStepChange = useCallback(async (newStep: number) => {

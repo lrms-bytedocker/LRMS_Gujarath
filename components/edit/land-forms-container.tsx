@@ -16,8 +16,7 @@ import { useLandRecord } from "@/contexts/land-record-context";
 import { LandRecordService } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useStepFormData } from "@/hooks/use-step-form-data";
-
-// Import your form components
+import { useSearchParams } from 'next/navigation'
 import LandBasicInfoComponent from "./land-basic-info";
 import YearSlabs from "./year-slabs";
 import Panipatrak from "./panipatrak";
@@ -44,6 +43,7 @@ export function EditFormsContainer() {
     recordId,
   } = useLandRecord();
   const { toast } = useToast();
+  const searchParams = useSearchParams()
   console.log('EditFormsContainer rendered');
   console.log('Current step:', currentStep);
   console.log('Record ID:', recordId);
@@ -101,9 +101,16 @@ export function EditFormsContainer() {
   }, []);
 
   // Sync active step with context
-  useEffect(() => {
-    setActiveStep(currentStep);
-  }, [currentStep]);
+useEffect(() => {
+  const stepParam = searchParams.get('step')
+  if (stepParam) {
+    const targetStep = parseInt(stepParam, 10)
+    if (targetStep >= 1 && targetStep <= 6) {
+      setCurrentStep(targetStep)
+      setActiveStep(targetStep)
+    }
+  }
+}, [searchParams, setCurrentStep]);
 
   // Handle step changes
   const handleStepChange = useCallback(async (newStep: number) => {

@@ -9,11 +9,13 @@ import { useLandRecord } from "@/contexts/land-record-context"
 import { LandRecordService } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import type { Nondh } from "@/contexts/land-record-context"
+import { useRouter } from 'next/navigation'
+import { Upload } from 'lucide-react'
 
 export default function NondhAdd() {
   const { recordId, yearSlabs, landBasicInfo } = useLandRecord()
   const { toast } = useToast()
-  
+  const router = useRouter()
   const [nondhs, setNondhs] = useState<Nondh[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -154,21 +156,30 @@ export default function NondhAdd() {
     )
   }
 
-  if (!nondhs || nondhs.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
+ if (!nondhs || nondhs.length === 0) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex justify-between items-center">
           <CardTitle>Nondh Information</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center p-8">
-            <p className="text-muted-foreground">No nondh records found</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
+          <Button 
+            variant="outline"
+            onClick={() => router.push(`/upload-json?fromView=true&landRecordId=${recordId}`)}
+            className="flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Upload via JSON
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-center p-8">
+          <p className="text-muted-foreground">No nondh records found</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
   return (
     <Card>
       <CardHeader>

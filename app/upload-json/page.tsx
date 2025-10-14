@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Upload, Download, AlertCircle, CheckCircle, FileJson, Loader2 } from 'lucide-react';
 import { LandRecordService } from '@/lib/supabase';
 import { AuthProvider } from '@/components/auth-provider';
+import { useSearchParams, useRouter } from 'next/navigation'
 
 interface Area {
   sqm?: number;
@@ -126,6 +127,11 @@ const LandRecordJSONUpload = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<UploadResult>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const searchParams = useSearchParams()
+const router = useRouter()
+const fromEdit = searchParams.get('fromEdit') === 'true'
+const fromView = searchParams.get('fromView') === 'true'
+const existingLandRecordId = searchParams.get('landRecordId')
 
   const sampleJSON = {
     basicInfo: {
@@ -649,31 +655,59 @@ const LandRecordJSONUpload = () => {
       }
 
       // Step 1: Save land record basic info
-      const basicInfoArea = parseArea(jsonData.basicInfo.area);
-      
-      const landRecordData = {
-  district: jsonData.basicInfo.district,
-  taluka: jsonData.basicInfo.taluka,
-  village: jsonData.basicInfo.village,
-  block_no: jsonData.basicInfo.blockNo || null,
-  re_survey_no: jsonData.basicInfo.reSurveyNo || null,
-  is_promulgation: jsonData.basicInfo.isPromulgation || false,
-  s_no_type: jsonData.basicInfo.blockNo ? 'block_no' : 're_survey_no',
-  s_no: jsonData.basicInfo.blockNo || jsonData.basicInfo.reSurveyNo,
-  area_value: basicInfoArea.value,  // CHANGED from 0
-  area_unit: basicInfoArea.unit,     // CHANGED from 'sq_m'
-  json_uploaded: true,               // NEW FIELD
-  status: 'draft',
-  current_step: 1
-};
+      // Step 1: Check if coming from edit mode with existing record
+let landRecordId;
 
-      const { data: savedRecord, error: recordError } = await LandRecordService.saveLandRecord(landRecordData);
-      
-      if (recordError) {
-        throw new Error(`Failed to save land record: ${recordError.message}`);
-      }
+if (fromEdit || fromView && existingLandRecordId) {
+  // Validate that the JSON basic info matches the existing record
+  const { data: existingRecord, error: fetchError } = await LandRecordService.getLandRecord(existingLandRecordId);
+  
+  if (fetchError || !existingRecord) {
+    throw new Error('Could not find the existing land record');
+  }
+  
+  // Validate matching criteria
+  const matches = 
+    existingRecord.district === jsonData.basicInfo.district &&
+    existingRecord.taluka === jsonData.basicInfo.taluka &&
+    existingRecord.village === jsonData.basicInfo.village &&
+    (existingRecord.block_no === jsonData.basicInfo.blockNo || 
+     existingRecord.re_survey_no === jsonData.basicInfo.reSurveyNo);
+  
+  if (!matches) {
+    throw new Error('JSON basic info does not match the existing land record. Please verify district, taluka, village, and survey numbers.');
+  }
+  
+  landRecordId = existingLandRecordId;
+  
+} else {
+  // Original flow: Create new land record
+  const basicInfoArea = parseArea(jsonData.basicInfo.area);
+  
+  const landRecordData = {
+    district: jsonData.basicInfo.district,
+    taluka: jsonData.basicInfo.taluka,
+    village: jsonData.basicInfo.village,
+    block_no: jsonData.basicInfo.blockNo || null,
+    re_survey_no: jsonData.basicInfo.reSurveyNo || null,
+    is_promulgation: jsonData.basicInfo.isPromulgation || false,
+    s_no_type: jsonData.basicInfo.blockNo ? 'block_no' : 're_survey_no',
+    s_no: jsonData.basicInfo.blockNo || jsonData.basicInfo.reSurveyNo,
+    area_value: basicInfoArea.value,
+    area_unit: basicInfoArea.unit,
+    json_uploaded: true,
+    status: 'draft',
+    current_step: 1
+  };
 
-      const landRecordId = savedRecord.id;
+  const { data: savedRecord, error: recordError } = await LandRecordService.saveLandRecord(landRecordData);
+  
+  if (recordError) {
+    throw new Error(`Failed to save land record: ${recordError.message}`);
+  }
+
+  landRecordId = savedRecord.id;
+}
 
       // Step 2: Save nondhs
       let savedNondhs = [];
@@ -836,11 +870,27 @@ const LandRecordJSONUpload = () => {
       }
 
       setResult({
-        success: true,
-        message: 'Land record uploaded and processed successfully',
-        stats,
-        landRecordId
-      });
+  success: true,
+  message: fromEdit || fromView
+    ? 'Nondh data added successfully to existing record' 
+    : 'Land record uploaded and processed successfully',
+  stats,
+  landRecordId
+});
+
+// Route back to edit page if coming from edit mode
+if (fromEdit && landRecordId) {
+  setTimeout(() => {
+    router.push(`/land-master/forms?mode=edit&id=${landRecordId}&step=4`);
+  }, 2000); // Give user time to see success message
+}
+
+// Route back to view page if coming from view mode
+if (fromView && landRecordId) {
+  setTimeout(() => {
+    router.push(`/land-master/forms?mode=view&id=${landRecordId}&step=4`);
+  }, 2000); // Give user time to see success message
+}
 
     } catch (error) {
       console.error('Upload error:', error);
@@ -899,7 +949,7 @@ const LandRecordJSONUpload = () => {
             Instructions
           </h3>
           <ul className="space-y-1 text-sm">
-            <li>• <strong>Year Matching:</strong> Panipatrak year is automatically matched to correct year slab</li>
+            {/* <li>• <strong>Year Matching:</strong> Panipatrak year is automatically matched to correct year slab</li>
             <li>• <strong>Farmer Types:</strong> 
               <ul className="ml-4 mt-1">
                 <li>- Regular farmers: No paikyNumber or ekatrikaranNumber needed</li>
@@ -907,15 +957,24 @@ const LandRecordJSONUpload = () => {
                 <li>- Ekatrikaran farmers: Provide only ekatrikaranNumber (positive integer)</li>
                 <li>- Cannot have both numbers for same farmer</li>
               </ul>
-            </li>
+            </li> */}
             <li>• <strong>Status Mapping:</strong> Use "Pramaanik" for valid, "Radd" for invalid, "Na Manjoor" for nullified</li>
             <li>• <strong>Validation:</strong> Each nondh detail validated individually - failures are skipped with reason shown</li>
             <li>• <strong>Validity Chain:</strong> Automatically applied based on sorted nondh order and invalid status</li>
             <li>• <strong>Nondh Types:</strong> Supports all types with type-specific fields</li>
             <li>• <strong>Foreign Keys:</strong> All relationships are automatically set</li>
-            <li>• <strong>Area format:</strong> Provide either sqm OR acre + guntha (converted to sq_m)</li>
+            <li>• <strong>Area format:</strong> Provide either sqm OR acre + guntha</li>
             <li>• <strong>Date format:</strong> All dates must be in ddmmyyyy format</li>
           </ul>
+          {fromEdit || fromView && (
+  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+    <h3 className="font-semibold mb-2">Edit Mode Active</h3>
+    <p className="text-sm">
+      You're uploading to an existing land record. Only nondhs and nondh details from the JSON will be added.
+      The JSON's basic info must match the existing record (district, taluka, village, survey numbers).
+    </p>
+  </div>
+)}
         </div>
 
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6">

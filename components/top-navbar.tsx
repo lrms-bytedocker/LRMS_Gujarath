@@ -50,7 +50,7 @@ export function TopNavbar() {
             </DropdownMenu>
           )}
 
-          {/* Clerk user button stays for profile/sign-out */}
+          {/* Clerk user button */}
           <UserButton
             afterSignOutUrl="/"
             appearance={{

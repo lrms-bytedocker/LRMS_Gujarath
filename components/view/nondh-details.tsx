@@ -548,10 +548,12 @@ const getPrimarySNoType = (affectedSNos: string[]): string => {
                       {/* Type-specific fields */}
                       {renderTypeSpecificDetails(detail)}
 
-                      <div className="space-y-2 mb-6">
-                        <Label>Tenure</Label>
-                        <p className="mt-1">{detail.tenure || 'Navi'}</p>
-                      </div>
+                      {["Hukam", "Kabjedaar", "Ekatrikaran"].includes(detail.type) && (
+  <div className="space-y-2 mb-6">
+    <Label>Tenure</Label>
+    <p className="mt-1">{detail.tenure || 'Navi'}</p>
+  </div>
+)}
 
                       {detail.hasDocuments && detail.docUpload && (
                         <div className="space-y-2 mb-4">

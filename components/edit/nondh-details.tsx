@@ -4164,6 +4164,7 @@ const formatArea = (area: { value: number; unit: string }) => {
       </Select>
     </div>
     )}
+    {["Hukam", "Kabjedaar", "Ekatrikaran"].includes(detail.type) && (
                         <div className="space-y-2">
                           <Label>Tenure Type</Label>
                           <Select
@@ -4182,6 +4183,7 @@ const formatArea = (area: { value: number; unit: string }) => {
                             </SelectContent>
                           </Select>
                         </div>
+                        )}
                       </div>
 
 {/* Hukam-specific fields */}

@@ -629,161 +629,224 @@ const fetchDetailedNondhInfo = async (nondhDetails: NondhDetail[]) => {
 }
 
   const exportToExcel = async () => {
-    if (!landBasicInfo) {
-      toast({
-        title: 'Error',
-        description: 'Land basic information is required',
-        variant: 'destructive'
-      })
-      return
-    }
+  if (!landBasicInfo) {
+    toast({
+      title: 'Error',
+      description: 'Land basic information is required',
+      variant: 'destructive'
+    })
+    return
+  }
 
-    try {
-      // Dynamically import xlsx
-      const XLSX = await import('xlsx-js-style')
-
-      // Get all nondh data
-      let allData = nondhDetails.map((detail) => {
-        const nondh = nondhs.find((n) => n.id === detail.nondhId)
-        return {
-          ...detail,
-          nondhNumber: nondh?.number || 0,
-          affectedSNos: nondh?.affectedSNos || [detail.sNo],
-          nondhType: nondh?.type || detail.type,
-          hukamType: detail.hukamType || detail.subType || '-',
-        }
-      })
-
-      const sortedData = allData.sort(sortNondhsBySNoType)
-
-      // Format date as DDMMYYYY
-      const formatDate = (dateStr: string) => {
-        if (!dateStr) return '-'
-        const date = new Date(dateStr)
-        if (isNaN(date.getTime())) return '-' // Check for invalid date
-        const day = String(date.getDate()).padStart(2, '0')
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const year = date.getFullYear()
-        return `${day}/${month}/${year}`
-      }
-
-      // Clean affected S.Nos by removing type labels
-      const cleanAffectedSNos = (sNos: any) => {
-        const formatted = formatAffectedSNos(sNos)
-        if (!formatted || formatted === '-') return '-'
-        return formatted.replace(/\s*\((Survey|Block|Re-survey)\)/g, '')
-      }
-
-      // Create header info
-      const headerInfo = [
-        `District: ${landBasicInfo.district || 'N/A'}`,
-        `Taluka: ${landBasicInfo.taluka || 'N/A'}`,
-        `Village: ${landBasicInfo.village || 'N/A'}`,
-        `Block No: ${landBasicInfo.blockNo || 'N/A'}`,
-        landBasicInfo.reSurveyNo ? `Re-survey No: ${landBasicInfo.reSurveyNo}` : ''
-      ].filter(Boolean).join(', ')
-
-      // Create worksheet data
-      const wsData = [
-        [headerInfo], // Header row
-        [], // Empty row
-        ['Serial No', 'Nondh No.', 'Nondh Type', 'Nondh Date', 'Vigat', 'Affected Survey Numbers', 'Status'], // Column headers
-        ...sortedData.map((row, index) => [
-          index + 1,
-          row.nondhNumber || '-',
-          row.nondhType || '-',
-          row.date ? formatDate(row.date) : '-',
-          row.vigat || '-',
-          cleanAffectedSNos(row.affectedSNos),
-          getStatusDisplayName(row.status || 'valid')
-        ])
-      ]
-
-      // Create workbook and worksheet
-      const wb = XLSX.utils.book_new()
-      const ws = XLSX.utils.aoa_to_sheet(wsData)
-
-      // Apply styles to header row (A1)
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-      for (let C = range.s.c; C <= range.e.c; ++C) {
-        const address = XLSX.utils.encode_col(C) + "1";
-        if (!ws[address]) continue;
-        ws[address].s = {
-          font: { bold: true, sz: 12 },
-          alignment: { horizontal: "center", vertical: "center", wrapText: true }
-        };
-      }
-
-      // Apply styles to column headers (row 3)
-      for (let C = range.s.c; C <= range.e.c; ++C) {
-        const address = XLSX.utils.encode_col(C) + "3";
-        if (!ws[address]) continue;
-        ws[address].s = {
-          font: { bold: true },
-          alignment: { horizontal: "center", vertical: "center" },
-          fill: { fgColor: { rgb: "CCCCCC" } }
-        };
+  try {
+   const formatAffectedSNos = (affectedSNos: any): string => {
+      if (!affectedSNos) {
+        return '-';
       }
       
-      // Set column widths
-      ws['!cols'] = [
-        { wch: 10 },  // Serial No
-        { wch: 12 },  // Nondh No
-        { wch: 15 },  // Nondh Type
-        { wch: 12 },  // Nondh Date
-        { wch: 40 },  // Vigat (wider for Gujarati text)
-        { wch: 25 },  // Affected Survey Numbers
-        { wch: 12 }   // Status
-      ]
-
-      // Merge first row (header info) across all columns
-      ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }
-      ]
-
-      // Style the header row (bold and centered)
-      const headerCell = ws['A1']
-      if (headerCell) {
-        headerCell.s = {
-          font: { bold: true, sz: 12 },
-          alignment: { horizontal: 'center', vertical: 'center' }
-        }
-      }
-
-      // Style column headers (bold and centered)
-      const columnHeaders = ['A3', 'B3', 'C3', 'D3', 'E3', 'F3', 'G3']
-      columnHeaders.forEach(cellRef => {
-        if (ws[cellRef]) {
-          ws[cellRef].s = {
-            font: { bold: true },
-            alignment: { horizontal: 'center', vertical: 'center' },
-            fill: { fgColor: { rgb: 'E0E0E0' } }
+      try {
+        let sNos: Array<{number: string, type: string}> = [];
+        
+        // Handle array format like ["{\"number\":\"345\",\"type\":\"block_no\"}"]
+        if (Array.isArray(affectedSNos)) {
+          console.log('📦 [EXCEL] Processing as array, length:', affectedSNos.length);
+          sNos = affectedSNos.map(sNoData => {
+            try {
+              if (typeof sNoData === 'string') {
+                return JSON.parse(sNoData);
+              } else if (typeof sNoData === 'object' && sNoData.number && sNoData.type) {
+                return sNoData;
+              } else {
+                return { number: sNoData.toString(), type: 's_no' };
+              }
+            } catch (e) {
+              return { number: sNoData.toString(), type: 's_no' };
+            }
+          });
+        } else if (typeof affectedSNos === 'string') {
+          // Handle single JSON string
+          try {
+            const parsed = JSON.parse(affectedSNos);
+            sNos = [parsed];
+          } catch {
+            return affectedSNos;
           }
+        } else if (typeof affectedSNos === 'object' && affectedSNos.number && affectedSNos.type) {
+          sNos = [affectedSNos];
+        } else {
+          return JSON.stringify(affectedSNos);
         }
-      })
 
-      // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(wb, ws, 'Output Views')
-
-      // Generate filename
-      const filename = `output-${landBasicInfo.blockNo || 'NA'}.xlsx`
-
-      // Write file with UTF-8 support for Gujarati
-      XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary', cellStyles: true })
-
-      toast({
-        title: 'Success',
-        description: 'Excel file exported successfully',
-      })
-    } catch (error) {
-      console.error('Error exporting to Excel:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to export Excel file',
-        variant: 'destructive'
-      })
+        
+        // Format the S.Nos as simple numbers separated by commas
+if (sNos && sNos.length > 0) {
+  const result = sNos.map(sNo => {
+    if (typeof sNo === 'object' && sNo.number) {
+      return sNo.number.toString(); // Just return the number without type
     }
+    return sNo.toString();
+  }).join(', ');
+  return result;
+}
+
+        return '-';
+      } catch (error) {
+        return typeof affectedSNos === 'string' ? affectedSNos : JSON.stringify(affectedSNos);
+      }
+    }
+    // Dynamically import xlsx
+    const XLSX = await import('xlsx-js-style')
+
+    // Get all nondh data
+    let allData = nondhDetails.map((detail) => {
+      const nondh = nondhs.find((n) => n.id === detail.nondhId)
+      const affectedSNosRaw = nondh?.affected_s_nos || [detail.sNo]
+      
+      return {
+        ...detail,
+        nondhNumber: nondh?.number || 0,
+        affectedSNosFormatted: formatAffectedSNos(affectedSNosRaw),
+        nondhType: nondh?.type || detail.type,
+        hukamType: detail.hukamType || detail.subType || '-',
+      }
+    })
+
+    const sortedData = allData.sort(sortNondhsBySNoType)
+
+    // Format date as DDMMYYYY
+    const formatDate = (dateStr: string) => {
+      if (!dateStr) return '-'
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) return '-'
+      const day = String(date.getDate()).padStart(2, '0')
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const year = date.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+
+    // Create header info
+    const headerInfo = [
+      `District (જીલ્લો): ${landBasicInfo.district || 'N/A'}`,
+      `Taluka (તાલુકો): ${landBasicInfo.taluka || 'N/A'}`,
+      `Village (મોજે): ${landBasicInfo.village || 'N/A'}`,
+      `Block No (બ્લોક નં.): ${landBasicInfo.blockNo || 'N/A'}`,
+      landBasicInfo.reSurveyNo ? `Re-survey No (ફરી-સર્વે નં.): ${landBasicInfo.reSurveyNo}` : ''
+    ].filter(Boolean).join(', ')
+
+    // Create worksheet data
+    const wsData = [
+      [headerInfo], // Header row
+      [], // Empty row
+      ['Serial No (અનુક્રમ નંબર)', 'Nondh No. (નોધ નંબર)', 'Nondh Type (નોધ ની પ્રકાર)', 'Nondh Date (નોધ ની તારીખ)', 'Vigat (નોધ ની વિગત)', 'Affected Survey Numbers (પ્રભાવિત સર્વે નં.)', 'Status (સ્થિતિ)'], // Column headers
+      ...sortedData.map((row, index) => [
+        index + 1,
+        row.nondhNumber || '-',
+        row.nondhType || '-',
+        row.date ? formatDate(row.date) : '-',
+        row.vigat || '-',
+        row.affectedSNosFormatted || '-',
+        getStatusDisplayName(row.status || 'valid')
+      ])
+    ]
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet(wsData)
+
+    // Get range for styling
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    
+    // Apply styles to header row (A1)
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const address = XLSX.utils.encode_col(C) + "1";
+      if (!ws[address]) continue;
+      ws[address].s = {
+        font: { bold: true, sz: 12 },
+        alignment: { horizontal: "center", vertical: "center", wrapText: true }
+      };
+    }
+
+    // Apply styles to column headers (row 3)
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const address = XLSX.utils.encode_col(C) + "3";
+      if (!ws[address]) continue;
+      ws[address].s = {
+        font: { bold: true },
+        alignment: { horizontal: "center", vertical: "center", wrapText: true },
+        fill: { fgColor: { rgb: "CCCCCC" } }
+      };
+    }
+
+    // Apply text wrapping and alignment to all data cells (starting from row 4)
+    for (let R = 3; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const address = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[address]) continue;
+        
+        ws[address].s = {
+          alignment: { 
+            horizontal: C === 4 ? "left" : "center", // Left align Vigat column, center others
+            vertical: "center", // Center vertically for better appearance
+            wrapText: true 
+          }
+        };
+      }
+    }
+    
+    // Set column widths with wider Vigat column
+    ws['!cols'] = [
+      { wch: 12 },  // Serial No (increased)
+      { wch: 15 },  // Nondh No (increased)
+      { wch: 18 },  // Nondh Type (increased)
+      { wch: 15 },  // Nondh Date (increased)
+      { wch: 60 },  // Vigat (significantly wider for text wrapping)
+      { wch: 30 },  // Affected Survey Numbers (increased)
+      { wch: 15 }   // Status (increased)
+    ]
+
+    // Set row heights dynamically based on content
+    ws['!rows'] = [];
+    ws['!rows'][0] = { hpt: 30 }; // Header row
+    ws['!rows'][1] = { hpt: 15 }; // Empty row
+    ws['!rows'][2] = { hpt: 45 }; // Column headers (increased for bilingual text)
+    
+    // Calculate row heights for data rows based on Vigat content
+    for (let i = 0; i < sortedData.length; i++) {
+      const vigatText = sortedData[i].vigat || '-';
+      // Estimate height: approximately 15pt per 60 characters (column width)
+      // Minimum height of 30pt, maximum of 150pt
+      const estimatedLines = Math.ceil(vigatText.length / 60);
+      const rowHeight = Math.min(Math.max(estimatedLines * 15, 30), 150);
+      ws['!rows'][i + 3] = { hpt: rowHeight };
+    }
+
+    // Merge first row (header info) across all columns
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }
+    ]
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Output Views')
+
+    // Generate filename
+    const filename = `output-land-${landBasicInfo.blockNo || 'NA'}-nondhs.xlsx`
+
+    // Write file with UTF-8 support for Gujarati
+    XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary', cellStyles: true })
+
+    toast({
+      title: 'Success',
+      description: 'Excel file exported successfully',
+    })
+  } catch (error) {
+    console.error('Error exporting to Excel:', error)
+    toast({
+      title: 'Error',
+      description: 'Failed to export Excel file',
+      variant: 'destructive'
+    })
   }
+}
 
   const getFilteredByDate = async () => {
   let filteredDetails = nondhDetails;
