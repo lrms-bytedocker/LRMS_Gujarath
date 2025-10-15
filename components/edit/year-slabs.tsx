@@ -335,7 +335,7 @@ const extractFilenameFromUrl = (url: string): string => {
     
     toast({ 
       title: "File uploaded successfully",
-      description: "Document saved to land-documents bucket"
+      description: "Document saved"
     });
     setModified(true);
   } catch (error) {
@@ -969,19 +969,17 @@ const updateSlabEntry = async (
     
     if (type === "paiky") {
       const updatedEntries = [...(slab.paikyEntries || [])];
-      // Fix: Properly spread the existing entry with updates
-      updatedEntries[index] = { 
-        ...updatedEntries[index], 
-        ...fromSlabEntryUI({...toSlabEntryUI(updatedEntries[index] || {}), ...updates})
-      };
+      const currentEntry = updatedEntries[index] || {};
+      const currentEntryUI = toSlabEntryUI(currentEntry);
+      const mergedUI = { ...currentEntryUI, ...updates };
+      updatedEntries[index] = fromSlabEntryUI(mergedUI);
       return { ...slab, paikyEntries: updatedEntries };
     } else {
       const updatedEntries = [...(slab.ekatrikaranEntries || [])];
-      // Fix: Properly spread the existing entry with updates
-      updatedEntries[index] = { 
-        ...updatedEntries[index], 
-        ...fromSlabEntryUI({...toSlabEntryUI(updatedEntries[index] || {}), ...updates})
-      };
+      const currentEntry = updatedEntries[index] || {};
+      const currentEntryUI = toSlabEntryUI(currentEntry);
+      const mergedUI = { ...currentEntryUI, ...updates };
+      updatedEntries[index] = fromSlabEntryUI(mergedUI);
       return { ...slab, ekatrikaranEntries: updatedEntries };
     }
   }));
@@ -1175,7 +1173,6 @@ const handleSave = async () => {
     setHasUnsavedChanges(currentStep, false);
     toast({ title: "Year slabs saved successfully" });
     setCurrentStep(3);
-    
   } catch (error) {
     console.error('Save error:', error);
     toast({ 

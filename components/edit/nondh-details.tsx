@@ -2331,13 +2331,136 @@ if (updates.area && (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "
   };
 };
 
+// validation function before saveChanges
+const validateOwnerAreas = (): { isValid: boolean; errors: string[] } => {
+  const errors: string[] = [];
+  
+  nondhDetails.forEach((detail) => {
+    const nondhNumber = nondhs.find(n => n.id === detail.nondhId)?.number || '?';
+    
+    // Check transfer types and 1st Right Hukam
+    if (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type) || 
+        (detail.type === "Hukam" && detail.ganot === "1st Right")) {
+      
+      const previousOwners = getPreviousOwners(detail.sNo, detail.nondhId);
+      const selectedOldOwner = previousOwners.find(owner => owner.name === detail.oldOwner);
+      const oldOwnerArea = selectedOldOwner?.area?.value || 0;
+      
+      // Calculate new owners total (excluding old owner)
+      const newOwnersTotal = detail.ownerRelations
+        .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+        .reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+      
+      // Check against old owner area
+      if (newOwnersTotal > oldOwnerArea) {
+        errors.push(
+          `Nondh ${nondhNumber}: Total new owners area (${newOwnersTotal.toFixed(2)}) exceeds old owner's area (${oldOwnerArea.toFixed(2)})`
+        );
+      }
+      
+      // Check against year slab limit
+      const yearSlabArea = getYearSlabAreaForDate(detail.date);
+      if (yearSlabArea && newOwnersTotal > yearSlabArea.value) {
+        errors.push(
+          `Nondh ${nondhNumber}: Total new owners area (${newOwnersTotal.toFixed(2)}) exceeds year slab limit (${yearSlabArea.value.toFixed(2)})`
+        );
+      }
+      
+      // Individual owner validation
+      detail.ownerRelations
+        .filter(rel => rel.ownerName !== detail.oldOwner && rel.ownerName.trim() !== "")
+        .forEach((rel, idx) => {
+          const otherNewOwnersTotal = detail.ownerRelations
+            .filter(r => r.id !== rel.id && r.ownerName !== detail.oldOwner && r.ownerName.trim() !== "")
+            .reduce((sum, r) => sum + (r.area?.value || 0), 0);
+          
+          const maxFromOldOwner = Math.max(0, oldOwnerArea - otherNewOwnersTotal);
+          const maxFromYearSlab = yearSlabArea ? Math.max(0, yearSlabArea.value - otherNewOwnersTotal) : Infinity;
+          const maxAllowed = Math.min(maxFromOldOwner, maxFromYearSlab);
+          
+          if (rel.area?.value > maxAllowed) {
+            errors.push(
+              `Nondh ${nondhNumber}, Owner "${rel.ownerName}": Area (${rel.area.value.toFixed(2)}) exceeds maximum allowed area (${maxAllowed.toFixed(2)})`
+            );
+          }
+        });
+    }
+    
+    // Check for ALL nondh types - global year slab validation
+    if (detail.date) {
+      const yearSlabArea = getYearSlabAreaForDate(detail.date);
+      if (yearSlabArea) {
+        const totalOwnerArea = detail.ownerRelations.reduce((sum, rel) => sum + (rel.area?.value || 0), 0);
+        
+        if (totalOwnerArea > yearSlabArea.value) {
+          errors.push(
+            `Nondh ${nondhNumber}: Total owner area (${totalOwnerArea.toFixed(2)}) exceeds year slab limit (${yearSlabArea.value.toFixed(2)})`
+          );
+        }
+      }
+    }
+  });
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};
+
+// function to recalculate validity based on current order
+const recalculateOwnerValidity = () => {
+  const sortedNondhs = [...nondhs].sort(sortNondhs);
+  
+  // Build a map of nondh details
+  const nondhDetailMap = new Map<string, NondhDetail>();
+  nondhDetails.forEach(detail => {
+    nondhDetailMap.set(detail.nondhId, detail);
+  });
+  
+  // Count affecting invalid nondhs for each nondh
+  const affectingCounts = new Map<string, number>();
+  sortedNondhs.forEach((nondh, index) => {
+    let count = 0;
+    // Look at all nondhs that come AFTER this one
+    for (let i = index + 1; i < sortedNondhs.length; i++) {
+      const affectingNondh = sortedNondhs[i];
+      const affectingDetail = nondhDetailMap.get(affectingNondh.id);
+      
+      // Count if the affecting nondh is invalid
+      if (affectingDetail?.status === 'invalid') {
+        count++;
+      }
+    }
+    affectingCounts.set(nondh.id, count);
+  });
+  
+  // Update owner relation validity
+  const updatedDetails = nondhDetails.map(detail => {
+    const affectingCount = affectingCounts.get(detail.nondhId) || 0;
+    const shouldBeValid = affectingCount % 2 === 0;
+    
+    // Update all owner relations with the correct validity
+    const updatedRelations = detail.ownerRelations.map(relation => ({
+      ...relation,
+      isValid: shouldBeValid
+    }));
+    
+    return {
+      ...detail,
+      ownerRelations: updatedRelations
+    };
+  });
+  
+  return updatedDetails;
+};
+
   const saveChanges = async () => {
   if (!hasChanges) return;
   
   try {
     setSaving(true);
 
-   // FIX: Get current nondh numbers from database
+    // FIX: Get current nondh numbers from database
     const { data: currentNondhData, error: nondhError } = await LandRecordService.getNondhsforDetails(recordId);
     if (nondhError) throw nondhError;
     
@@ -2345,7 +2468,7 @@ if (updates.area && (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "
       (currentNondhData || []).map(nondh => nondh.number.toString())
     );
 
-    // FIX: Filter out details for nondhs that no longer exist (compare by number)
+    // FIX: Filter out details for nondhs that no longer exist
     const validDetails = nondhDetails.filter(detail => {
       const nondh = nondhs.find(n => n.id === detail.nondhId);
       if (!nondh) return false;
@@ -2357,6 +2480,19 @@ if (updates.area && (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "
       return existsInCurrent;
     });
 
+    // ✅ NEW: Validate owner areas before saving
+    const areaValidation = validateOwnerAreas();
+    if (!areaValidation.isValid) {
+      toast({
+        title: "Area Validation Failed",
+        description: areaValidation.errors.slice(0, 3).join('; ') + 
+          (areaValidation.errors.length > 3 ? `; and ${areaValidation.errors.length - 3} more errors` : ''),
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Existing validation
     const validation = validateNondhDetails(validDetails);
     if (!validation.isValid) {
       toast({
@@ -2367,7 +2503,12 @@ if (updates.area && (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "
       return;
     }
 
-    const processedDetails = nondhDetails.map(detail => detail);
+    // ✅ NEW: Recalculate validity chain before saving
+    console.log('Recalculating owner validity based on current order...');
+    const detailsWithUpdatedValidity = recalculateOwnerValidity();
+    
+    // Use the details with updated validity
+    const processedDetails = detailsWithUpdatedValidity.map(detail => detail);
 
     // Handle empty dates
     processedDetails.forEach(detail => {
@@ -2397,56 +2538,63 @@ if (updates.area && (["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "
     // CRITICAL: Map to track ID changes
     const idMap = new Map<string, string>();
 
+    // Rest of your save logic remains the same...
+    // (Keep all the existing save code from STEP 1, STEP 2, STEP 3)
+
+    console.log('Starting save process...');
+    console.log('Original details IDs:', originalDetails.map(d => d.id));
+    console.log('Current details IDs:', processedDetails.map(d => d.id));
+
     // ========================================
-// STEP 1: Save ALL nondh details FIRST
-// ========================================
-console.log('\n=== STEP 1: Saving nondh details ===');
-for (const change of changes) {
-  const detail = processedDetails.find(d => d.id === change.id);
-  if (!detail) continue;
-  
-  // FIX: Check if this nondhId already has a saved detail in originalDetails with REAL ID
-  const originalDetailForNondh = originalDetails.find(od => 
-    od.nondhId === detail.nondhId && !od.id.toString().startsWith('temp_')
-  );
-  
-  const isTempDetail = detail.id.toString().startsWith('temp_');
-  const hasSavedDetail = !!originalDetailForNondh;
-  
-  console.log(`Processing detail for nondhId: ${detail.nondhId} (current ID: ${detail.id}, temp: ${isTempDetail}, hasSavedDetail: ${hasSavedDetail})`);
-  
-  if (isTempDetail && !hasSavedDetail) {
-    // This is a truly new detail that doesn't exist in DB
-    console.log('  Creating new detail...');
-    const { data: createdDetail, error } = await LandRecordService.createNondhDetail(change.changes);
-    
-    if (error) {
-      console.error('  Error creating:', error);
-      throw error;
+    // STEP 1: Save ALL nondh details FIRST
+    // ========================================
+    console.log('\n=== STEP 1: Saving nondh details ===');
+    for (const change of changes) {
+      const detail = processedDetails.find(d => d.id === change.id);
+      if (!detail) continue;
+      
+      // FIX: Check if this nondhId already has a saved detail in originalDetails with REAL ID
+      const originalDetailForNondh = originalDetails.find(od => 
+        od.nondhId === detail.nondhId && !od.id.toString().startsWith('temp_')
+      );
+      
+      const isTempDetail = detail.id.toString().startsWith('temp_');
+      const hasSavedDetail = !!originalDetailForNondh;
+      
+      console.log(`Processing detail for nondhId: ${detail.nondhId} (current ID: ${detail.id}, temp: ${isTempDetail}, hasSavedDetail: ${hasSavedDetail})`);
+      
+      if (isTempDetail && !hasSavedDetail) {
+        // This is a truly new detail that doesn't exist in DB
+        console.log('  Creating new detail...');
+        const { data: createdDetail, error } = await LandRecordService.createNondhDetail(change.changes);
+        
+        if (error) {
+          console.error('  Error creating:', error);
+          throw error;
+        }
+        
+        console.log(`  Created with ID: ${createdDetail.id}`);
+        idMap.set(detail.id, createdDetail.id);
+        detail.id = createdDetail.id;
+      } else {
+        // UPDATE existing detail - use the REAL ID from originalDetails if available
+        const detailIdToUse = hasSavedDetail ? originalDetailForNondh.id : detail.id;
+        console.log(`  Updating existing detail with ID: ${detailIdToUse}...`);
+        const { error } = await LandRecordService.updateNondhDetail(detailIdToUse, change.changes);
+        
+        if (error) {
+          console.error('  Error updating:', error);
+          throw error;
+        }
+        
+        // Update mapping if we used a different ID
+        if (hasSavedDetail && detailIdToUse !== detail.id) {
+          idMap.set(detail.id, detailIdToUse);
+          detail.id = detailIdToUse;
+        }
+        console.log('  Updated successfully');
+      }
     }
-    
-    console.log(`  Created with ID: ${createdDetail.id}`);
-    idMap.set(detail.id, createdDetail.id);
-    detail.id = createdDetail.id; // Update in-memory reference
-  } else {
-    // UPDATE existing detail - use the REAL ID from originalDetails if available
-    const detailIdToUse = hasSavedDetail ? originalDetailForNondh.id : detail.id;
-    console.log(`  Updating existing detail with ID: ${detailIdToUse}...`);
-    const { error } = await LandRecordService.updateNondhDetail(detailIdToUse, change.changes);
-    
-    if (error) {
-      console.error('  Error updating:', error);
-      throw error;
-    }
-    
-    // Update mapping if we used a different ID
-    if (hasSavedDetail && detailIdToUse !== detail.id) {
-      idMap.set(detail.id, detailIdToUse);
-      detail.id = detailIdToUse;
-    }
-    console.log('  Updated successfully');
-  }
-}
 
     // Update step data with all new IDs at once
     console.log('\nUpdating step data with new IDs...');
