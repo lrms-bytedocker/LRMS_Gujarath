@@ -1353,7 +1353,7 @@ if (ganot === "2nd Right") {
   console.log('=== HANDLE GANOT CHANGE END ===\n');
 };
 
-  const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, currentSNos: string[]) => {
+const getAvailableOwnersForGanot = (ganotType: string, currentNondhId: string, currentSNos: string[]) => {
   console.log('=== getAvailableOwnersForGanot START ===');
   console.log('Ganot Type:', ganotType);
   console.log('Current Nondh ID:', currentNondhId);
@@ -1376,7 +1376,7 @@ if (ganot === "2nd Right") {
     const allOwners = previousNondhs
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index})`);
-        const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
+        const detail = nondhDetails.find(d => d.nondhId === nondh.id);
         if (!detail) {
           console.log('  No detail found for this nondh');
           return [];
@@ -1842,7 +1842,7 @@ const getSNoTypesFromSlabs = () => {
   return sNoTypes;
 }
 
-  const getPreviousOwners = (sNo: string, currentNondhId: string) => {
+const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   // Get all nondhs sorted by priority
   const allSortedNondhs = [...nondhs].sort(sortNondhs);
   const currentIndex = allSortedNondhs.findIndex(n => n.id === currentNondhId);
@@ -1929,6 +1929,7 @@ const getSNoTypesFromSlabs = () => {
   // Return array of unique owners (most recent version of each)
   return Array.from(ownerMap.values());
 };
+
 
   // Form update functions
   const updateNondhDetail = (id: string, updates: Partial<NondhDetail>) => {
