@@ -917,7 +917,7 @@ useEffect(() => {
   }
 
  const propagateReasonToAffectedNondh = (affectedNondhNo: string, reason: string) => {
-  const allSortedNondhs = [...localState.nondhs].sort(sortNondhs); // Use localState.nondhs
+  const allSortedNondhs = [...localState.nondhs].sort(sortNondhs);
   const affectedNondh = allSortedNondhs.find(n => n.number.toString() === affectedNondhNo);
   
   if (!affectedNondh) return;
@@ -945,35 +945,6 @@ useEffect(() => {
   });
 };
 
-  // Original component functions - maintain all logic
-  const getSNoTypesFromSlabs = () => {
-    const sNoTypes = new Map<string, "s_no" | "block_no" | "re_survey_no">();
-    
-    yearSlabs.forEach(slab => {
-      if (slab.sNo) {
-        sNoTypes.set(slab.sNo, slab.sNoType);
-      }
-    });
-    
-    yearSlabs.forEach(slab => {
-      slab.paikyEntries.forEach(entry => {
-        if (entry.sNo) {
-          sNoTypes.set(entry.sNo, entry.sNoType);
-        }
-      });
-    });
-    
-    yearSlabs.forEach(slab => {
-      slab.ekatrikaranEntries.forEach(entry => {
-        if (entry.sNo) {
-          sNoTypes.set(entry.sNo, entry.sNoType);
-        }
-      });
-    });
-    
-    return sNoTypes;
-  }
-
   const validateAreaInput = (newValue: number, currentArea: any, maxAllowed: number): number => {
   // Prevent negative values
   if (newValue < 0) return 0;
@@ -1000,33 +971,95 @@ useEffect(() => {
 const getPrimarySNoType = (affectedSNos: string[]): string => {
   if (!affectedSNos || affectedSNos.length === 0) return 's_no';
   
+  // Get valid S.Nos from basic info and year slabs
+  const validSNos = getSNoTypesFromSlabs();
+  
+  // Filter and parse affected S.Nos
+  const validTypes = affectedSNos
+    .map(sNoStr => {
+      try {
+        const parsed = JSON.parse(sNoStr);
+        return {
+          type: parsed.type || 's_no',
+          number: parsed.number || sNoStr
+        };
+      } catch (e) {
+        return {
+          type: 's_no',
+          number: sNoStr
+        };
+      }
+    })
+    .filter(({ number }) => validSNos.has(number))
+    .map(({ type }) => type);
+  
+  if (validTypes.length === 0) return 's_no';
+  
   // Priority order: s_no > block_no > re_survey_no
   const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
   
-  // Parse the stringified JSON objects to get the actual types
-  const types = affectedSNos.map(sNoStr => {
-    try {
-      const parsed = JSON.parse(sNoStr);
-      return parsed.type || 's_no';
-    } catch (e) {
-      return 's_no'; // fallback
-    }
-  });
-  
   // Find the highest priority type present
   for (const type of priorityOrder) {
-    if (types.includes(type)) {
+    if (validTypes.includes(type)) {
       return type;
     }
   }
   
-  return 's_no'; // default
+  return 's_no';
 };
 
   const sortNondhs = (a: any, b: any): number => {
-  // Get primary types from affected_s_nos
-  const aType = getPrimarySNoType(a.affected_s_nos);
-  const bType = getPrimarySNoType(b.affected_s_nos);
+  // Get valid S.Nos from basic info and year slabs
+  const validSNos = getSNoTypesFromSlabs();
+  
+  // Filter affected S.Nos to only include valid ones
+  const filterValidSNos = (affectedSNos: any[]) => {
+    return affectedSNos
+      .map(sNoItem => {
+        try {
+          const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
+          return {
+            number: parsed.number || sNoItem,
+            type: parsed.type || 's_no'
+          };
+        } catch (e) {
+          return {
+            number: sNoItem,
+            type: 's_no'
+          };
+        }
+      })
+      .filter(({ number }) => validSNos.has(number));
+  };
+  
+  const aValidSNos = filterValidSNos(a.affected_s_nos || a.affectedSNos || []);
+  const bValidSNos = filterValidSNos(b.affected_s_nos || b.affectedSNos || []);
+  
+  // If no valid S.Nos, put at the end
+  if (aValidSNos.length === 0 && bValidSNos.length === 0) return 0;
+  if (aValidSNos.length === 0) return 1;
+  if (bValidSNos.length === 0) return -1;
+  
+  // Get primary types from valid affected S.Nos only
+  const getPrimaryTypeFromValid = (validSNos: any[]): string => {
+    if (validSNos.length === 0) return 's_no';
+    
+    // Priority order: s_no > block_no > re_survey_no
+    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+    const types = validSNos.map(sNo => sNo.type || 's_no');
+    
+    // Find the highest priority type present
+    for (const type of priorityOrder) {
+      if (types.includes(type)) {
+        return type;
+      }
+    }
+    
+    return 's_no';
+  };
+
+  const aType = getPrimaryTypeFromValid(aValidSNos);
+  const bType = getPrimaryTypeFromValid(bValidSNos);
 
   // Priority order: s_no > block_no > re_survey_no
   const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
@@ -1325,6 +1358,9 @@ if (ganot === "2nd Right") {
   console.log('Ganot Type:', ganotType);
   console.log('Current Nondh ID:', currentNondhId);
   
+  // Get valid S.Nos from basic info and year slabs
+  const validSNos = getSNoTypesFromSlabs();
+  
   // Get all nondhs sorted using the same logic as display
   const allSortedNondhs = [...nondhs].sort(sortNondhs);
   console.log('All sorted nondhs:', allSortedNondhs.map(n => ({ id: n.id, number: n.number })));
@@ -1340,7 +1376,7 @@ if (ganot === "2nd Right") {
     const allOwners = previousNondhs
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index})`);
-        const detail = nondhDetails.find(d => d.nondhId === nondh.id);
+        const detail = nondhDetailData.find(d => d.nondhId === nondh.id);
         if (!detail) {
           console.log('  No detail found for this nondh');
           return [];
@@ -1355,12 +1391,20 @@ if (ganot === "2nd Right") {
         console.log('  Detail type:', detail.type);
         console.log('  Owner relations count:', detail.ownerRelations.length);
         
+        // Get first valid S.No for display
         const firstSNo = (() => {
-          try {
-            return JSON.parse(nondh.affectedSNos[0]).number;
-          } catch (e) {
-            return nondh.affectedSNos[0];
-          }
+          const validAffectedSNos = nondh.affectedSNos
+            ?.map(sNoItem => {
+              try {
+                const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
+                return parsed.number || sNoItem;
+              } catch (e) {
+                return sNoItem;
+              }
+            })
+            .filter(sNo => validSNos.has(sNo)) || [];
+          
+          return validAffectedSNos[0] || nondh.affectedSNos[0];
         })();
         
         const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
@@ -1466,7 +1510,6 @@ if (ganot === "2nd Right") {
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index}) for OLD owners`);
         const detail = nondhDetails.find(d => d.nondhId === nondh.id);
-        
         // Skip if no detail, is Hukam 2nd Right, OR status is invalid/nullified
         if (!detail || 
             (detail.type === "Hukam" && detail.ganot === "2nd Right") ||
@@ -1479,6 +1522,22 @@ if (ganot === "2nd Right") {
         console.log('  Detail type:', detail.type);
         const isTransferType = ["Varsai", "Hakkami", "Vechand", "Hayati_ma_hakh_dakhal", "Vehchani"].includes(detail.type);
         console.log('  Is transfer type:', isTransferType);
+        
+        // Get first valid S.No for display
+        const firstSNo = (() => {
+          const validAffectedSNos = nondh.affectedSNos
+            ?.map(sNoItem => {
+              try {
+                const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
+                return parsed.number || sNoItem;
+              } catch (e) {
+                return sNoItem;
+              }
+            })
+            .filter(sNo => validSNos.has(sNo)) || [];
+          
+          return validAffectedSNos[0] || nondh.affectedSNos[0];
+        })();
         
         const owners = [];
         
@@ -1510,14 +1569,6 @@ if (ganot === "2nd Right") {
           
           const remainingArea = Math.max(0, oldOwnerOriginalArea - newOwnersTotal);
           console.log(`  Old owner remaining area: ${remainingArea}`);
-          
-          const firstSNo = (() => {
-          try {
-            return JSON.parse(nondh.affectedSNos[0]).number;
-          } catch (e) {
-            return nondh.affectedSNos[0];
-          }
-        })();
 
           // Only include old owner if they have remaining area
           if (remainingArea > 0) {
@@ -1534,14 +1585,6 @@ if (ganot === "2nd Right") {
             });
           }
         }
-        
-        const firstSNo = (() => {
-          try {
-            return JSON.parse(nondh.affectedSNos[0]).number;
-          } catch (e) {
-            return nondh.affectedSNos[0];
-          }
-        })();
         
         // Add new owners (exclude old owner)
         const newOwners = detail.ownerRelations
@@ -1593,7 +1636,6 @@ if (ganot === "2nd Right") {
       .map((nondh, index) => {
         console.log(`\nProcessing nondh ${nondh.number} (index: ${index}) for NEW owners`);
         const detail = nondhDetails.find(d => d.nondhId === nondh.id);
-        
         // Only include if it's Hukam 2nd Right AND status is valid (Pramanik)
         if (!detail || 
             !(detail.type === "Hukam" && detail.ganot === "2nd Right") ||
@@ -1604,12 +1646,20 @@ if (ganot === "2nd Right") {
         
         console.log('  Is Hukam 2nd Right with Pramanik status - including all owners');
         
+        // Get first valid S.No for display
         const firstSNo = (() => {
-          try {
-            return JSON.parse(nondh.affectedSNos[0]).number;
-          } catch (e) {
-            return nondh.affectedSNos[0];
-          }
+          const validAffectedSNos = nondh.affectedSNos
+            ?.map(sNoItem => {
+              try {
+                const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
+                return parsed.number || sNoItem;
+              } catch (e) {
+                return sNoItem;
+              }
+            })
+            .filter(sNo => validSNos.has(sNo)) || [];
+          
+          return validAffectedSNos[0] || nondh.affectedSNos[0];
         })();
         
         const relations = detail.ownerRelations.map(r => ({ 
@@ -1745,6 +1795,52 @@ const unit = matchingYearSlab.area?.unit || 'sq_m';
   
   return { value: totalArea, unit };
 };
+
+const getSNoTypesFromSlabs = () => {
+  const sNoTypes = new Map<string, "s_no" | "block_no" | "re_survey_no">();
+  
+  // Add S.Nos from land basic info (step 1)
+  if (landBasicInfo) {
+    // Survey Numbers from step 1
+    if (landBasicInfo.sNo && landBasicInfo.sNo.trim() !== "") {
+      const surveyNos = landBasicInfo.sNo.split(',').map(s => s.trim()).filter(s => s !== "");
+      surveyNos.forEach(sNo => {
+        sNoTypes.set(sNo, "s_no");
+      });
+    }
+    
+    // Block Number from step 1
+    if (landBasicInfo.blockNo && landBasicInfo.blockNo.trim() !== "") {
+      sNoTypes.set(landBasicInfo.blockNo, "block_no");
+    }
+    
+    // Re-survey Number from step 1
+    if (landBasicInfo.reSurveyNo && landBasicInfo.reSurveyNo.trim() !== "") {
+      sNoTypes.set(landBasicInfo.reSurveyNo, "re_survey_no");
+    }
+  }
+  
+  // Add S.Nos from year slabs (step 2)
+  yearSlabs.forEach(slab => {
+    if (slab.sNo?.trim() !== "") {
+      sNoTypes.set(slab.sNo, slab.sNoType);
+    }
+    
+    slab.paikyEntries.forEach(entry => {
+      if (entry.sNo?.trim() !== "") {
+        sNoTypes.set(entry.sNo, entry.sNoType);
+      }
+    });
+    
+    slab.ekatrikaranEntries.forEach(entry => {
+      if (entry.sNo?.trim() !== "") {
+        sNoTypes.set(entry.sNo, entry.sNoType);
+      }
+    });
+  });
+  
+  return sNoTypes;
+}
 
   const getPreviousOwners = (sNo: string, currentNondhId: string) => {
   // Get all nondhs sorted by priority
@@ -4033,44 +4129,50 @@ const formatArea = (area: { value: number; unit: string }) => {
                       </Badge>
                     </div>
                     <div className="mt-2">
-                      <h4 className="text-sm font-medium text-muted-foreground">
-                        Affected Survey Numbers:
-                      </h4>
-                      <div className="flex flex-wrap gap-2 mt-1">
-  {nondh.affectedSNos
-    ?.map(sNoItem => {
-      // Parse the stringified JSON object
-      try {
-        const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
-        return {
-          number: parsed.number || sNoItem,
-          type: parsed.type || 's_no'
-        };
-      } catch (e) {
-        // Fallback if parsing fails
-        return {
-          number: sNoItem,
-          type: 's_no'
-        };
-      }
-    })
-    .sort((a, b) => {
-      const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
-      const aPriority = priorityOrder.indexOf(a.type);
-      const bPriority = priorityOrder.indexOf(b.type);
-      if (aPriority !== bPriority) return aPriority - bPriority;
-      return a.number.localeCompare(b.number, undefined, { numeric: true });
-    })
-    .map(({ number, type }) => (
-      <span 
-        key={`${number}-${type}`}
-        className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm"
-      >
-        {number} ({type})
-      </span>
-    ))}
+  <h4 className="text-sm font-medium text-muted-foreground">
+    Affected Survey Numbers:
+  </h4>
+  <div className="flex flex-wrap gap-2 mt-1">
+    {(() => {
+      // Get valid S.Nos from basic info and year slabs
+      const validSNos = getSNoTypesFromSlabs();
+      
+      // Filter and sort the affected S.Nos
+      return nondh.affectedSNos
+        ?.map(sNoItem => {
+          try {
+            const parsed = typeof sNoItem === 'string' ? JSON.parse(sNoItem) : sNoItem;
+            return {
+              number: parsed.number || sNoItem,
+              type: parsed.type || 's_no'
+            };
+          } catch (e) {
+            return {
+              number: sNoItem,
+              type: 's_no'
+            };
+          }
+        })
+        // Filter to only show S.Nos that are in basic info or year slabs
+        .filter(({ number }) => validSNos.has(number))
+        .sort((a, b) => {
+          const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+          const aPriority = priorityOrder.indexOf(a.type);
+          const bPriority = priorityOrder.indexOf(b.type);
+          if (aPriority !== bPriority) return aPriority - bPriority;
+          return a.number.localeCompare(b.number, undefined, { numeric: true });
+        })
+        .map(({ number, type }) => (
+          <span 
+            key={`${number}-${type}`}
+            className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm"
+          >
+            {number} ({type === 's_no' ? 'Survey' : type === 'block_no' ? 'Block' : 'Re-survey'})
+          </span>
+        ));
+    })()}
+  </div>
 </div>
-                    </div>
                   </div>
                  <div className="flex items-center gap-2">
   {/* View Document Button - only show if document exists */}

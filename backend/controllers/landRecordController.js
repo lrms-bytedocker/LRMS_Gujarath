@@ -46,10 +46,18 @@ export const uploadHandler = async (req, res) => {
     const result = await landRecordService.processUpload(jsonData);
     
     if (result.success) {
-      return res.status(200).json(result);
-    } else {
-      return res.status(500).json(result);
-    }
+  return res.status(200).json(result);
+} else if (result.duplicateRecord) {
+  // Handle duplicate record case
+  return res.status(409).json({
+    success: false,
+    message: 'Duplicate land record found',
+    duplicateRecord: result.duplicateRecord,
+    error: result.error
+  });
+} else {
+  return res.status(500).json(result);
+}
   } catch (err) {
     console.error('uploadHandler error:', err);
     return res.status(500).json({ 
@@ -114,10 +122,18 @@ export const uploadFileHandler = async (req, res) => {
     const result = await landRecordService.processUpload(jsonData);
     
     if (result.success) {
-      return res.status(200).json(result);
-    } else {
-      return res.status(500).json(result);
-    }
+  return res.status(200).json(result);
+} else if (result.duplicateRecord) {
+  // Handle duplicate record case
+  return res.status(409).json({
+    success: false,
+    message: 'Duplicate land record found',
+    duplicateRecord: result.duplicateRecord,
+    error: result.error
+  });
+} else {
+  return res.status(500).json(result);
+}
   } catch (err) {
     console.error('uploadFileHandler error:', err);
     

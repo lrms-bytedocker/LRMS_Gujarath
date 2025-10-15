@@ -492,29 +492,61 @@ export default function NondhAdd() {
                 ))}
               </div>
               {nondh.affectedSNos.length > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Selected: {nondh.affectedSNos.map((item, index) => {
-                    try {
-                      let sNoObj;
-                      if (typeof item === 'string') {
-                        sNoObj = JSON.parse(item);
-                      } else if (typeof item === 'object' && item.number) {
-                        sNoObj = item;
-                      } else {
-                        // fallback for plain string numbers
-                        return `${item} (S.No.)`;
-                      }
-                      
-                      const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
-                                        sNoObj.type === "block_no" ? "Block" : 
-                                        sNoObj.type === "re_survey_no" ? "Re-survey" : "S.No.";
-                      return `${sNoObj.number} (${typeDisplay})`;
-                    } catch {
-                      return `${item} (S.No.)`;
-                    }
-                  }).join(", ")}
-                </p>
-              )}
+  <div className="space-y-2">
+    {/* Show only S.Nos that are NOT in availableSNos (basic info/year slabs) */}
+    {(() => {
+      // Get all available S.Nos from basic info/year slabs
+      const availableSNosSet = new Set(getAllSNos().map(s => s.number));
+      
+      // Filter affectedSNos to only include those NOT in availableSNos
+      const insertedButNotInBasicInfo = nondh.affectedSNos.filter(item => {
+        try {
+          let sNoNumber;
+          if (typeof item === 'string') {
+            const parsed = JSON.parse(item);
+            sNoNumber = parsed.number;
+          } else if (typeof item === 'object' && item.number) {
+            sNoNumber = item.number;
+          } else {
+            sNoNumber = item;
+          }
+          return !availableSNosSet.has(sNoNumber);
+        } catch {
+          return !availableSNosSet.has(item);
+        }
+      });
+
+      if (insertedButNotInBasicInfo.length > 0) {
+        return (
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium">Inserted but not part of basic info/year slabs:</span>{' '}
+            {insertedButNotInBasicInfo.map((item, index) => {
+              try {
+                let sNoObj;
+                if (typeof item === 'string') {
+                  sNoObj = JSON.parse(item);
+                } else if (typeof item === 'object' && item.number) {
+                  sNoObj = item;
+                } else {
+                  // fallback for plain string numbers
+                  return `${item} (S.No.)`;
+                }
+                
+                const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
+                                  sNoObj.type === "block_no" ? "Block" : 
+                                  sNoObj.type === "re_survey_no" ? "Re-survey" : "S.No.";
+                return `${sNoObj.number} (${typeDisplay})`;
+              } catch {
+                return `${item} (S.No.)`;
+              }
+            }).join(", ")}
+          </p>
+        );
+      }
+      return null;
+    })()}
+  </div>
+)}
             </div>
 
             {/* Document Upload */}

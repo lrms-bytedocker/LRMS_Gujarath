@@ -460,7 +460,7 @@ const getAllSNos = () => {
       <div key={sNo} className="flex items-center space-x-2">
         <Checkbox
   id={`${nondh.id}_${sNo}`}
-  checked={nondh.affectedSNos.some(s => s.number === sNo)} // Changed this line
+  checked={nondh.affectedSNos.some(s => s.number === sNo)}
   onCheckedChange={(checked) => handleSNoSelection(nondh.id, sNo, type, checked as boolean)}
 />
         <Label htmlFor={`${nondh.id}_${sNo}`} className="text-sm">

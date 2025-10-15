@@ -37,7 +37,7 @@ export default function LandFormsPage() {
   <Button
     variant="ghost"
     size="sm"
-    onClick={() => router.back()}
+    onClick={() => router.push('/land-master')}
     className="gap-2"
   >
     <ArrowLeft className="h-4 w-4" />

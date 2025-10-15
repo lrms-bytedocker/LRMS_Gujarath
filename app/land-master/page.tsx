@@ -30,8 +30,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Download, Loader2, Filter, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { LandRecordService } from "@/lib/supabase"
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
+import { useToast } from "@/hooks/use-toast"
 
 interface LandRecord {
   id: string;
@@ -46,6 +48,7 @@ interface LandRecord {
 export default function LandMaster() {
   const { isSignedIn, user } = useUser();
   const router = useRouter();
+  const { toast } = useToast();
   const [lands, setLands] = useState<LandRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +69,9 @@ const [brokerFormData, setBrokerFormData] = useState({
 });
 const [linkedBrokers, setLinkedBrokers] = useState([]);
 const [loadingLinkedBrokers, setLoadingLinkedBrokers] = useState(false);
+const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+const [landToDelete, setLandToDelete] = useState<LandRecord | null>(null);
+const [deleting, setDeleting] = useState(false);
 
 // close dropdown when clicking outside
 useEffect(() => {
@@ -247,6 +253,55 @@ const handleSubmitBrokerLink = async () => {
   };
 
   const hasActiveFilters = searchTerm || districtFilter !== "all" || talukaFilter !== "all" || villageFilter !== "all";
+
+  const handleDeleteClick = (land: LandRecord) => {
+  setLandToDelete(land);
+  setDeleteConfirmOpen(true);
+};
+
+const handleConfirmDelete = async () => {
+  if (!landToDelete) return;
+  
+  try {
+    setDeleting(true);
+    const { error } = await LandRecordService.deleteLandRecord(landToDelete.id);
+    
+    if (error) {
+      throw error;
+    }
+    
+    // Remove the land from local state
+    setLands(lands.filter(land => land.id !== landToDelete.id));
+    setDeleteConfirmOpen(false);
+    setLandToDelete(null);
+    
+    // Show success toast
+    toast({
+      title: "Successfully Deleted",
+      description: `Land record from ${landToDelete.district} district has been deleted.`,
+      variant: "default",
+      className: "bg-green-50 text-green-800 border-green-200",
+    });
+    
+  } catch (err) {
+    console.error('Error deleting land record:', err);
+    setError(err instanceof Error ? err.message : 'Failed to delete land record');
+    
+    // Show error toast
+    toast({
+      title: "Deletion Failed",
+      description: err instanceof Error ? err.message : 'Failed to delete land record',
+      variant: "destructive",
+    });
+  } finally {
+    setDeleting(false);
+  }
+};
+
+const handleCancelDelete = () => {
+  setDeleteConfirmOpen(false);
+  setLandToDelete(null);
+};
 
   // Export to CSV function
   const exportToCSV = () => {
@@ -660,6 +715,14 @@ const handleSubmitBrokerLink = async () => {
     >
       Link Broker
     </Button>
+    <Button 
+      variant="ghost" 
+      size="sm"
+      onClick={() => handleDeleteClick(land)}
+      className="text-red-600 hover:text-red-800 hover:bg-red-50"
+    >
+      Delete
+    </Button>
   </div>
 </TableCell>
                     </TableRow>
@@ -730,6 +793,14 @@ const handleSubmitBrokerLink = async () => {
     onClick={() => handleLinkBroker(land.id)}
   >
     Link Broker
+  </Button>
+  <Button 
+    variant="outline" 
+    size="sm" 
+    className="flex-1 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+    onClick={() => handleDeleteClick(land)}
+  >
+    Delete
   </Button>
 </div>
                   </div>
@@ -895,6 +966,59 @@ const handleSubmitBrokerLink = async () => {
         </div>
       </CardContent>
     </div>
+    </Card>
+  </div>
+)}
+{/* Delete Confirmation Dialog */}
+{deleteConfirmOpen && landToDelete && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle className="text-red-600">Confirm Deletion</CardTitle>
+        <CardDescription>
+          Are you sure you want to delete this land record? This action cannot be undone.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <div className="bg-muted/50 p-3 rounded-md text-sm">
+            <p><strong>District:</strong> {landToDelete.district}</p>
+            <p><strong>Taluka:</strong> {landToDelete.taluka}</p>
+            <p><strong>Village:</strong> {landToDelete.village}</p>
+            <p><strong>Block No:</strong> {landToDelete.block_no}</p>
+            <p><strong>Re-Survey No:</strong> {landToDelete.re_survey_no}</p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete all data associated with this land record, 
+            including year slabs, panipatraks, nondhs, and broker links.
+          </p>
+        </div>
+      </CardContent>
+      <div className="flex gap-2 p-6 pt-0">
+        <Button
+          variant="outline"
+          className="flex-1"
+          onClick={handleCancelDelete}
+          disabled={deleting}
+        >
+          Cancel
+        </Button>
+        <Button
+          variant="destructive"
+          className="flex-1"
+          onClick={handleConfirmDelete}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Deleting...
+            </>
+          ) : (
+            'Delete Permanently'
+          )}
+        </Button>
+      </div>
     </Card>
   </div>
 )}

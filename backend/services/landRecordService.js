@@ -62,36 +62,74 @@ const mapStatusFromJSON = (jsonStatus) => {
   }
 };
 
-const getPrimarySNoType = (affectedSNos) => {
+const getPrimarySNoType = (affectedSNos, landBasicInfo) => {
   if (!affectedSNos || affectedSNos.length === 0) return 's_no';
   
+  // Get valid S.Nos from land basic info
+  const validSNos = new Set();
+  
+  // Add S.Nos from basic info
+  if (landBasicInfo) {
+    // Survey Numbers from basic info
+    if (landBasicInfo.sNo && landBasicInfo.sNo.trim() !== "") {
+      const surveyNos = landBasicInfo.sNo.split(',').map(s => s.trim()).filter(s => s !== "");
+      surveyNos.forEach(sNo => validSNos.add(sNo));
+    }
+    
+    // Block Number from basic info
+    if (landBasicInfo.blockNo && landBasicInfo.blockNo.trim() !== "") {
+      validSNos.add(landBasicInfo.blockNo);
+    }
+    
+    // Re-survey Number from basic info
+    if (landBasicInfo.reSurveyNo && landBasicInfo.reSurveyNo.trim() !== "") {
+      validSNos.add(landBasicInfo.reSurveyNo);
+    }
+  }
+  
+  // Filter affected S.Nos to only include valid ones
+  const validTypes = affectedSNos
+    .map(sNo => {
+      try {
+        let sNoNumber, sNoType;
+        if (typeof sNo === 'string') {
+          const parsed = JSON.parse(sNo);
+          sNoNumber = parsed.number;
+          sNoType = parsed.type;
+        } else if (typeof sNo === 'object' && sNo.number) {
+          sNoNumber = sNo.number;
+          sNoType = sNo.type;
+        } else {
+          return null;
+        }
+        
+        // Only include if this S.No is in basic info
+        return validSNos.has(sNoNumber) ? sNoType || 's_no' : null;
+      } catch (e) {
+        return null;
+      }
+    })
+    .filter(type => type !== null);
+  
+  if (validTypes.length === 0) return 's_no';
+  
+  // Priority order: s_no > block_no > re_survey_no
   const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
   
-  const types = affectedSNos.map(sNo => {
-    try {
-      if (typeof sNo === 'string') {
-        const parsed = JSON.parse(sNo);
-        return parsed.type || 's_no';
-      } else if (typeof sNo === 'object' && sNo.type) {
-        return sNo.type;
-      }
-      return 's_no';
-    } catch (e) {
-      return 's_no';
-    }
-  });
-  
+  // Find the highest priority type present
   for (const type of priorityOrder) {
-    if (types.includes(type)) return type;
+    if (validTypes.includes(type)) {
+      return type;
+    }
   }
   
   return 's_no';
 };
 
-const sortNondhs = (nondhs) => {
+const sortNondhs = (nondhs, landBasicInfo) => {
   return [...nondhs].sort((a, b) => {
-    const aType = getPrimarySNoType(a.affected_s_nos);
-    const bType = getPrimarySNoType(b.affected_s_nos);
+    const aType = getPrimarySNoType(a.affected_s_nos, landBasicInfo);
+    const bType = getPrimarySNoType(b.affected_s_nos, landBasicInfo);
 
     const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
     const aPriority = priorityOrder.indexOf(aType);
@@ -136,13 +174,79 @@ const processValidityChain = (validDetails, sortedNondhs) => {
   return validDetails;
 };
 
+const checkDuplicateLandRecord = async (data) => {
+  try {
+    let query = supabase
+      .from('land_records')
+      .select('id, district, taluka, village, block_no, re_survey_no')
+      .eq('district', data.district)
+      .eq('taluka', data.taluka)
+      .eq('village', data.village)
+      .eq('block_no', data.block_no);
+
+    // If re_survey_no is provided, check for it too
+    if (data.re_survey_no) {
+      query = query.eq('re_survey_no', data.re_survey_no);
+    }
+
+    // Exclude current record when updating
+    if (data.excludeId) {
+      query = query.neq('id', data.excludeId);
+    }
+
+    const { data: existingRecords, error } = await query;
+
+    if (error) throw error;
+
+    return { 
+      data: existingRecords && existingRecords.length > 0 ? existingRecords[0] : null, 
+      error: null 
+    };
+  } catch (error) {
+    console.error('Error checking duplicate land record:', error);
+    return { 
+      data: null, 
+      error: {
+        message: 'Failed to check for duplicate records',
+        details: error instanceof Error ? error.message : String(error)
+      }
+    };
+  }
+};
+
 // Main processing function
 export const processUpload = async (jsonData) => {
   const errors = [];
   let landRecordId = null;
 
   try {
-    // Step 1: Save land record basic info
+    // Step 1: Check for duplicate land record
+    const duplicateCheckData = {
+      district: jsonData.basicInfo.district,
+      taluka: jsonData.basicInfo.taluka,
+      village: jsonData.basicInfo.village,
+      block_no: jsonData.basicInfo.blockNo || '',
+      re_survey_no: jsonData.basicInfo.reSurveyNo || undefined
+    };
+
+    const { data: duplicate, error: duplicateError } = await checkDuplicateLandRecord(duplicateCheckData);
+    
+    if (duplicateError) {
+      console.error('Error checking duplicate:', duplicateError);
+      // Continue with save if duplicate check fails
+    }
+
+    // If duplicate found, return error
+    if (duplicate) {
+      return {
+        success: false,
+        message: 'Duplicate land record found',
+        duplicateRecord: duplicate,
+        error: 'A land record with the same details already exists. Modify json file & upload again or visit the LRMS platform to edit existing record.'
+      };
+    }
+
+    // Step 2: Save land record basic info
     const basicInfoArea = parseArea(jsonData.basicInfo.area);
     
     const landRecordData = {
@@ -173,7 +277,7 @@ export const processUpload = async (jsonData) => {
 
     landRecordId = savedRecord.id;
 
-    // Step 2: Save nondhs
+    // Step 3: Save nondhs
     let savedNondhs = [];
     if (jsonData.nondhs && jsonData.nondhs.length > 0) {
       const nondhsData = jsonData.nondhs.map(nondh => ({
@@ -195,7 +299,7 @@ export const processUpload = async (jsonData) => {
       savedNondhs = nondhsResult || [];
     }
 
-    const sortedNondhs = sortNondhs(savedNondhs);
+    const sortedNondhs = sortNondhs(savedNondhs, jsonData.basicInfo);
     
     let validNondhDetails = [];
     let skippedNondhDetails = [];

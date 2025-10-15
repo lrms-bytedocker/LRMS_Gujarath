@@ -21,8 +21,61 @@ const router = express.Router();
  *     responses:
  *       200:
  *         description: Processing successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 stats:
+ *                   type: object
+ *                   properties:
+ *                     nondhs:
+ *                       type: number
+ *                     nondhDetails:
+ *                       type: number
+ *                     totalOwners:
+ *                       type: number
+ *                     skippedNondhDetails:
+ *                       type: number
+ *                 landRecordId:
+ *                   type: string
  *       400:
- *         description: Validation errors
+ *         description: Validation errors or invalid JSON structure
+ *       409:
+ *         description: Duplicate land record found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Duplicate land record found
+ *                 duplicateRecord:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     district:
+ *                       type: string
+ *                     taluka:
+ *                       type: string
+ *                     village:
+ *                       type: string
+ *                     block_no:
+ *                       type: string
+ *                     re_survey_no:
+ *                       type: string
+ *                 error:
+ *                   type: string
+ *                   example: A land record with the same details already exists. Modify json file & upload again or visit the LRMS platform to edit existing record.
  *       500:
  *         description: Server error
  */
@@ -73,6 +126,37 @@ router.post('/upload', uploadHandler);
  *                   type: string
  *       400:
  *         description: Invalid file or JSON structure
+ *       409:
+ *         description: Duplicate land record found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Duplicate land record found
+ *                 duplicateRecord:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     district:
+ *                       type: string
+ *                     taluka:
+ *                       type: string
+ *                     village:
+ *                       type: string
+ *                     block_no:
+ *                       type: string
+ *                     re_survey_no:
+ *                       type: string
+ *                 error:
+ *                   type: string
+ *                   example: A land record with the same details already exists. Modify json file & upload again or visit the LRMS platform to edit existing record.
  *       500:
  *         description: Server error
  */

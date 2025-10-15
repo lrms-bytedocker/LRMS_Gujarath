@@ -4,6 +4,14 @@ import { Upload, Download, AlertCircle, CheckCircle, FileJson, Loader2 } from 'l
 import { LandRecordService } from '@/lib/supabase';
 import { AuthProvider } from '@/components/auth-provider';
 import { useSearchParams, useRouter } from 'next/navigation'
+import {
+  Card, 
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 interface Area {
   sqm?: number;
@@ -132,6 +140,8 @@ const router = useRouter()
 const fromEdit = searchParams.get('fromEdit') === 'true'
 const fromView = searchParams.get('fromView') === 'true'
 const existingLandRecordId = searchParams.get('landRecordId')
+const [duplicateRecord, setDuplicateRecord] = useState<any>(null)
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
 
   const sampleJSON = {
     basicInfo: {
@@ -463,6 +473,20 @@ const existingLandRecordId = searchParams.get('landRecordId')
     );
   };
 
+const handleCloseDuplicateDialog = () => {
+  setShowDuplicateDialog(false);
+  setDuplicateRecord(null);
+  setFile(null); // Clear the file so user can upload a new one
+};
+
+const handleNavigateToDuplicate = (mode: 'edit' | 'view') => {
+  if (!duplicateRecord) return;
+  
+  router.push(`/land-master/forms?mode=${mode}&id=${duplicateRecord.id}`);
+  setShowDuplicateDialog(false);
+  setDuplicateRecord(null);
+};
+
   const validateJSON = (data) => {
     const validationErrors = [];
 
@@ -563,50 +587,86 @@ const existingLandRecordId = searchParams.get('landRecordId')
   return errors;
 };
 
-  const getPrimarySNoType = (affectedSNos: any[]): string => {
-    if (!affectedSNos || affectedSNos.length === 0) return 's_no';
-    
-    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
-    
-    const types = affectedSNos.map(sNo => {
-      try {
-        if (typeof sNo === 'string') {
-          const parsed = JSON.parse(sNo);
-          return parsed.type || 's_no';
-        } else if (typeof sNo === 'object' && sNo.type) {
-          return sNo.type;
-        }
-        return 's_no';
-      } catch (e) {
-        return 's_no';
-      }
-    });
-    
-    for (const type of priorityOrder) {
-      if (types.includes(type)) {
-        return type;
-      }
+  const getPrimarySNoType = (affectedSNos: any[], landBasicInfo: any): string => {
+  if (!affectedSNos || affectedSNos.length === 0) return 's_no';
+  
+  // Get valid S.Nos from land basic info
+  const validSNos = new Set<string>();
+  
+  // Add S.Nos from basic info
+  if (landBasicInfo) {
+    // Survey Numbers from basic info
+    if (landBasicInfo.sNo && landBasicInfo.sNo.trim() !== "") {
+      const surveyNos = landBasicInfo.sNo.split(',').map(s => s.trim()).filter(s => s !== "");
+      surveyNos.forEach(sNo => validSNos.add(sNo));
     }
     
-    return 's_no';
-  };
+    // Block Number from basic info
+    if (landBasicInfo.blockNo && landBasicInfo.blockNo.trim() !== "") {
+      validSNos.add(landBasicInfo.blockNo);
+    }
+    
+    // Re-survey Number from basic info
+    if (landBasicInfo.reSurveyNo && landBasicInfo.reSurveyNo.trim() !== "") {
+      validSNos.add(landBasicInfo.reSurveyNo);
+    }
+  }
+  
+  // Filter affected S.Nos to only include valid ones
+  const validTypes = affectedSNos
+    .map(sNo => {
+      try {
+        let sNoNumber, sNoType;
+        if (typeof sNo === 'string') {
+          const parsed = JSON.parse(sNo);
+          sNoNumber = parsed.number;
+          sNoType = parsed.type;
+        } else if (typeof sNo === 'object' && sNo.number) {
+          sNoNumber = sNo.number;
+          sNoType = sNo.type;
+        } else {
+          return null;
+        }
+        
+        // Only include if this S.No is in basic info
+        return validSNos.has(sNoNumber) ? sNoType || 's_no' : null;
+      } catch (e) {
+        return null;
+      }
+    })
+    .filter(type => type !== null);
+  
+  if (validTypes.length === 0) return 's_no';
+  
+  // Priority order: s_no > block_no > re_survey_no
+  const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+  
+  // Find the highest priority type present
+  for (const type of priorityOrder) {
+    if (validTypes.includes(type)) {
+      return type;
+    }
+  }
+  
+  return 's_no';
+};
 
-  const sortNondhs = (nondhs: any[]) => {
-    return [...nondhs].sort((a, b) => {
-      const aType = getPrimarySNoType(a.affectedSNos);
-      const bType = getPrimarySNoType(b.affectedSNos);
+  const sortNondhs = (nondhs: any[], landBasicInfo: any) => {
+  return [...nondhs].sort((a, b) => {
+    const aType = getPrimarySNoType(a.affectedSNos, landBasicInfo);
+    const bType = getPrimarySNoType(b.affectedSNos, landBasicInfo);
 
-      const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
-      const aPriority = priorityOrder.indexOf(aType);
-      const bPriority = priorityOrder.indexOf(bType);
+    const priorityOrder = ['s_no', 'block_no', 're_survey_no'];
+    const aPriority = priorityOrder.indexOf(aType);
+    const bPriority = priorityOrder.indexOf(bType);
 
-      if (aPriority !== bPriority) return aPriority - bPriority;
+    if (aPriority !== bPriority) return aPriority - bPriority;
 
-      const aNum = parseInt(a.number.toString()) || 0;
-      const bNum = parseInt(b.number.toString()) || 0;
-      return aNum - bNum;
-    });
-  };
+    const aNum = parseInt(a.number.toString()) || 0;
+    const bNum = parseInt(b.number.toString()) || 0;
+    return aNum - bNum;
+  });
+};
 
   const processValidityChain = (
     validDetails: any[],
@@ -644,70 +704,99 @@ const existingLandRecordId = searchParams.get('landRecordId')
 
   const processUpload = async (jsonData) => {
     try {
-      setLoading(true);
-      setErrors([]);
-      
-      const validationErrors = validateJSON(jsonData);
-      if (validationErrors.length > 0) {
-        setErrors(validationErrors);
-        setResult({ success: false, message: 'Validation failed' });
-        return;
+    setLoading(true);
+    setErrors([]);
+    
+    const validationErrors = validateJSON(jsonData);
+    if (validationErrors.length > 0) {
+      setErrors(validationErrors);
+      setResult({ success: false, message: 'Validation failed' });
+      return;
+    }
+
+    // Step 1: Check for duplicate land record (only for new records, not when editing)
+    let landRecordId;
+
+    if ((fromEdit || fromView) && existingLandRecordId) {
+      // Skip duplicate check for edit mode - we're updating existing record
+      landRecordId = existingLandRecordId;
+    } else {
+      // Check for duplicate records for new uploads
+      const duplicateCheckData = {
+        district: jsonData.basicInfo.district,
+        taluka: jsonData.basicInfo.taluka,
+        village: jsonData.basicInfo.village,
+        block_no: jsonData.basicInfo.blockNo || '',
+        re_survey_no: jsonData.basicInfo.reSurveyNo || undefined
       }
 
-      // Step 1: Save land record basic info
-      // Step 1: Check if coming from edit mode with existing record
-let landRecordId;
+      const { data: duplicate, error: duplicateError } = await LandRecordService.checkDuplicateLandRecord(duplicateCheckData);
+      
+      if (duplicateError) {
+        console.error('Error checking duplicate:', duplicateError);
+        // Continue with save if duplicate check fails
+      }
 
-if (fromEdit || fromView && existingLandRecordId) {
-  // Validate that the JSON basic info matches the existing record
-  const { data: existingRecord, error: fetchError } = await LandRecordService.getLandRecord(existingLandRecordId);
-  
-  if (fetchError || !existingRecord) {
-    throw new Error('Could not find the existing land record');
-  }
-  
-  // Validate matching criteria
-  const matches = 
-    existingRecord.district === jsonData.basicInfo.district &&
-    existingRecord.taluka === jsonData.basicInfo.taluka &&
-    existingRecord.village === jsonData.basicInfo.village &&
-    (existingRecord.block_no === jsonData.basicInfo.blockNo || 
-     existingRecord.re_survey_no === jsonData.basicInfo.reSurveyNo);
-  
-  if (!matches) {
-    throw new Error('JSON basic info does not match the existing land record. Please verify district, taluka, village, and survey numbers.');
-  }
-  
-  landRecordId = existingLandRecordId;
-  
-} else {
-  // Original flow: Create new land record
-  const basicInfoArea = parseArea(jsonData.basicInfo.area);
-  
-  const landRecordData = {
-    district: jsonData.basicInfo.district,
-    taluka: jsonData.basicInfo.taluka,
-    village: jsonData.basicInfo.village,
-    block_no: jsonData.basicInfo.blockNo || null,
-    re_survey_no: jsonData.basicInfo.reSurveyNo || null,
-    is_promulgation: jsonData.basicInfo.isPromulgation || false,
-    s_no_type: jsonData.basicInfo.blockNo ? 'block_no' : 're_survey_no',
-    s_no: jsonData.basicInfo.blockNo || jsonData.basicInfo.reSurveyNo,
-    area_value: basicInfoArea.value,
-    area_unit: basicInfoArea.unit,
-    json_uploaded: true,
-    status: 'draft',
-    current_step: 1
-  };
+      // If duplicate found
+      if (duplicate) {
+        setDuplicateRecord(duplicate);
+        setShowDuplicateDialog(true);
+        setLoading(false);
+        return; // Stop the upload process
+      }
+    }
 
-  const { data: savedRecord, error: recordError } = await LandRecordService.saveLandRecord(landRecordData);
-  
-  if (recordError) {
-    throw new Error(`Failed to save land record: ${recordError.message}`);
-  }
+    // Step 2: Save land record basic info (only for new records)
+    if (!fromEdit && !fromView) {
+      const basicInfoArea = parseArea(jsonData.basicInfo.area);
+      
+      const landRecordData = {
+        district: jsonData.basicInfo.district,
+        taluka: jsonData.basicInfo.taluka,
+        village: jsonData.basicInfo.village,
+        block_no: jsonData.basicInfo.blockNo || null,
+        re_survey_no: jsonData.basicInfo.reSurveyNo || null,
+        is_promulgation: jsonData.basicInfo.isPromulgation || false,
+        s_no_type: jsonData.basicInfo.blockNo ? 'block_no' : 're_survey_no',
+        s_no: jsonData.basicInfo.blockNo || jsonData.basicInfo.reSurveyNo,
+        area_value: basicInfoArea.value,
+        area_unit: basicInfoArea.unit,
+        json_uploaded: true,
+        status: 'draft',
+        current_step: 1
+      };
 
-  landRecordId = savedRecord.id;
-}
+      const { data: savedRecord, error: recordError } = await LandRecordService.saveLandRecord(landRecordData);
+      
+      if (recordError) {
+        throw new Error(`Failed to save land record: ${recordError.message}`);
+      }
+
+      landRecordId = savedRecord.id;
+    } else {
+      // For edit mode, use existing record ID
+      landRecordId = existingLandRecordId;
+      
+      // Validate that the JSON basic info matches the existing record
+      const { data: existingRecord, error: fetchError } = await LandRecordService.getLandRecord(existingLandRecordId);
+      
+      if (fetchError || !existingRecord) {
+        throw new Error('Could not find the existing land record');
+      }
+      
+      // Validate matching criteria
+      const matches = 
+        existingRecord.district === jsonData.basicInfo.district &&
+        existingRecord.taluka === jsonData.basicInfo.taluka &&
+        existingRecord.village === jsonData.basicInfo.village &&
+        (existingRecord.block_no === jsonData.basicInfo.blockNo || 
+         existingRecord.re_survey_no === jsonData.basicInfo.reSurveyNo);
+      
+      if (!matches) {
+        throw new Error('JSON basic info does not match the existing land record. Please verify district, taluka, village, and survey numbers.');
+      }
+    }
+
 
       // Step 2: Save nondhs
       let savedNondhs = [];
@@ -727,7 +816,7 @@ if (fromEdit || fromView && existingLandRecordId) {
         savedNondhs = nondhsResult || [];
       }
 
-      const sortedNondhs = sortNondhs(savedNondhs);
+      const sortedNondhs = sortNondhs(savedNondhs, jsonData.basicInfo);
       
       let validNondhDetails = [];
       let skippedNondhDetails = [];
@@ -871,7 +960,7 @@ if (fromEdit || fromView && existingLandRecordId) {
 
       setResult({
   success: true,
-  message: fromEdit || fromView
+  message: (fromEdit || fromView)
     ? 'Nondh data added successfully to existing record' 
     : 'Land record uploaded and processed successfully',
   stats,
@@ -966,8 +1055,8 @@ if (fromView && landRecordId) {
             <li>• <strong>Area format:</strong> Provide either sqm OR acre + guntha</li>
             <li>• <strong>Date format:</strong> All dates must be in ddmmyyyy format</li>
           </ul>
-          {fromEdit || fromView && (
-  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+          {(fromEdit || fromView) && (
+  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-6">
     <h3 className="font-semibold mb-2">Edit Mode Active</h3>
     <p className="text-sm">
       You're uploading to an existing land record. Only nondhs and nondh details from the JSON will be added.
@@ -1123,6 +1212,58 @@ if (fromView && landRecordId) {
           </div>
         </div> */}
       </div>
+      {/* Duplicate Record Dialog */}
+{showDuplicateDialog && duplicateRecord && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle className="text-yellow-600">Duplicate Land Record Found</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="text-sm text-gray-600">
+          <p>A land record with the same details already exists:</p>
+          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p><strong>District:</strong> {duplicateRecord.district}</p>
+            <p><strong>Taluka:</strong> {duplicateRecord.taluka}</p>
+            <p><strong>Village:</strong> {duplicateRecord.village}</p>
+            <p><strong>Block No:</strong> {duplicateRecord.block_no}</p>
+            {duplicateRecord.re_survey_no && (
+              <p><strong>Re-Survey No:</strong> {duplicateRecord.re_survey_no}</p>
+            )}
+          </div>
+          <p className="mt-3">Please modify your JSON file with different land information and upload again.</p>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-2 pt-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => handleNavigateToDuplicate('view')}
+          >
+            View Existing Record
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => handleNavigateToDuplicate('edit')}
+          >
+            Edit Existing Record
+          </Button>
+        </div>
+
+        <div className="pt-2">
+          <Button
+            variant="default"
+            className="w-full"
+            onClick={handleCloseDuplicateDialog}
+          >
+            Close & Upload New JSON
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+)}
     </div>
     </AuthProvider>
   );

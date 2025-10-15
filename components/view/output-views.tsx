@@ -656,7 +656,7 @@ if (sNos && sNos.length > 0) {
     const wsData = [
       [headerInfo], // Header row
       [], // Empty row
-      ['Serial No (અનુક્રમ નંબર)', 'Nondh No. (નોધ નંબર)', 'Nondh Type (નોધ ની પ્રકાર)', 'Nondh Date (નોધ ની તારીખ)', 'Vigat (નોધ ની વિગત)', 'Affected Survey Numbers (પ્રભાવિત સર્વે નં.)', 'Status (સ્થિતિ)'], // Column headers
+      ['Serial No (અનુક્રમ નંબર)', 'Nondh No. (નોધ નંબર)', 'Nondh Type (નોધ ની પ્રકાર)', 'Nondh Date (નોધ ની તારીખ)', 'Vigat (નોધ ની વિગત)', 'Affected Survey Numbers (સર્વે નંબર)', 'Status (સ્થિતિ)'], // Column headers
       ...sortedData.map((row, index) => [
         index + 1,
         row.nondhNumber || '-',
@@ -1353,7 +1353,7 @@ if (sNos && sNos.length > 0) {
             className="w-full sm:w-auto"
             size="sm"
           >
-            Back to LandMaster
+            Back to Land Master
           </Button>
         </div>
       </CardContent>
