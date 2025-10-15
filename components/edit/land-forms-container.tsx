@@ -16,8 +16,7 @@ import { useLandRecord } from "@/contexts/land-record-context";
 import { LandRecordService } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useStepFormData } from "@/hooks/use-step-form-data";
-
-// Import your form components
+import { useSearchParams } from 'next/navigation'
 import LandBasicInfoComponent from "./land-basic-info";
 import YearSlabs from "./year-slabs";
 import Panipatrak from "./panipatrak";
@@ -44,6 +43,7 @@ export function EditFormsContainer() {
     recordId,
   } = useLandRecord();
   const { toast } = useToast();
+  const searchParams = useSearchParams()
   console.log('EditFormsContainer rendered');
   console.log('Current step:', currentStep);
   console.log('Record ID:', recordId);
@@ -52,8 +52,6 @@ export function EditFormsContainer() {
 
   // Get current step form data handler
   const currentStepFormData = useStepFormData(currentStep);
-
-  const [activeStep, setActiveStep] = useState(currentStep);
   const [isSaving, setIsSaving] = useState(false);
 
   const steps: FormStep[] = [
@@ -101,58 +99,63 @@ export function EditFormsContainer() {
   }, []);
 
   // Sync active step with context
-  useEffect(() => {
-    setActiveStep(currentStep);
-  }, [currentStep]);
+useEffect(() => {
+  const stepParam = searchParams.get('step')
+  if (stepParam) {
+    const targetStep = parseInt(stepParam, 10)
+    if (targetStep >= 1 && targetStep <= 6) {
+      setCurrentStep(targetStep)
+    }
+  }
+}, [searchParams, setCurrentStep]);
 
   // Handle step changes
   const handleStepChange = useCallback(async (newStep: number) => {
-    // No dialog box, just proceed directly
-    setActiveStep(newStep);
-    setCurrentStep(newStep);
-    return true;
-  }, [setCurrentStep]);
+  setCurrentStep(newStep);
+  return true;
+}, [setCurrentStep]);
 
   // Navigation handlers
   const handleNext = useCallback(async () => {
-    const currentIndex = steps.findIndex((step) => step.id === activeStep);
-    if (currentIndex < steps.length - 1) {
-      await handleStepChange(steps[currentIndex + 1].id);
-    }
-  }, [activeStep, handleStepChange, steps]);
+  const currentIndex = steps.findIndex((step) => step.id === currentStep);
+  if (currentIndex < steps.length - 1) {
+    await handleStepChange(steps[currentIndex + 1].id);
+  }
+}, [currentStep, handleStepChange, steps]);
 
   const handlePrevious = useCallback(async () => {
-    const currentIndex = steps.findIndex((step) => step.id === activeStep);
-    if (currentIndex > 0) {
-      await handleStepChange(steps[currentIndex - 1].id);
-    }
-  }, [activeStep, handleStepChange, steps]);
+  const currentIndex = steps.findIndex((step) => step.id === currentStep);
+  if (currentIndex > 0) {
+    await handleStepChange(steps[currentIndex - 1].id);
+  }
+}, [currentStep, handleStepChange, steps]);
 
   // Render current step with its saved data
   const renderStep = useCallback(() => {
-    const stepData = formData[activeStep] || {};
-    
-    switch (activeStep) {
-      case 1: 
-        return <LandBasicInfoComponent data={stepData.landBasicInfo} />;
-      case 2: 
-        return <YearSlabs data={stepData.yearSlabs} />;
-      case 3: 
-        return <Panipatrak data={stepData.panipatrak} />;
-      case 4: 
-        return <NondhAdd data={stepData.nondhAdd} />;
-      case 5: 
-        return <NondhDetails data={stepData.nondhDetails} />;
-      case 6: 
-        return <OutputViews data={stepData.outputViews} />;
-      default: 
-        return <LandBasicInfoComponent />;
-    }
-  }, [activeStep, formData]);
+  const stepData = formData[currentStep] || {};
+  
+  switch (currentStep) {
+    case 1: 
+      return <LandBasicInfoComponent data={stepData.landBasicInfo} />;
+    case 2: 
+      return <YearSlabs data={stepData.yearSlabs} />;
+    case 3: 
+      return <Panipatrak data={stepData.panipatrak} />;
+    case 4: 
+      return <NondhAdd data={stepData.nondhAdd} />;
+    case 5: 
+      return <NondhDetails data={stepData.nondhDetails} />;
+    case 6: 
+      return <OutputViews data={stepData.outputViews} />;
+    default: 
+      return <LandBasicInfoComponent />;
+  }
+}, [currentStep, formData]);
 
-  const isLastStep = activeStep === steps[steps.length - 1].id;
-  const isFirstStep = activeStep === steps[0].id;
-  const progress = (activeStep / steps.length) * 100;
+
+  const isLastStep = currentStep === steps[steps.length - 1].id;
+const isFirstStep = currentStep === steps[0].id;
+const progress = (currentStep / steps.length) * 100;
 
   return (
     <AuthProvider>
@@ -187,7 +190,7 @@ export function EditFormsContainer() {
               <div className="mt-4">
                 <Progress value={progress} className="w-full" />
                 <p className="text-sm text-muted-foreground text-center mt-2">
-                  Step {activeStep} of {steps.length}
+                  Step {currentStep} of {steps.length}
                 </p>
               </div>
             </CardHeader>
@@ -202,12 +205,12 @@ export function EditFormsContainer() {
                   {steps.map((step) => (
                     <Button
                       key={step.id}
-                      variant={activeStep === step.id ? "default" : "outline"}
+                      variant={currentStep === step.id ? "default" : "outline"}
                       size="sm"
                       onClick={() => handleStepChange(step.id)}
                       className="flex items-center gap-1 whitespace-nowrap flex-shrink-0 min-w-fit"
                     >
-                      {activeStep > step.id ? (
+                      {currentStep > step.id ? (
                         <CheckCircle className="w-3 h-3" />
                       ) : (
                         <Circle className="w-3 h-3" />
@@ -225,12 +228,12 @@ export function EditFormsContainer() {
                   {steps.map((step) => (
                     <Button
                       key={step.id}
-                      variant={activeStep === step.id ? "default" : "outline"}
+                      variant={currentStep === step.id ? "default" : "outline"}
                       size="sm"
                       onClick={() => handleStepChange(step.id)}
                       className="flex items-center gap-2 w-full"
                     >
-                      {activeStep > step.id ? (
+                      {currentStep > step.id ? (
                         <CheckCircle className="w-4 h-4" />
                       ) : (
                         <Circle className="w-4 h-4" />
@@ -245,12 +248,12 @@ export function EditFormsContainer() {
                   {steps.map((step) => (
                     <Button
                       key={step.id}
-                      variant={activeStep === step.id ? "default" : "outline"}
+                      variant={currentStep === step.id ? "default" : "outline"}
                       size="sm"
                       onClick={() => handleStepChange(step.id)}
                       className="flex items-center gap-2 px-3 py-2"
                     >
-                      {activeStep > step.id ? (
+                      {currentStep > step.id ? (
                         <CheckCircle className="w-4 h-4" />
                       ) : (
                         <Circle className="w-4 h-4" />

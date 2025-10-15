@@ -10,6 +10,7 @@ import { Trash2, Plus, Upload, Save, Loader2 } from "lucide-react"
 import { useLandRecord } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
+import { useRouter } from 'next/navigation'
 import { LandRecordService } from "@/lib/supabase"
 import type { Nondh } from "@/contexts/land-record-context"
 
@@ -33,12 +34,13 @@ function isEqual(obj1: any, obj2: any) {
 export default function NondhAdd() {
   const { recordId, yearSlabs, landBasicInfo, setHasUnsavedChanges, currentStep, setCurrentStep } = useLandRecord()
   const { toast } = useToast()
-
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set())
   const [nondhs, setNondhs] = useState<Nondh[]>([{ ...initialNondhData, id: generateUUID() }])
   const [originalNondhs, setOriginalNondhs] = useState<Nondh[]>([])
   const [isDataLoaded, setIsDataLoaded] = useState(false)
+  const [hasDataFromDB, setHasDataFromDB] = useState(false)
 
   // Get unique S.Nos from all slabs AND unused ones from step 1
   const getAllSNos = useCallback(() => {
@@ -101,45 +103,48 @@ export default function NondhAdd() {
   }, [yearSlabs, landBasicInfo])
 
   // Fetch existing nondh data
-  useEffect(() => {
-    const fetchNondhs = async () => {
-      if (!recordId) {
-        setLoading(false);
-        return;
-      }
+ useEffect(() => {
+  const fetchNondhs = async () => {
+    if (!recordId) {
+      setLoading(false);
+      setHasDataFromDB(false); // Mark as no DB data
+      return;
+    }
 
-      try {
-        setLoading(true);
-        const { data, error } = await LandRecordService.getNondhs(recordId);
+    try {
+      setLoading(true);
+      const { data, error } = await LandRecordService.getNondhs(recordId);
+      
+      if (error) throw error;
+      
+      if (data && data.length > 0) {
+        console.log('[NondhAdd Edit] Received data from service:', data);
         
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-          // LandRecordService.getNondhs already returns mapped data in the correct format
-          console.log('[NondhAdd Edit] Received data from service:', data);
-          
-          setNondhs(data);
-          setOriginalNondhs(data);
-        } else {
-          // Keep the initial empty nondh if no data found
-          setOriginalNondhs([]);
-        }
-        
-        setIsDataLoaded(true);
-      } catch (error) {
-        console.error('Error fetching nondhs:', error);
-        toast({ 
-          title: "Error loading nondh data", 
-          variant: "destructive" 
-        });
-        setIsDataLoaded(true);
-      } finally {
-        setLoading(false);
+        setNondhs(data);
+        setOriginalNondhs(data);
+        setHasDataFromDB(true); // Mark as having DB data
+      } else {
+        // Keep the initial empty nondh if no data found
+        setOriginalNondhs([]);
+        setHasDataFromDB(false); // Mark as no DB data
       }
-    };
+      
+      setIsDataLoaded(true);
+    } catch (error) {
+      console.error('Error fetching nondhs:', error);
+      toast({ 
+        title: "Error loading nondh data", 
+        variant: "destructive" 
+      });
+      setIsDataLoaded(true);
+      setHasDataFromDB(false); // Mark as no DB data on error
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchNondhs();
-  }, [recordId, toast]);
+  fetchNondhs();
+}, [recordId, toast]);
 
   // Add this useEffect hook to your component
   useEffect(() => {
@@ -384,23 +389,6 @@ export default function NondhAdd() {
   }
 
   if (loading && !isDataLoaded) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Nondh Information</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center p-8">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-              <p className="mt-2 text-sm text-muted-foreground">Loading nondh data...</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
     <Card>
       <CardHeader>
@@ -408,6 +396,35 @@ export default function NondhAdd() {
           <CardTitle>Nondh Information</CardTitle>
         </div>
       </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-center p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-2 text-sm text-muted-foreground">Loading nondh data...</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+  return (
+    <Card>
+      <CardHeader>
+      <div className="flex justify-between items-center">
+        <CardTitle>Nondh Information</CardTitle>
+        {isDataLoaded && !hasDataFromDB && (
+          <Button 
+            variant="outline"
+            onClick={() => router.push(`/upload-json?fromEdit=true&landRecordId=${recordId}`)}
+            className="flex items-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            Upload via JSON
+          </Button>
+        )}
+      </div>
+    </CardHeader>
       <CardContent className="space-y-6">
         {nondhs.map((nondh, index) => (
           <div key={nondh.id} className="border rounded-lg p-4 space-y-4">
@@ -475,29 +492,61 @@ export default function NondhAdd() {
                 ))}
               </div>
               {nondh.affectedSNos.length > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Selected: {nondh.affectedSNos.map((item, index) => {
-                    try {
-                      let sNoObj;
-                      if (typeof item === 'string') {
-                        sNoObj = JSON.parse(item);
-                      } else if (typeof item === 'object' && item.number) {
-                        sNoObj = item;
-                      } else {
-                        // fallback for plain string numbers
-                        return `${item} (S.No.)`;
-                      }
-                      
-                      const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
-                                        sNoObj.type === "block_no" ? "Block" : 
-                                        sNoObj.type === "re_survey_no" ? "Re-survey" : "S.No.";
-                      return `${sNoObj.number} (${typeDisplay})`;
-                    } catch {
-                      return `${item} (S.No.)`;
-                    }
-                  }).join(", ")}
-                </p>
-              )}
+  <div className="space-y-2">
+    {/* Show only S.Nos that are NOT in availableSNos (basic info/year slabs) */}
+    {(() => {
+      // Get all available S.Nos from basic info/year slabs
+      const availableSNosSet = new Set(getAllSNos().map(s => s.number));
+      
+      // Filter affectedSNos to only include those NOT in availableSNos
+      const insertedButNotInBasicInfo = nondh.affectedSNos.filter(item => {
+        try {
+          let sNoNumber;
+          if (typeof item === 'string') {
+            const parsed = JSON.parse(item);
+            sNoNumber = parsed.number;
+          } else if (typeof item === 'object' && item.number) {
+            sNoNumber = item.number;
+          } else {
+            sNoNumber = item;
+          }
+          return !availableSNosSet.has(sNoNumber);
+        } catch {
+          return !availableSNosSet.has(item);
+        }
+      });
+
+      if (insertedButNotInBasicInfo.length > 0) {
+        return (
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium">Inserted but not part of basic info/year slabs:</span>{' '}
+            {insertedButNotInBasicInfo.map((item, index) => {
+              try {
+                let sNoObj;
+                if (typeof item === 'string') {
+                  sNoObj = JSON.parse(item);
+                } else if (typeof item === 'object' && item.number) {
+                  sNoObj = item;
+                } else {
+                  // fallback for plain string numbers
+                  return `${item} (S.No.)`;
+                }
+                
+                const typeDisplay = sNoObj.type === "s_no" ? "Survey" : 
+                                  sNoObj.type === "block_no" ? "Block" : 
+                                  sNoObj.type === "re_survey_no" ? "Re-survey" : "S.No.";
+                return `${sNoObj.number} (${typeDisplay})`;
+              } catch {
+                return `${item} (S.No.)`;
+              }
+            }).join(", ")}
+          </p>
+        );
+      }
+      return null;
+    })()}
+  </div>
+)}
             </div>
 
             {/* Document Upload */}

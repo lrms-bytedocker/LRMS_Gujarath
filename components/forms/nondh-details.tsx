@@ -3935,7 +3935,7 @@ if (insertError) throw insertError;
     </div>
     </div>
     )}
-
+{["Hukam", "Kabjedaar", "Ekatrikaran"].includes(detail.type) && (
 <div className="space-y-2">
   <Label>Tenure Type</Label>
   <Select
@@ -3954,6 +3954,7 @@ if (insertError) throw insertError;
     </SelectContent>
   </Select>
 </div>
+)}
 </div>
 
 {/* Hukam Date and Type for Hukam type */}

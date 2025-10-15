@@ -195,6 +195,75 @@ export class LandRecordService {
   }
   }
 
+static async deleteLandRecord(landRecordId: string): Promise<{ data: any, error: any }> {
+  try {
+    const { data, error } = await supabase
+      .from('land_records')
+      .delete()
+      .eq('id', landRecordId);
+
+    if (error) throw error;
+
+    return { data: { success: true }, error: null };
+  } catch (error) {
+    console.error('Error deleting land record:', error);
+    return { 
+      data: null, 
+      error: {
+        message: 'Failed to delete land record',
+        details: error instanceof Error ? error.message : String(error)
+      }
+    };
+  }
+}
+
+static async checkDuplicateLandRecord(data: {
+  district: string;
+  taluka: string;
+  village: string;
+  block_no: string;
+  re_survey_no?: string;
+  excludeId?: string; // For updates - exclude current record
+}): Promise<{ data: any | null, error: any }> {
+  try {
+    let query = supabase
+      .from('land_records')
+      .select('id, district, taluka, village, block_no, re_survey_no')
+      .eq('district', data.district)
+      .eq('taluka', data.taluka)
+      .eq('village', data.village)
+      .eq('block_no', data.block_no);
+
+    // If re_survey_no is provided, check for it too
+    if (data.re_survey_no) {
+      query = query.eq('re_survey_no', data.re_survey_no);
+    }
+
+    // Exclude current record when updating
+    if (data.excludeId) {
+      query = query.neq('id', data.excludeId);
+    }
+
+    const { data: existingRecords, error } = await query;
+
+    if (error) throw error;
+
+    return { 
+      data: existingRecords && existingRecords.length > 0 ? existingRecords[0] : null, 
+      error: null 
+    };
+  } catch (error) {
+    console.error('Error checking duplicate land record:', error);
+    return { 
+      data: null, 
+      error: {
+        message: 'Failed to check for duplicate records',
+        details: error instanceof Error ? error.message : String(error)
+      }
+    };
+  }
+}
+
 static async getLandRecordBasicInfo(landRecordId: string): Promise<{ 
   sNo?: string, 
   blockNo?: string, 

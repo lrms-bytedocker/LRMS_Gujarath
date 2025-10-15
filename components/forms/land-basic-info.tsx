@@ -11,6 +11,7 @@ import { useLandRecord } from "@/contexts/land-record-context"
 import { supabase, uploadFile } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { LandRecordService } from "@/lib/supabase"
+import { useRouter } from "next/navigation";
 import { promulgationData, getDistricts, getTalukas, getVillages, isPromulgation } from "@/lib/mock-data"
 import { useStepFormData } from "@/hooks/use-step-form-data"
 import type { LandBasicInfo } from "@/contexts/land-record-context"
@@ -470,10 +471,12 @@ export default function LandBasicInfoComponent() {
     hasUnsavedChanges 
   } = useLandRecord()
   const { toast } = useToast()
-
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [uploadedFileName, setUploadedFileName] = useState<string>("")
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({})
+  const [duplicateRecord, setDuplicateRecord] = useState<any>(null)
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false)
 
   // Form data with proper initialization
   const { getStepData, updateStepData } = useStepFormData(currentStep)
@@ -689,6 +692,31 @@ const handleSubmit = async () => {
       areaValueInSqm = formData.area.value || 0;
     }
 
+    // Check for duplicate records
+    const duplicateCheckData = {
+      district: formData.district,
+      taluka: formData.taluka,
+      village: formData.village,
+      block_no: formData.blockNo,
+      re_survey_no: formData.reSurveyNo || undefined,
+      excludeId: landBasicInfo?.id // Exclude current record when updating
+    }
+
+    const { data: duplicate, error: duplicateError } = await LandRecordService.checkDuplicateLandRecord(duplicateCheckData)
+    
+    if (duplicateError) {
+      console.error('Error checking duplicate:', duplicateError)
+      // Continue with save if duplicate check fails (don't block user due to check error)
+    }
+
+    // If duplicate found and we're not updating the same record
+    if (duplicate && duplicate.id !== landBasicInfo?.id) {
+      setDuplicateRecord(duplicate)
+      setShowDuplicateDialog(true)
+      setLoading(false)
+      return // Stop the save process
+    }
+
     // Map form data to database schema - use default values for required fields
     const landRecordData = {
       district: formData.district,
@@ -745,11 +773,28 @@ const handleSubmit = async () => {
     
   } catch (error) {
     console.error('Error saving land record:', error)
-    toast({ title: "Error saving data", variant: "destructive" })
+    toast({ 
+      title: "Error saving data", 
+      description: error instanceof Error ? error.message : "Please try again",
+      variant: "destructive" 
+    })
   } finally {
     setLoading(false)
   }
 }
+
+const handleNavigateToDuplicate = (mode: 'edit' | 'view') => {
+  if (!duplicateRecord) return;
+  
+  router.push(`/land-master/forms?mode=${mode}&id=${duplicateRecord.id}`);
+  setShowDuplicateDialog(false);
+  setDuplicateRecord(null);
+};
+
+const handleCloseDuplicateDialog = () => {
+  setShowDuplicateDialog(false);
+  setDuplicateRecord(null);
+};
 
   return (
     <Card>
@@ -929,6 +974,58 @@ const handleSubmit = async () => {
             {loading ? "Saving..." : "Save & Continue"}        
           </Button>
         </div>
+        {/* Duplicate Record Dialog */}
+{showDuplicateDialog && duplicateRecord && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <CardTitle className="text-yellow-600">Duplicate Land Record Found</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="text-sm text-gray-600">
+          <p>A land record with the same details already exists:</p>
+          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p><strong>District:</strong> {duplicateRecord.district}</p>
+            <p><strong>Taluka:</strong> {duplicateRecord.taluka}</p>
+            <p><strong>Village:</strong> {duplicateRecord.village}</p>
+            <p><strong>Block No:</strong> {duplicateRecord.block_no}</p>
+            {duplicateRecord.re_survey_no && (
+              <p><strong>Re-Survey No:</strong> {duplicateRecord.re_survey_no}</p>
+            )}
+          </div>
+          <p className="mt-3">Please modify the land information to create a unique record or navigate to the existing record.</p>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-2 pt-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => handleNavigateToDuplicate('view')}
+          >
+            View Existing Record
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => handleNavigateToDuplicate('edit')}
+          >
+            Edit Existing Record
+          </Button>
+        </div>
+
+        <div className="pt-2">
+          <Button
+            variant="default"
+            className="w-full"
+            onClick={handleCloseDuplicateDialog}
+          >
+            Close & Modify Form
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+)}
       </CardContent>
     </Card>
   )
