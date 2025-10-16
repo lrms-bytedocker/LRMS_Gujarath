@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Circle } from "lucide-react";
+import { CheckCircle, Circle, Loader2 } from "lucide-react";
 import { useLandRecord } from "@/contexts/land-record-context";
 import { useStepFormData } from "@/hooks/use-step-form-data";
 import { useSearchParams } from 'next/navigation'
@@ -32,7 +32,8 @@ interface FormStep {
   shortTitle?: string; // For mobile display
 }
 
-export function ViewFormsContainer() {
+// Inner component that uses useSearchParams
+function ViewFormsContainerInner() {
   const {
     currentStep,
     setCurrentStep,
@@ -298,5 +299,21 @@ useEffect(() => {
         </div>
       </div>
     </AuthProvider>
+  );
+}
+
+// Export wrapped version with Suspense
+export function ViewFormsContainer() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen bg-gray-50/50">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading form...</p>
+        </div>
+      </div>
+    }>
+      <ViewFormsContainerInner />
+    </Suspense>
   );
 }
