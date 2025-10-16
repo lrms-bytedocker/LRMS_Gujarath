@@ -283,42 +283,6 @@ const getAllSNos = () => {
     }
   }
 
-  const handleAutoFill = (nondhId: string) => {
-    const nondh = nondhData.find(n => n.id === nondhId);
-    if (!nondh) return;
-
-    const sNoType: SNoTypeUI = nondh.sNoType === "s_no" ? "survey_no" : nondh.sNoType;
-    const autoPopulatedValues = getAutoPopulatedSNoData(sNoType);
-    
-    if (autoPopulatedValues.length > 0) {
-      const newValues = autoPopulatedValues.filter(
-        val => availableSNos.includes(val) && 
-               !nondh.affectedSNos.includes(val)
-      );
-      
-      if (newValues.length > 0) {
-        updateNondh(nondhId, { 
-          affectedSNos: [...nondh.affectedSNos, ...newValues]
-        });
-        toast({
-          title: "Auto-filled affected S.Nos",
-          description: `Added: ${newValues.join(", ")}`
-        });
-      } else {
-        toast({
-          title: "No new S.Nos to add",
-          description: "All matching S.Nos are already selected"
-        });
-      }
-    } else {
-      toast({
-        title: "No data available",
-        description: `No ${sNoType.replace("_", " ")} found for this land record`,
-        variant: "destructive"
-      });
-    }
-  }
-
  const handleSubmit = async () => {
   const stepData = getStepData();
   if (!landBasicInfo?.id) {
