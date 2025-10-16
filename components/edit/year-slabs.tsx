@@ -304,8 +304,8 @@ const extractFilenameFromUrl = (url: string): string => {
       .replace(/_{2,}/g, '_')
       .replace(/^_|_$/g, '');
     
-    const path = `land-documents/${timestamp}_${sanitizedFileName}`;
-    const url = await uploadFile(file, path);
+    const path = `year-slabs/${timestamp}_${sanitizedFileName}`;
+    const url = await uploadFile(file, "land-documents", path);
     
     if (!url) throw new Error("Upload failed");
     
