@@ -255,6 +255,15 @@ const handleSubmitBrokerLink = async () => {
   const hasActiveFilters = searchTerm || districtFilter !== "all" || talukaFilter !== "all" || villageFilter !== "all";
 
   const handleDeleteClick = (land: LandRecord) => {
+  // Add authentication check
+  if (!isSignedIn) {
+    toast({
+      title: "Authentication Required",
+      description: "Please sign in to delete land records",
+      variant: "destructive",
+    });
+    return;
+  }
   setLandToDelete(land);
   setDeleteConfirmOpen(true);
 };
@@ -969,8 +978,9 @@ const handleCancelDelete = () => {
     </Card>
   </div>
 )}
+
 {/* Delete Confirmation Dialog */}
-{deleteConfirmOpen && landToDelete && (
+{deleteConfirmOpen && landToDelete && isSignedIn && (
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
     <Card className="w-full max-w-md">
       <CardHeader>
