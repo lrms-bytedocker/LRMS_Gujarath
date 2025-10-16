@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,7 +32,7 @@ interface FormStep {
   shortTitle?: string; // For mobile display
 }
 
-export function EditFormsContainer() {
+export function EditFormsContainerInner() {
   const {
     currentStep,
     setCurrentStep,
@@ -303,5 +303,15 @@ const progress = (currentStep / steps.length) * 100;
         </div>
       </div>
     </AuthProvider>
+  );
+}
+
+export function EditFormsContainer() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">
+      <Loader2 className="w-8 h-8 animate-spin" />
+    </div>}>
+      <EditFormsContainerInner />
+    </Suspense>
   );
 }
