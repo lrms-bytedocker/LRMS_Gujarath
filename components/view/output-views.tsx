@@ -51,7 +51,7 @@ interface Nondh {
 }
 
 export default function OutputViews() {
-  const { landBasicInfo, recordId } = useLandRecord()
+  const { landBasicInfo, recordId, yearSlabs } = useLandRecord()
   const { toast } = useToast()
   const router = useRouter()
   const [passbookData, setPassbookData] = useState<PassbookEntry[]>([])
@@ -65,7 +65,8 @@ export default function OutputViews() {
 const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
 
  // Helper function to format affected S.Nos properly
-  const formatAffectedSNos = (affectedSNos: any): string => {
+const formatAffectedSNos = (affectedSNos: any, availableSNos?: Array<{value: string, type: string, label: string}>): string => {
+  console.log('formatAffectedSNos received:', affectedSNos, 'type:', typeof affectedSNos);
   if (!affectedSNos) return '-';
   
   try {
@@ -98,6 +99,15 @@ const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
       }
     } else if (typeof affectedSNos === 'object' && affectedSNos.number && affectedSNos.type) {
       sNos = [affectedSNos];
+    }
+    
+    // Filter out S.Nos that are not in available S.Nos (basic info/year slabs)
+    if (availableSNos && availableSNos.length > 0) {
+      const availableSNosSet = new Set(availableSNos.map(s => s.value));
+      sNos = sNos.filter(sNo => {
+        const number = typeof sNo === 'object' ? sNo.number : sNo;
+        return availableSNosSet.has(number?.toString());
+      });
     }
     
     // Format the S.Nos with type labels
@@ -144,13 +154,13 @@ const handleDownloadIntegratedDocument = async () => {
       description: 'Integrated document generated and downloaded successfully',
     });
   } catch (error) {
-    console.error('Error generating PDF:', error);
-    toast({
-      title: 'Error',
-      description: 'Failed to generate integrated document. Please try again.',
-      variant: 'destructive'
-    });
-  } finally {
+  console.error('Error generating PDF:', error);
+  toast({
+    title: 'Error',
+    description: error instanceof Error ? error.message : 'Failed to generate integrated document. Please try again.',
+    variant: 'destructive'
+  });
+} finally {
     setIsGeneratingPDF(false);
   }
 }
@@ -166,66 +176,70 @@ const formatDate = (dateString: string): string => {
   return date.toLocaleDateString('en-IN'); // or your preferred format
 };
 
-  // Helper function to get unique S.Nos with types
-  const getUniqueSNosWithTypes = () => {
-    const sNoSet = new Set<string>();
-    const sNoTypeMap = new Map<string, string>();
+// Helper function to get unique S.Nos with types from ONLY basic info and year slabs
+const getUniqueSNosWithTypes = () => {
+  const sNoSet = new Set<string>();
+  const sNoTypeMap = new Map<string, string>();
+  
+  // Add S.Nos from year slabs (step 2) - yearSlabs is available from component scope
+  yearSlabs.forEach((slab) => {
+    if (slab.sNo?.trim() !== "") {
+      sNoSet.add(slab.sNo);
+      sNoTypeMap.set(slab.sNo, slab.sNoType || 's_no');
+    }
     
-    // From nondhs (affected S.Nos)
-    nondhs.forEach(nondh => {
-      if (nondh.affected_s_nos && Array.isArray(nondh.affected_s_nos)) {
-        nondh.affected_s_nos.forEach(sNoData => {
-          try {
-            let sNoObj;
-            if (typeof sNoData === 'string' && sNoData.startsWith('{')) {
-              sNoObj = JSON.parse(sNoData);
-            } else if (typeof sNoData === 'object') {
-              sNoObj = sNoData;
-            } else {
-              sNoObj = { number: sNoData.toString(), type: 's_no' };
-            }
-            
-            const sNoKey = `${sNoObj.number}`;
-            sNoSet.add(sNoKey);
-            sNoTypeMap.set(sNoKey, sNoObj.type || 's_no');
-          } catch (e) {
-            const sNoKey = sNoData.toString();
-            sNoSet.add(sNoKey);
-            sNoTypeMap.set(sNoKey, 's_no');
-          }
-        });
-      }
-    });
-    
-    // From nondhDetails (individual S.Nos)
-    nondhDetails.forEach(detail => {
-      if (detail.sNo) {
-        sNoSet.add(detail.sNo);
-        if (!sNoTypeMap.has(detail.sNo)) {
-          sNoTypeMap.set(detail.sNo, 's_no');
-        }
-      }
-    });
-    
-    // From passbook data
-    passbookData.forEach(entry => {
-      if (entry.sNo) {
+    slab.paikyEntries?.forEach((entry) => {
+      if (entry.sNo?.trim() !== "") {
         sNoSet.add(entry.sNo);
-        if (!sNoTypeMap.has(entry.sNo)) {
-          sNoTypeMap.set(entry.sNo, 's_no');
-        }
+        sNoTypeMap.set(entry.sNo, entry.sNoType || 's_no');
       }
     });
     
-    return Array.from(sNoSet).map(sNo => ({
-      value: sNo,
-      type: sNoTypeMap.get(sNo) || 's_no',
-      label: `${sNo} (${sNoTypeMap.get(sNo) === 'block_no' ? 'Block' : 
-                       sNoTypeMap.get(sNo) === 're_survey_no' ? 'Re-survey' : 'Survey'})`
-    })).sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
-  };
-
- 
+    slab.ekatrikaranEntries?.forEach((entry) => {
+      if (entry.sNo?.trim() !== "") {
+        sNoSet.add(entry.sNo);
+        sNoTypeMap.set(entry.sNo, entry.sNoType || 's_no');
+      }
+    });
+  });
+  
+  // Add S.Nos from step 1 (landBasicInfo) - landBasicInfo is available from component scope
+  if (landBasicInfo) {
+    // Survey Numbers from step 1
+    if (landBasicInfo.sNo && landBasicInfo.sNo.trim() !== "") {
+      const surveyNos = landBasicInfo.sNo.split(',').map(s => s.trim()).filter(s => s !== "");
+      surveyNos.forEach(sNo => {
+        sNoSet.add(sNo);
+        if (!sNoTypeMap.has(sNo)) {
+          sNoTypeMap.set(sNo, 's_no');
+        }
+      });
+    }
+    
+    // Block Number from step 1
+    if (landBasicInfo.blockNo && landBasicInfo.blockNo.trim() !== "") {
+      sNoSet.add(landBasicInfo.blockNo);
+      if (!sNoTypeMap.has(landBasicInfo.blockNo)) {
+        sNoTypeMap.set(landBasicInfo.blockNo, 'block_no');
+      }
+    }
+    
+    // Re-survey Number from step 1
+    if (landBasicInfo.reSurveyNo && landBasicInfo.reSurveyNo.trim() !== "") {
+      sNoSet.add(landBasicInfo.reSurveyNo);
+      if (!sNoTypeMap.has(landBasicInfo.reSurveyNo)) {
+        sNoTypeMap.set(landBasicInfo.reSurveyNo, 're_survey_no');
+      }
+    }
+  }
+  
+  return Array.from(sNoSet).map(sNo => ({
+    value: sNo,
+    type: sNoTypeMap.get(sNo) || 's_no',
+    label: `${sNo} (${sNoTypeMap.get(sNo) === 'block_no' ? 'Block' : 
+                     sNoTypeMap.get(sNo) === 're_survey_no' ? 'Re-survey' : 'Survey'})`
+  })).sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
+};
 
   const getPrimarySNoType = (affectedSNos: any[]): string => {
   if (!affectedSNos || affectedSNos.length === 0) return 's_no';
@@ -415,7 +429,6 @@ const formatDate = (dateString: string): string => {
 
   const fetchPassbookData = async () => {
   try {
-    // Always fetch fresh nondhs data for passbook
     const { data: nondhsData, error: nondhError } = await LandRecordService.getNondhs(recordId)
     if (nondhError) throw nondhError
     
@@ -436,13 +449,13 @@ const formatDate = (dateString: string): string => {
       return
     }
 
+    const availableSNos = getUniqueSNosWithTypes(); // Get available S.Nos
     const passbookEntries: PassbookEntry[] = []
 
     nondhDetailsWithRelations.forEach(detail => {
       const nondh = freshNondhs.find(n => n.id === detail.nondh_id)
       const nondhNumber = nondh ? safeNondhNumber(nondh) : "0"
       
-      // Use the date from nondh_details, fallback to current date
       const relevantDate = detail.date || detail.created_at || new Date().toISOString()
 
       detail.owner_relations?.forEach(relation => {
@@ -457,7 +470,7 @@ const formatDate = (dateString: string): string => {
         }
 
         console.log('Entry affectedSNos before format:', nondh?.affected_s_nos);
-        const affectedSNosFormatted = nondh ? formatAffectedSNos(nondh.affected_s_nos) : relation.s_no || '';
+        const affectedSNosFormatted = nondh ? formatAffectedSNos(nondh.affected_s_nos, availableSNos) : relation.s_no || ''; // Pass availableSNos
         console.log('Entry affectedSNos after format:', affectedSNosFormatted);
         
         const entry = {
@@ -491,48 +504,51 @@ const formatDate = (dateString: string): string => {
 }
 
   const generateFilteredNondhs = () => {
-    console.log('generateFilteredNondhs - nondhs available:', nondhs.length);
+  console.log('generateFilteredNondhs - nondhs available:', nondhs.length);
   console.log('generateFilteredNondhs - nondhDetails available:', nondhDetails.length);
-    let outputNondhs = nondhDetails
-      .filter(detail => detail.showInOutput)
-      .map(detail => {
-         console.log('Processing detail:', detail.id, 'looking for nondh:', detail.nondhId);
+  
+  const availableSNos = getUniqueSNosWithTypes(); // Get available S.Nos
+  
+  let outputNondhs = nondhDetails
+    .filter(detail => detail.showInOutput)
+    .map(detail => {
+      console.log('Processing detail:', detail.id, 'looking for nondh:', detail.nondhId);
       const nondh = nondhs.find(n => n.id === detail.nondhId)
       console.log('Found nondh for detail:', nondh);
-        return {
-          ...detail,
-          nondhNumber: nondh ? safeNondhNumber(nondh) : "0",
-          affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
-          nondhDocUrl: nondh?.nondh_doc_url || null
-        }
-      })
+      return {
+        ...detail,
+        nondhNumber: nondh ? safeNondhNumber(nondh) : "0",
+        affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo], availableSNos), // Pass availableSNos
+        nondhDocUrl: nondh?.nondh_doc_url || null
+      }
+    })
 
-    // Apply S.No filter
-    if (sNoFilter) {
-      outputNondhs = outputNondhs.filter(nondh => {
-        return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
-      });
-    }
-    
-    setFilteredNondhs(outputNondhs.sort(sortNondhsBySNoType));
+  // Apply S.No filter
+  if (sNoFilter) {
+    outputNondhs = outputNondhs.filter(nondh => {
+      return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
+    });
   }
+  
+  setFilteredNondhs(outputNondhs.sort(sortNondhsBySNoType));
+}
 
   const updateDateWiseFilter = () => {
   let filteredDetails = nondhDetails;
   
   if (dateFilter) {
-    // Change from createdAt to date
     filteredDetails = nondhDetails.filter(detail => detail.date?.includes(dateFilter));
   }
+  
+  const availableSNos = getUniqueSNosWithTypes(); // Get available S.Nos
   
   let mappedDetails = filteredDetails.map(detail => {
     const nondh = nondhs.find(n => n.id === detail.nondhId)
     return {
       ...detail,
       nondhNumber: nondh ? safeNondhNumber(nondh) : 0,
-      affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
+      affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo], availableSNos), // Pass availableSNos
       nondhDocUrl: nondh?.nondh_doc_url || null,
-      // Ensure date is available
       date: detail.date || detail.createdAt
     }
   });
@@ -558,7 +574,10 @@ const formatDate = (dateString: string): string => {
   }
 
   try {
-   const formatAffectedSNos = (affectedSNos: any): string => {
+    // Get available S.Nos for filtering
+    const availableSNos = getUniqueSNosWithTypes();
+    
+    const formatAffectedSNos = (affectedSNos: any): string => {
       if (!affectedSNos) {
         return '-';
       }
@@ -596,23 +615,30 @@ const formatDate = (dateString: string): string => {
           return JSON.stringify(affectedSNos);
         }
 
+        // Filter out S.Nos that are not in available S.Nos (basic info/year slabs)
+        const availableSNosSet = new Set(availableSNos.map(s => s.value));
+        sNos = sNos.filter(sNo => {
+          const number = typeof sNo === 'object' ? sNo.number : sNo;
+          return availableSNosSet.has(number?.toString());
+        });
         
         // Format the S.Nos as simple numbers separated by commas
-if (sNos && sNos.length > 0) {
-  const result = sNos.map(sNo => {
-    if (typeof sNo === 'object' && sNo.number) {
-      return sNo.number.toString(); // Just return the number without type
-    }
-    return sNo.toString();
-  }).join(', ');
-  return result;
-}
+        if (sNos && sNos.length > 0) {
+          const result = sNos.map(sNo => {
+            if (typeof sNo === 'object' && sNo.number) {
+              return sNo.number.toString(); // Just return the number without type
+            }
+            return sNo.toString();
+          }).join(', ');
+          return result;
+        }
 
         return '-';
       } catch (error) {
         return typeof affectedSNos === 'string' ? affectedSNos : JSON.stringify(affectedSNos);
       }
     }
+    
     // Dynamically import xlsx
     const XLSX = await import('xlsx-js-style')
 
@@ -632,6 +658,7 @@ if (sNos && sNos.length > 0) {
 
     const sortedData = allData.sort(sortNondhsBySNoType)
 
+  
     // Format date as DDMMYYYY
     const formatDate = (dateStr: string) => {
       if (!dateStr) return '-'
@@ -969,41 +996,32 @@ if (sNos && sNos.length > 0) {
   </div>
 
   {(() => {
-  const allNondhsData = nondhDetails.map((detail) => {
-    const nondh = nondhs.find((n) => n.id === detail.nondhId)
-    return {
-      ...detail,
-      nondhNumber: nondh?.number || 0,
-      affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo]),
-      nondhType: detail.type,
-      hukamType: detail.hukamType || '-',
-      nondhDocUrl: nondh?.nondh_doc_url || null
+    const availableSNos = getUniqueSNosWithTypes(); // Get available S.Nos
+    
+    const allNondhsData = nondhDetails.map((detail) => {
+      const nondh = nondhs.find((n) => n.id === detail.nondhId)
+      return {
+        ...detail,
+        nondhNumber: nondh?.number || 0,
+        affectedSNos: formatAffectedSNos(nondh?.affected_s_nos || [detail.sNo], availableSNos), // Pass availableSNos
+        nondhType: detail.type,
+        hukamType: detail.hukamType || '-',
+        nondhDocUrl: nondh?.nondh_doc_url || null
+      }
+    }).filter(nondh => {
+      if (!sNoFilter) return true;
+      return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
+    }).sort(sortNondhsBySNoType);
+
+    if (allNondhsData.length === 0) {
+      return (
+        <div className="text-center py-8">
+          <p className="text-gray-500 text-sm">
+            {sNoFilter ? 'No nondhs found for selected S.No' : 'No nondh data available'}
+          </p>
+        </div>
+      );
     }
-  }).filter(nondh => {
-    if (!sNoFilter) return true;
-    return nondh.affectedSNos.includes(sNoFilter) || nondh.sNo === sNoFilter;
-  }).sort(sortNondhsBySNoType);
-
-  if (allNondhsData.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-gray-500 text-sm">
-          {sNoFilter ? 'No nondhs found for selected S.No' : 'No nondh data available'}
-        </p>
-      </div>
-    );
-  }
-
-
-  if (allNondhsData.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-gray-500 text-sm">
-          {sNoFilter ? 'No nondhs found for selected S.No' : 'No nondh data available'}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <>
